@@ -66,15 +66,14 @@ Overmind/
 Requires **Java 21+**. Maven is bundled — no external install needed.
 
 run.sh — six commands:
-│ Command              │ What it does                                  
-|──────────────────────|──────────────────────────────────────────────
-│ ./run.sh test        │ Runs `mvn test` — compiles and executes all unit tests 
-│ ./run.sh build       │ Runs `mvn package -DskipTests` — builds a fat JAR into JARS/ 
-│ ./run.sh start       │ Builds if JAR is missing, then runs `java -jar` to start the server 
-│ ./run.sh clean       │ Runs `mvn clean` — cleans build artifacts   
-│ ./run.sh clean-build │ Cleans then builds (`mvn clean` + `mvn package -DskipTests`) 
+| Command │ What it does |
+|---|---|
+│ ./run.sh test        │ Runs `mvn test` — compiles and executes all unit tests |
+│ ./run.sh build       │ Runs `mvn package -DskipTests` — builds a fat JAR into JARS/ |
+│ ./run.sh start       │ Builds if JAR is missing, then runs `java -jar` to start the server |
+│ ./run.sh clean       │ Runs `mvn clean` — cleans build artifacts  |
+│ ./run.sh clean-build │ Cleans then builds (`mvn clean` + `mvn package -DskipTests`) |
 │ ./run.sh clean-test  │ Cleans then runs tests (`mvn clean` + `mvn test`) 
-  The script uses the bundled apache-maven-3.9.6, guards for Java 21+, and prints colour-coded status lines. No external tools needed.
 
 Custom world seed:
 ```bash
