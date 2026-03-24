@@ -1,0 +1,42 @@
+/.DS_Store
+**/.DS_Store
+
+# ── Java / Maven ─────────────────────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+target/
+.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# ── Build output (both Java jars and Go binary land here) ────────────────────
+JARS/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Server runtime ───────────────────────────────────────────────────────────
+server/
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# BlueJ / J2ME
+*.ctxt
+.mtj.tmp/
+.mvn/wrapper/maven-wrapper.properties
+building-plan.md
+API/src/main/java/com/overmind/api/Overmind.code-workspace
