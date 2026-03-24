@@ -67,7 +67,7 @@ Requires **Java 21+**. Maven is bundled — no external install needed.
 
 run.sh — six commands:
 
-| Command │ What it does |
+| Command | What it does |
 |---|---|
 │ ./run.sh test │ Runs `mvn test` compiles and executes all unit tests |
 │ ./run.sh build │ Runs `mvn package -DskipTests` builds a fat JAR into JARS/ |
