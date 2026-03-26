@@ -18,6 +18,10 @@ replay_pid*
 # ── Build output (both Java jars and Go binary land here) ────────────────────
 JARS/
 
+# ── Go compiled binaries (in-tree) ───────────────────────────────────────────
+bedrock/bedrock
+bedrock-dev/bedrock-dev
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
