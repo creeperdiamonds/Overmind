@@ -32,6 +32,10 @@ public class OvermindServer {
     private final PluginManager pluginManager = new PluginManager();
 
     public void start() throws Exception {
+        // Start the console before any blocking I/O so operators can type
+        // commands (e.g. /op) during world loading and bridge initialisation.
+        new ServerConsole(playerRegistry, this::shutdown).start();
+
         OvermindConfig cfg = new OvermindConfig();
         try {
             cfg = OvermindConfig.load(Paths.get("overmind.toml"));
@@ -105,7 +109,8 @@ public class OvermindServer {
                 logger.info("UDP listener started on port {} (native Bedrock Edition)", BEDROCK_PORT);
             }
 
-            logger.info("Overmind Server ready — seed={}", cfg.seed);
+            logger.info("Overmind Server ready — seed={}, onlineMode={}",
+                    cfg.seed, LoginHandler.ONLINE_MODE_ENABLED);
             tcpChannel.closeFuture().sync();
         } finally {
             shutdown();

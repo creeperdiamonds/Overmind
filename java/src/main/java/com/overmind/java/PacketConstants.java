@@ -155,6 +155,37 @@ public final class PacketConstants {
      */
     public static final int PLAY_ENTITY_ANIMATION           = 0x02;
 
+    // ── Login state (S→C) ────────────────────────────────────────────────────
+    /** Login Disconnect (S→C 0x00) — JSON reason; server rejects before Login Success. */
+    public static final int LOGIN_DISCONNECT          = 0x00;
+    /**
+     * Encryption Request (S→C 0x01) — server sends RSA public key + random verify token.
+     * Body: String serverId (empty), VarInt+Byte[] publicKey, VarInt+Byte[] verifyToken,
+     *       Boolean shouldAuthenticate (true = require Mojang auth, 1.20.5+ / protocol 766+).
+     */
+    public static final int LOGIN_ENCRYPTION_REQUEST  = 0x01;
+
+    // ── Login state (C→S) ────────────────────────────────────────────────────
+    /**
+     * Encryption Response (C→S 0x01) — client sends RSA-encrypted shared secret + verify token.
+     * Body: VarInt+Byte[] encryptedSecret, VarInt+Byte[] encryptedVerifyToken.
+     */
+    public static final int LOGIN_ENCRYPTION_RESPONSE = 0x01;
+
+    // ── Play state (S→C) — chat / disconnect ──────────────────────────────────
+    /**
+     * System Chat Message (S→C 0x72) — server-authoritative chat line.
+     * Body: String content (JSON text component), Boolean overlay.
+     * Packet ID for 1.21.4 (protocol 769); verify if shifting on 774.
+     */
+    public static final int PLAY_SYSTEM_CHAT          = 0x72;
+    /**
+     * Disconnect (Play) (S→C 0x1D) — kicks the player with a JSON reason.
+     * Body: String reason (JSON text component).
+     * Packet ID for 1.21.4 (protocol 769); verify if shifting on 774.
+     */
+    public static final int PLAY_DISCONNECT           = 0x1D;
+
     // ── Bedrock RakNet packet IDs ─────────────────────────────────────────────
     /** RakNet: Unconnected Ping (sent by client; timestamp + magic). */
     public static final int RAKNET_UNCONNECTED_PING         = 0x01;

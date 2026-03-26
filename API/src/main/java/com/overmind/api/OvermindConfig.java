@@ -53,6 +53,7 @@ public final class OvermindConfig {
      */
     public String  bridgeAddress = ":25566";
 
+
     // ── Factory ───────────────────────────────────────────────────────────────
 
     /** Creates an instance pre-loaded with all default values. */
@@ -161,11 +162,11 @@ public final class OvermindConfig {
         Map<String, String> javaWorld = sections.getOrDefault("java.world", new HashMap<>());
         Map<String, String> bridge    = sections.getOrDefault("bridge",     new HashMap<>());
 
-        cfg.port         = intVal(java, "port",          cfg.port);
-        cfg.mode         = strVal(java, "mode",          cfg.mode);
-        cfg.seed         = longVal(java, "seed",         cfg.seed);
-        cfg.viewDistance = intVal(java, "view_distance", cfg.viewDistance);
-        cfg.maxPlayers   = intVal(java, "max_players",   cfg.maxPlayers);
+        cfg.port         = intVal(java,  "port",          cfg.port);
+        cfg.mode         = strVal(java,  "mode",          cfg.mode);
+        cfg.seed         = longVal(java, "seed",          cfg.seed);
+        cfg.viewDistance = intVal(java,  "view_distance", cfg.viewDistance);
+        cfg.maxPlayers   = intVal(java,  "max_players",   cfg.maxPlayers);
 
         cfg.worldSaveData = boolVal(javaWorld, "save_data", cfg.worldSaveData);
         cfg.worldFolder   = strVal(javaWorld,  "folder",    cfg.worldFolder);

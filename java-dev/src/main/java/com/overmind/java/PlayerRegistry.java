@@ -1,5 +1,6 @@
 package com.overmind.java;
 
+import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +40,9 @@ public class PlayerRegistry {
         public final int    entityId;
         public final String username;
         public final boolean isBedrock;
+
+        /** Netty channel — set by PlayHandler after registration; used for kick/message. */
+        public volatile Channel channel;
 
         public volatile double x, y, z;
         public volatile float  yaw, pitch, headYaw;

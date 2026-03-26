@@ -13,11 +13,9 @@ public class MinecraftLoginHandler extends ChannelInboundHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(MinecraftLoginHandler.class);
     
     private VertexGraphManager vertexGraphManager;
-    private PlayerRegistry playerRegistry;
+    private PlayerRegistry     playerRegistry;
 
-    public MinecraftLoginHandler() {
-        this.vertexGraphManager = null; // Will be set by server
-    }
+    public MinecraftLoginHandler() {}
 
     public void setVertexGraphManager(VertexGraphManager vertexGraphManager) {
         this.vertexGraphManager = vertexGraphManager;

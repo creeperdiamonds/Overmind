@@ -113,6 +113,13 @@ cmd_overmind() {
     info "Java JAR  : $SERVER_JAR   → :25565 (Java TCP)"
     echo ""
 
+    # Remove stale LevelDB LOCK (left by a previously-crashed Go engine).
+    local lockfile="$SCRIPT_DIR/server/bedrock/world/db/LOCK"
+    if [[ -f "$lockfile" ]]; then
+        warn "Removing stale LevelDB LOCK: $lockfile"
+        rm -f "$lockfile"
+    fi
+
     # Start Go engine in background; capture its PID for cleanup
     "$BEDROCK_BIN" &
     BEDROCK_PID=$!
@@ -132,6 +139,11 @@ cmd_bedrock() {
         mkdir -p "$SCRIPT_DIR/JARS"
         (cd "$SCRIPT_DIR/bedrock" && go build -o "$BEDROCK_BIN" .)
     fi
+    local lockfile="$SCRIPT_DIR/server/bedrock/world/db/LOCK"
+    if [[ -f "$lockfile" ]]; then
+        warn "Removing stale LevelDB LOCK: $lockfile"
+        rm -f "$lockfile"
+    fi
     info "Starting Bedrock engine (production, port :19132)..."
     exec "$BEDROCK_BIN"
 }
@@ -143,6 +155,11 @@ cmd_bedrock_dev() {
         mkdir -p "$SCRIPT_DIR/JARS"
         (cd "$SCRIPT_DIR/bedrock-dev" && go build -o "$BEDROCK_DEV_BIN" .)
         success "Build complete — bin: $BEDROCK_DEV_BIN"
+    fi
+    local lockfile="$SCRIPT_DIR/server/bedrock/world/db/LOCK"
+    if [[ -f "$lockfile" ]]; then
+        warn "Removing stale LevelDB LOCK: $lockfile"
+        rm -f "$lockfile"
     fi
     info "Starting Bedrock engine (dev — plugins + addons enabled, port :19132)..."
     exec "$BEDROCK_DEV_BIN"
@@ -159,6 +176,13 @@ cmd_overmind_dev() {
     info "Go engine : $BEDROCK_DEV_BIN  → :19132 (plugins + addons) + :25566 (bridge)"
     info "Java JAR  : $SERVER_DEV_JAR   → :25565 (Java + plugin API)"
     echo ""
+
+    # Remove stale LevelDB LOCK (left by a previously-crashed Go engine).
+    local lockfile="$SCRIPT_DIR/server/bedrock/world/db/LOCK"
+    if [[ -f "$lockfile" ]]; then
+        warn "Removing stale LevelDB LOCK: $lockfile"
+        rm -f "$lockfile"
+    fi
 
     "$BEDROCK_DEV_BIN" &
     BEDROCK_PID=$!

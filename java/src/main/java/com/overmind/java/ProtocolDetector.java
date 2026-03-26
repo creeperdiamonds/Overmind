@@ -40,7 +40,7 @@ public class ProtocolDetector extends ByteToMessageDecoder {
     private static final int RAKNET_OPEN_MIN_BYTES = 17;
 
     private VertexGraphManager vertexGraphManager;
-    private PlayerRegistry playerRegistry;
+    private PlayerRegistry     playerRegistry;
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {

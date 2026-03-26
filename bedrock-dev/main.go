@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"log/slog"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/go-gl/mathgl/mgl64"
@@ -32,15 +36,190 @@ func lookupPlayer(name string) (*player.Player, bool) {
 
 const configPath = "overmind.toml"
 
-// overmindRoot mirrors the top-level structure of overmind.toml so that the
-// Bedrock engine config lives under [bedrock.*] and the bridge address is read
-// from [bridge].
+// overmindRoot mirrors the top-level structure of overmind.toml.
 type overmindRoot struct {
 	Bedrock server.UserConfig `toml:"bedrock"`
 	Bridge  struct {
 		Address string `toml:"address"`
 	} `toml:"bridge"`
 }
+
+// ── Server handle ─────────────────────────────────────────────────────────────
+
+// srvHandle gives the console goroutine thread-safe access to the server
+// instance before and after it is created.
+type srvHandle struct {
+	mu  sync.Mutex
+	srv *server.Server
+}
+
+func (h *srvHandle) set(s *server.Server) { h.mu.Lock(); h.srv = s; h.mu.Unlock() }
+func (h *srvHandle) get() *server.Server  { h.mu.Lock(); defer h.mu.Unlock(); return h.srv }
+
+// ── Operator file ─────────────────────────────────────────────────────────────
+
+const opsFile = "ops.txt"
+
+func loadOps(log *slog.Logger) map[string]struct{} {
+	ops := make(map[string]struct{})
+	data, err := os.ReadFile(opsFile)
+	if os.IsNotExist(err) {
+		return ops
+	}
+	if err != nil {
+		log.Warn("could not read ops.txt", "err", err)
+		return ops
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			ops[name] = struct{}{}
+		}
+	}
+	return ops
+}
+
+func saveOps(ops map[string]struct{}, log *slog.Logger) {
+	names := make([]string, 0, len(ops))
+	for n := range ops {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var sb strings.Builder
+	for _, n := range names {
+		sb.WriteString(n)
+		sb.WriteByte('\n')
+	}
+	if err := os.WriteFile(opsFile, []byte(sb.String()), 0o644); err != nil {
+		log.Warn("could not write ops.txt", "err", err)
+	}
+}
+
+// ── Console ───────────────────────────────────────────────────────────────────
+
+// runConsole reads operator commands from stdin.
+// It starts immediately at server launch so commands like /op work during
+// world loading and other slow initialisation.
+func runConsole(log *slog.Logger, handle *srvHandle) {
+	scanner := bufio.NewScanner(os.Stdin)
+	log.Info("Console ready — type 'help' for commands")
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Accept "/command args" or "command args"
+		if strings.HasPrefix(line, "/") {
+			line = line[1:]
+		}
+		parts := strings.SplitN(line, " ", 2)
+		cmd := strings.ToLower(parts[0])
+		args := ""
+		if len(parts) > 1 {
+			args = strings.TrimSpace(parts[1])
+		}
+
+		switch cmd {
+		case "stop":
+			fmt.Println("[Console] Stopping server...")
+			log.Info("console: stop requested")
+			if s := handle.get(); s != nil {
+				s.Close()
+			} else {
+				plugin.DisableAll()
+				os.Exit(0)
+			}
+			return
+
+		case "list":
+			playerMapMu.RLock()
+			if len(playerMap) == 0 {
+				fmt.Println("No players online.")
+			} else {
+				names := make([]string, 0, len(playerMap))
+				for n := range playerMap {
+					names = append(names, n)
+				}
+				fmt.Printf("Online (%d): %s\n", len(playerMap), strings.Join(names, ", "))
+			}
+			playerMapMu.RUnlock()
+
+		case "kick":
+			if args == "" {
+				fmt.Println("Usage: kick <player> [reason]")
+				continue
+			}
+			kp := strings.SplitN(args, " ", 2)
+			reason := "Kicked by an operator"
+			if len(kp) > 1 {
+				reason = kp[1]
+			}
+			if p, ok := lookupPlayer(kp[0]); ok {
+				p.Disconnect(reason)
+				fmt.Printf("Kicked %s: %s\n", kp[0], reason)
+				log.Info("console: kicked player", "name", kp[0], "reason", reason)
+			} else {
+				fmt.Printf("Player '%s' is not online.\n", kp[0])
+			}
+
+		case "say":
+			if args == "" {
+				fmt.Println("Usage: say <message>")
+				continue
+			}
+			msg := "[Server] " + args
+			playerMapMu.RLock()
+			for _, p := range playerMap {
+				p.Message(msg)
+			}
+			playerMapMu.RUnlock()
+			fmt.Println(msg)
+			log.Info("console: broadcast", "message", args)
+
+		case "op":
+			if args == "" {
+				fmt.Println("Usage: op <player>")
+				continue
+			}
+			ops := loadOps(log)
+			ops[args] = struct{}{}
+			saveOps(ops, log)
+			fmt.Printf("Made %s a server operator.\n", args)
+			log.Info("console: opped player", "name", args)
+
+		case "deop":
+			if args == "" {
+				fmt.Println("Usage: deop <player>")
+				continue
+			}
+			ops := loadOps(log)
+			delete(ops, args)
+			saveOps(ops, log)
+			fmt.Printf("Removed %s from operators.\n", args)
+			log.Info("console: deopped player", "name", args)
+
+		case "ops":
+			ops := loadOps(log)
+			if len(ops) == 0 {
+				fmt.Println("No operators configured.")
+			} else {
+				names := make([]string, 0, len(ops))
+				for n := range ops {
+					names = append(names, n)
+				}
+				sort.Strings(names)
+				fmt.Printf("Operators (%d): %s\n", len(ops), strings.Join(names, ", "))
+			}
+
+		case "help":
+			fmt.Println("Commands: stop | list | kick <player> [reason] | say <message> | op <player> | deop <player> | ops | help")
+
+		default:
+			fmt.Printf("Unknown command '%s'. Type 'help' for a list.\n", cmd)
+		}
+	}
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -61,6 +240,11 @@ func main() {
 		log.Info("Addons loaded", "count", len(loadedAddons))
 	}
 
+	// Start the console goroutine immediately so operators can run commands
+	// (e.g. /op) while the world and bridge are initialising.
+	handle := &srvHandle{}
+	go runConsole(log, handle)
+
 	// Defaults — overridden by overmind.toml if present.
 	root := overmindRoot{}
 	root.Bedrock = server.DefaultConfig()
@@ -72,8 +256,6 @@ func main() {
 	root.Bedrock.Players.Folder = "server/bedrock/players"
 	root.Bedrock.Resources.Folder = "server/bedrock/resources"
 	root.Bedrock.Resources.AutoBuildPack = true
-	// Disable Xbox Live auth for local dev; set AuthEnabled = true in overmind.toml for production.
-	root.Bedrock.Server.AuthEnabled = false
 	root.Bridge.Address = ":25566"
 
 	if data, err := os.ReadFile(configPath); err == nil {
@@ -86,6 +268,24 @@ func main() {
 		log.Error("read overmind.toml", "err", err)
 		plugin.DisableAll()
 		os.Exit(1)
+	}
+
+	// ── Xbox Live authentication — always enforced for EULA compliance ────────
+	// The TOML value is intentionally ignored and overridden here.
+	// To disable for LOCAL DEVELOPMENT ONLY, set OVERMIND_DEV_OFFLINE=true.
+	// WARNING: Disabling authentication likely violates the Minecraft EULA.
+	//          NEVER run with auth disabled on a public-facing server.
+	authEnv := os.Getenv("OVERMIND_DEV_OFFLINE")
+	if authEnv == "true" || authEnv == "1" {
+		root.Bedrock.Server.AuthEnabled = false
+		log.Warn("╔══════════════════════════════════════════════════════╗")
+		log.Warn("║  OFFLINE MODE ENABLED — EULA WARNING                 ║")
+		log.Warn("║  Xbox Live auth DISABLED (OVERMIND_DEV_OFFLINE=true) ║")
+		log.Warn("║  This likely violates the Minecraft EULA.            ║")
+		log.Warn("║  NEVER run in this mode on a public-facing server.   ║")
+		log.Warn("╚══════════════════════════════════════════════════════╝")
+	} else {
+		root.Bedrock.Server.AuthEnabled = true
 	}
 
 	uc := root.Bedrock
@@ -150,13 +350,10 @@ func main() {
 	})
 
 	srv := conf.New()
+	handle.set(srv) // expose server to console goroutine
 	srv.Listen()
 
 	// Accept blocks until all listeners are closed (server shutdown).
-	// For each Bedrock player that connects:
-	//   1. Track in playerMap for command dispatch.
-	//   2. Emit a "join" event to the Java side.
-	//   3. Assign a PlayerHandler that forwards move/quit events and removes from map.
 	for p := range srv.Accept() {
 		addPlayer(p)
 		pos := p.Position()

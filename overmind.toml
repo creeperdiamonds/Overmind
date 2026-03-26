@@ -26,6 +26,10 @@ view_distance = 8
 # Maximum number of simultaneous Java Edition players.
 max_players = 100
 
+# NOTE: Online mode (Mojang/Xbox Live authentication) is always enforced for
+# EULA compliance and cannot be disabled via this config file.
+# To disable for LOCAL DEVELOPMENT ONLY, see the server startup flags.
+
 [java.world]
 # Whether to persist the Java world to disk between restarts.
 save_data = true
@@ -47,9 +51,8 @@ address = ":25566"
 # Display name shown in the Bedrock server list and client UI.
 Name = "Overmind"
 
-# Set to true to require Xbox Live authentication (production).
-# Keep false for LAN / development use.
-AuthEnabled = false
+# NOTE: Xbox Live authentication is always enforced for EULA compliance.
+# To disable for LOCAL DEVELOPMENT ONLY, set env var OVERMIND_DEV_OFFLINE=true.
 
 [bedrock.Network]
 # UDP address for Bedrock Edition clients (RakNet).

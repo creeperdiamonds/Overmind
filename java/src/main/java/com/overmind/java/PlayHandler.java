@@ -440,6 +440,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
                         });
                     }
                 });
+        myEntry.channel = ctx.channel();
     }
 
     // -------------------------------------------------------------------------
