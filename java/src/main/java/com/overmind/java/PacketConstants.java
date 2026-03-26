@@ -31,11 +31,11 @@ public final class PacketConstants {
 
     // ── Play state (S→C) ─────────────────────────────────────────────────────
     /** Login (Play) — first Play-state packet from server; sets entity ID, world info, etc. */
-    public static final int PLAY_LOGIN                      = 0x30;
+    public static final int PLAY_LOGIN                      = 0x2B;
     /** Synchronize Player Position — teleports the player to the spawn point. */
-    public static final int PLAY_SYNC_POSITION              = 0x46;
+    public static final int PLAY_SYNC_POSITION              = 0x40;
     /** Keep Alive (server→client) — server heartbeat; client must echo it back. */
-    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x2B;
+    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x26;
 
     /**
      * Set Center Chunk (server→client) — tells the client which chunk is the view centre.
