@@ -1,5 +1,6 @@
 package com.overmind.java;
 
+import com.overmind.api.OvermindConfig;
 import com.overmind.api.OverworldGenerator;
 import com.overmind.api.VertexGraphManager;
 import com.overmind.api.WorldStorage;
@@ -19,10 +20,7 @@ import java.nio.file.Paths;
 
 public class OvermindServer {
     private static final Logger logger = LoggerFactory.getLogger(OvermindServer.class);
-    private static final int TCP_PORT     = 25565;
     private static final int BEDROCK_PORT = 19132;
-    private static final int VIEW_DISTANCE = 8;
-    private static final boolean OVERMIND_MODE = true; // Bedrock-Primary
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -32,17 +30,24 @@ public class OvermindServer {
     private final PlayerRegistry playerRegistry = new PlayerRegistry();
 
     public void start() throws Exception {
-        logger.info("Starting Overmind Server (TCP:{}, UDP:{})", TCP_PORT, BEDROCK_PORT);
-
-        long worldSeed = Long.parseLong(System.getProperty("overmind.seed", "12345"));
-        WorldStorage storage = null;
+        OvermindConfig cfg = new OvermindConfig();
         try {
-            storage = new WorldStorage("overworld", Paths.get("server", "java"));
+            cfg = OvermindConfig.load(Paths.get("overmind.toml"));
         } catch (IOException e) {
-            logger.warn("Could not initialise world storage — world will not be persisted: {}", e.getMessage());
+            logger.warn("Could not read overmind.toml — using defaults: {}", e.getMessage());
         }
-        OverworldGenerator generator = new OverworldGenerator(worldSeed);
-        vertexGraphManager = new VertexGraphManager(VIEW_DISTANCE, OVERMIND_MODE, storage, generator);
+        logger.info("Starting Overmind Server (TCP:{}, mode:{})", cfg.port, cfg.mode);
+
+        WorldStorage storage = null;
+        if (cfg.worldSaveData) {
+            try {
+                storage = new WorldStorage("overworld", Paths.get(cfg.worldFolder));
+            } catch (IOException e) {
+                logger.warn("Could not initialise world storage — world will not be persisted: {}", e.getMessage());
+            }
+        }
+        OverworldGenerator generator = new OverworldGenerator(cfg.seed);
+        vertexGraphManager = new VertexGraphManager(cfg.viewDistance, cfg.isOvermindMode(), storage, generator);
 
         bossGroup  = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
@@ -68,20 +73,21 @@ public class OvermindServer {
                     .childOption(ChannelOption.SO_KEEPALIVE, true)
                     .childOption(ChannelOption.TCP_NODELAY, true);
 
-            ChannelFuture tcpFuture = tcpBootstrap.bind(TCP_PORT).sync();
+            ChannelFuture tcpFuture = tcpBootstrap.bind(cfg.port).sync();
             tcpChannel = tcpFuture.channel();
-            logger.info("TCP listener started on port {} (Java + HTTP + proxied Bedrock)", TCP_PORT);
+            logger.info("TCP listener started on port {} (Java + HTTP + proxied Bedrock)", cfg.port);
 
-            if (OVERMIND_MODE) {
+            if (cfg.isOvermindMode()) {
                 // ── OVERMIND (Bedrock-Primary): Dragonfly Go engine owns :19132. ──
                 // Start the bridge client that subscribes to Dragonfly's TCP event
                 // stream (:25566) and registers Bedrock players into the shared
                 // PlayerRegistry so Java clients can see them.
                 DragonflybridgeClient bridgeClient =
-                        new DragonflybridgeClient(playerRegistry);
+                        new DragonflybridgeClient(cfg.bridgeHost(), cfg.bridgePort(), playerRegistry);
                 bridgeClient.start();
                 OvermindBridge.INSTANCE.install(new OvermindPlayerStore(playerRegistry, bridgeClient));
-                logger.info("OVERMIND mode: Dragonfly bridge client started (UDP :19132 owned by Go engine)");
+                logger.info("OVERMIND mode: Dragonfly bridge client started (bridge={}, UDP :19132 owned by Go engine)",
+                        cfg.bridgeAddress);
             } else {
                 // ── OVERJAVA (Java-Primary): Java server owns :19132 directly. ──
                 Bootstrap udpBootstrap = new Bootstrap();
@@ -94,7 +100,7 @@ public class OvermindServer {
                 logger.info("UDP listener started on port {} (native Bedrock Edition)", BEDROCK_PORT);
             }
 
-            logger.info("Overmind Server ready — seed={}", worldSeed);
+            logger.info("Overmind Server ready — seed={}", cfg.seed);
             tcpChannel.closeFuture().sync();
         } finally {
             shutdown();

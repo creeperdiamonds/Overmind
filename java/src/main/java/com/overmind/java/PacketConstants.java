@@ -2,6 +2,7 @@ package com.overmind.java;
 
 /**
  * Shared packet-level constants used across all Netty handlers.
+ * Packet IDs target Java Edition 1.21.11 (protocol 774).
  */
 public final class PacketConstants {
 
@@ -30,42 +31,42 @@ public final class PacketConstants {
 
     // ── Play state (S→C) ─────────────────────────────────────────────────────
     /** Login (Play) — first Play-state packet from server; sets entity ID, world info, etc. */
-    public static final int PLAY_LOGIN                      = 0x2B;
+    public static final int PLAY_LOGIN                      = 0x30;
     /** Synchronize Player Position — teleports the player to the spawn point. */
-    public static final int PLAY_SYNC_POSITION              = 0x40;
+    public static final int PLAY_SYNC_POSITION              = 0x46;
     /** Keep Alive (server→client) — server heartbeat; client must echo it back. */
-    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x26;
+    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x2B;
 
     /**
      * Set Center Chunk (server→client) — tells the client which chunk is the view centre.
      * Must be sent before chunk data so the client knows which chunks to keep loaded.
-     * Packet ID 0x54 is the 1.21.4 value; update if it shifts in a future protocol version.
+     * Packet ID 0x5C in 1.21.11 (protocol 774).
      */
-    public static final int PLAY_SET_CENTER_CHUNK           = 0x54;
+    public static final int PLAY_SET_CENTER_CHUNK           = 0x5C;
 
     // ── Play state (C→S) ─────────────────────────────────────────────────────
     /** Confirm Teleport — client acks a Synchronize Player Position packet. */
     public static final int PLAY_CONFIRM_TELEPORT           = 0x00;
     /**
      * Keep Alive (client→server) — client echo of the server's Keep Alive payload.
-     * In 1.21.4 (protocol 774) this is 0x1B; 0x18 is Set Player Position And Rotation.
+     * In 1.21.11 (protocol 774) this is 0x1B; 0x1E is Set Player Position And Rotation.
      */
     public static final int PLAY_KEEP_ALIVE_SERVERBOUND     = 0x1B;
 
     // ── Play state (C→S) — player movement ───────────────────────────────────
-    /** Set Player Position (C→S 0x17) — position-only update (no rotation change). */
-    public static final int PLAY_SET_PLAYER_POSITION        = 0x17;
-    /** Set Player Position And Rotation (C→S 0x18) — full position + yaw/pitch update. */
-    public static final int PLAY_SET_PLAYER_POS_ROT         = 0x18;
-    /** Set Player Rotation (C→S 0x19) — rotation-only update (no position change). */
-    public static final int PLAY_SET_PLAYER_ROTATION        = 0x19;
+    /** Set Player Position (C→S 0x1D) — position-only update (no rotation change). */
+    public static final int PLAY_SET_PLAYER_POSITION        = 0x1D;
+    /** Set Player Position And Rotation (C→S 0x1E) — full position + yaw/pitch update. */
+    public static final int PLAY_SET_PLAYER_POS_ROT         = 0x1E;
+    /** Set Player Rotation (C→S 0x1F) — rotation-only update (no position change). */
+    public static final int PLAY_SET_PLAYER_ROTATION        = 0x1F;
     /**
      * Interact — sent when the client attacks or interacts with an entity.
      * Body: VarInt entityId, VarInt actionType (0=INTERACT, 1=ATTACK, 2=INTERACT_AT), Boolean sneaking.
      */
-    public static final int PLAY_INTERACT                   = 0x16;
+    public static final int PLAY_INTERACT                   = 0x19;
     /** Swing Arm (C→S) — client swings the held item; precedes or accompanies an attack. */
-    public static final int PLAY_SWING_ARM                  = 0x36;
+    public static final int PLAY_SWING_ARM                  = 0x3C;
 
     // ── Play state (S→C) — player visibility ─────────────────────────────────
     /**
@@ -75,44 +76,84 @@ public final class PacketConstants {
      */
     public static final int PLAY_SPAWN_ENTITY               = 0x01;
     /**
-     * Player Info Update (S→C 0x3E) — adds/updates players in the tab list.
+     * Player Info Update (S→C 0x44) — adds/updates players in the tab list.
      * Required before Spawn Entity for player entities so the client can load their skin.
      * Actions byte is a bitmask: 0x01=ADD_PLAYER, 0x08=UPDATE_LISTED.
      */
-    public static final int PLAY_PLAYER_INFO_UPDATE         = 0x3E;
+    public static final int PLAY_PLAYER_INFO_UPDATE         = 0x44;
     /**
-     * Player Info Remove (S→C 0x3C) — removes players from the tab list.
+     * Player Info Remove (S→C 0x43) — removes players from the tab list.
      * Body: VarInt count, UUID[] uuids.
      */
-    public static final int PLAY_PLAYER_INFO_REMOVE         = 0x3C;
+    public static final int PLAY_PLAYER_INFO_REMOVE         = 0x43;
     /**
-     * Remove Entities (S→C 0x42) — despawns entities from the world.
+     * Remove Entities (S→C 0x4B) — despawns entities from the world.
      * Body: VarInt[] entityIds.
      */
-    public static final int PLAY_REMOVE_ENTITIES            = 0x42;
+    public static final int PLAY_REMOVE_ENTITIES            = 0x4B;
     /**
-     * Teleport Entity (S→C 0x6E) — moves an entity to absolute coordinates.
+     * Teleport Entity (S→C 0x7B) — moves an entity to absolute coordinates.
      * Body: VarInt entityId, Double x/y/z, VarInt velX/Y/Z, Angle yaw/pitch, Boolean onGround.
      */
-    public static final int PLAY_TELEPORT_ENTITY            = 0x6E;
+    public static final int PLAY_TELEPORT_ENTITY            = 0x7B;
     /**
-     * Rotate Head (S→C 0x46) — updates the head yaw of an entity independently of body yaw.
+     * Rotate Head (S→C 0x51) — updates the head yaw of an entity independently of body yaw.
      * Body: VarInt entityId, Angle headYaw.
      */
-    public static final int PLAY_ROTATE_HEAD                = 0x46;
+    public static final int PLAY_ROTATE_HEAD                = 0x51;
 
     /**
-     * Entity type ID for {@code minecraft:player} in Java 1.21.4.
-     * Verify against the vanilla 1.21.4 entity_type registry report if this shifts.
+     * Entity type ID for {@code minecraft:player} in Java 1.21.11 (protocol 774).
+     * Verify against the vanilla entity_type registry report if this shifts.
      */
-    public static final int ENTITY_TYPE_PLAYER              = 128;
+    public static final int ENTITY_TYPE_PLAYER              = 155;
+
+    // ── Play state (S→C) — survival HUD ──────────────────────────────────────
+    /**
+     * Set Health (S→C 0x2A) — sends the player's current health, food, and saturation.
+     * Body: Float health, VarInt food, Float food_saturation.
+     * Must be sent on login so the client renders the health/hunger bar correctly.
+     */
+    public static final int PLAY_SET_HEALTH                 = 0x2A;
+
+    // ── Play state (S→C) — world events ──────────────────────────────────────
+    /**
+     * Game Event (S→C 0x22) — general-purpose game event packet.
+     * Body: VarInt type, Float value.
+     * Type 13 (START_WAITING_FOR_LEVEL_CHUNKS) MUST be sent after Login (Play) and
+     * before any chunk data so the client exits the loading screen (required since 1.20.3).
+     */
+    public static final int PLAY_GAME_EVENT                 = 0x22;
+    /** Game Event type 13: tells the client to start waiting for level (chunk) data. */
+    public static final int GAME_EVENT_START_WAITING_FOR_CHUNKS = 13;
+
+    // ── Play state (S→C) — chunk batching (required since 1.20.3) ─────────────
+    /**
+     * Chunk Batch Start (S→C 0x0D) — marks the beginning of a batch of Chunk Data packets.
+     * Body: (empty). Must be sent before the first chunk in each batch.
+     */
+    public static final int PLAY_CHUNK_BATCH_START          = 0x0D;
+    /**
+     * Chunk Batch Finished (S→C 0x0C) — marks the end of a chunk batch.
+     * Body: VarInt batchSize (number of chunks in this batch).
+     * The client responds with Chunk Batch Received (C→S) to throttle future batches.
+     */
+    public static final int PLAY_CHUNK_BATCH_FINISHED       = 0x0C;
+
+    // ── Play state (C→S) — chunk batch acknowledgement ───────────────────────
+    /**
+     * Chunk Batch Received (C→S) — client sends this after receiving Chunk Batch Finished.
+     * Body: Float desiredChunksPerTick. Used for flow control; safe to ignore server-side.
+     * Exact packet ID may vary by protocol version; log-and-discard is acceptable.
+     */
+    public static final int PLAY_CHUNK_BATCH_RECEIVED       = 0x08;
 
     // ── Play state (S→C) — combat feedback ───────────────────────────────────
     /**
-     * Entity Animation (S→C 0x03) — sent to reset the client's attack cooldown indicator.
+     * Entity Animation (S→C 0x02) — sent to reset the client's attack cooldown indicator.
      * Body: VarInt entityId, VarInt animationId (1 = WAKE_UP / cooldown reset).
      */
-    public static final int PLAY_ENTITY_ANIMATION           = 0x03;
+    public static final int PLAY_ENTITY_ANIMATION           = 0x02;
 
     // ── Bedrock RakNet packet IDs ─────────────────────────────────────────────
     /** RakNet: Unconnected Ping (sent by client; timestamp + magic). */

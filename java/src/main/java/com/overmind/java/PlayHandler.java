@@ -1,5 +1,6 @@
 package com.overmind.java;
 
+import com.overmind.api.ChunkNode;
 import com.overmind.api.VertexGraphManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -32,13 +33,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PlayHandler extends ChannelInboundHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(PlayHandler.class);
 
-    private static final int ENTITY_ID        = 1;
-    private static final double SPAWN_X       = 0.5;
-    private static final double SPAWN_Y       = 100.0;
-    private static final double SPAWN_Z       = 0.5;
+    private static final int    ENTITY_ID     = 1;
+    private static final double SPAWN_X       = 8.5;   // centre of spawn chunk (0,0)
+    private static final double SPAWN_Z       = 8.5;
     private static final float  SPAWN_YAW     = 0.0f;
     private static final float  SPAWN_PITCH   = 0.0f;
     private static final int    TELEPORT_ID   = 1;
+
+    /** Computed at join time from the actual terrain surface; fallback is 100. */
+    private double spawnY = 100.0;
 
     private final String username;
     private final VertexGraphManager vertexGraphManager;
@@ -62,9 +65,13 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         logger.info("Play state entered for {}", username);
         sendLoginPlay(ctx);
-        sendSyncPosition(ctx);
+        // Game Event 13 (START_WAITING_FOR_LEVEL_CHUNKS) must come before any chunk data.
+        // Without it, 1.20.3+ clients stay on the loading screen indefinitely.
+        sendGameEvent(ctx, PacketConstants.GAME_EVENT_START_WAITING_FOR_CHUNKS, 0.0f);
+        loadAndSendSpawnChunks(ctx);  // also computes spawnY from terrain surface
+        sendSyncPosition(ctx);         // uses spawnY computed above
+        sendSetHealth(ctx);            // initialize health/hunger bars
         scheduleKeepAlive(ctx);
-        loadAndSendSpawnChunks(ctx);
         registerWithRegistry(ctx);
     }
 
@@ -119,6 +126,13 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
                 case PacketConstants.PLAY_SWING_ARM:
                     // arm-swing animation only — no server-side action needed
                     logger.debug("Swing Arm from {}", username);
+                    break;
+
+                case PacketConstants.PLAY_CHUNK_BATCH_RECEIVED:
+                    // Client acknowledges the chunk batch and reports desired chunks/tick.
+                    // We don't implement dynamic chunk throttling — safely consume and ignore.
+                    if (buf.readableBytes() >= 4) buf.skipBytes(4); // Float desiredChunksPerTick
+                    logger.debug("Chunk Batch Received from {}", username);
                     break;
 
                 default:
@@ -216,7 +230,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
         writeVarInt(payload, PacketConstants.PLAY_SYNC_POSITION);
 
         payload.writeDouble(SPAWN_X);           // x
-        payload.writeDouble(SPAWN_Y);           // y
+        payload.writeDouble(spawnY);            // y — computed from terrain surface
         payload.writeDouble(SPAWN_Z);           // z
         payload.writeDouble(0.0);               // velocity x
         payload.writeDouble(0.0);               // velocity y
@@ -227,7 +241,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
         writeVarInt(payload, TELEPORT_ID);      // teleport id (client echoes in Confirm Teleport)
 
         ctx.writeAndFlush(frame(ctx, payload));
-        logger.info("Synchronize Player Position sent to {} at ({}, {}, {})", username, SPAWN_X, SPAWN_Y, SPAWN_Z);
+        logger.info("Synchronize Player Position sent to {} at ({}, {}, {})", username, SPAWN_X, spawnY, SPAWN_Z);
     }
 
     /**
@@ -261,7 +275,8 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
 
     /**
      * Loads the spawn area chunks and sends each one to the client via
-     * {@link ChunkHandler#sendChunkToJavaClient}.
+     * {@link ChunkHandler#sendChunkToJavaClient}, wrapped in a Chunk Batch
+     * (required since 1.20.3). Also computes {@link #spawnY} from the terrain surface.
      */
     private void loadAndSendSpawnChunks(ChannelHandlerContext ctx) throws Exception {
         int viewDistance = vertexGraphManager.getViewDistance();
@@ -271,13 +286,45 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
 
         vertexGraphManager.loadArea(0, 0, viewDistance);
 
+        // Compute spawn Y from the actual terrain surface at the centre of chunk (0,0).
+        spawnY = computeSpawnY();
+        logger.info("Computed spawn Y={} for {}", spawnY, username);
+
+        // Chunk Batch Start — required in 1.20.3+; client uses batch to throttle loading.
+        sendChunkBatchStart(ctx);
+
         ChunkHandler chunkHandler = new ChunkHandler(vertexGraphManager);
+        int chunkCount = 0;
         for (int cx = -viewDistance; cx <= viewDistance; cx++) {
             for (int cz = -viewDistance; cz <= viewDistance; cz++) {
                 chunkHandler.sendChunkToJavaClient(ctx, cx, cz);
+                chunkCount++;
             }
         }
-        logger.info("Spawn chunks sent to {} ({}x{})", username, viewDistance * 2 + 1, viewDistance * 2 + 1);
+
+        // Chunk Batch Finished — client responds with Chunk Batch Received (C→S).
+        sendChunkBatchFinished(ctx, chunkCount);
+
+        logger.info("Spawn chunks sent to {} ({}x{}, {} total)", username,
+                viewDistance * 2 + 1, viewDistance * 2 + 1, chunkCount);
+    }
+
+    /**
+     * Scans the spawn chunk (0,0) from the top down to find the highest solid block
+     * at position (8, y, 8) (centre of the chunk). Returns a Y coordinate 2 blocks
+     * above that surface so the player spawns standing on solid ground.
+     */
+    private double computeSpawnY() {
+        ChunkNode spawnChunk = vertexGraphManager.getChunk(0, 0);
+        if (spawnChunk == null || !spawnChunk.isLoaded()) {
+            return 100.0;
+        }
+        for (int y = 220; y >= 1; y--) {
+            if (spawnChunk.getBlock(8, y, 8) != 0) {
+                return y + 1.0; // feet land on y+1; head at y+2
+            }
+        }
+        return 70.0; // fallback
     }
 
     /**
@@ -366,7 +413,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
 
     private void registerWithRegistry(ChannelHandlerContext ctx) {
         if (playerRegistry == null) return;
-        myEntry = playerRegistry.register(username, false, SPAWN_X, SPAWN_Y, SPAWN_Z,
+        myEntry = playerRegistry.register(username, false, SPAWN_X, spawnY, SPAWN_Z,
                 new PlayerRegistry.PlayerListener() {
                     @Override
                     public void onPlayerJoined(PlayerRegistry.PlayerEntry joiner) {
@@ -491,6 +538,71 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
         writeVarInt(head, mover.entityId);
         head.writeByte(angleToByte(mover.headYaw));
         ctx.writeAndFlush(frame(ctx, head));
+    }
+
+    // ── New survival packets ──────────────────────────────────────────────────
+
+    /**
+     * Game Event (S→C 0x22) — general-purpose event.
+     * Type 13 (START_WAITING_FOR_LEVEL_CHUNKS) must be sent before chunk data
+     * or the client hangs on the loading screen (required since 1.20.3).
+     *
+     * <pre>
+     * VarInt  type
+     * Float   value
+     * </pre>
+     */
+    private void sendGameEvent(ChannelHandlerContext ctx, int type, float value) throws Exception {
+        ByteBuf payload = ctx.alloc().buffer();
+        writeVarInt(payload, PacketConstants.PLAY_GAME_EVENT);
+        writeVarInt(payload, type);
+        payload.writeFloat(value);
+        ctx.writeAndFlush(frame(ctx, payload));
+        logger.debug("Game Event type={} value={} sent to {}", type, value, username);
+    }
+
+    /**
+     * Set Health (S→C 0x2A) — initialises the health and hunger bars.
+     *
+     * <pre>
+     * Float   health          (20.0 = full, 0.0 = dead)
+     * VarInt  food            (20   = full)
+     * Float   food_saturation (5.0  = default starting value)
+     * </pre>
+     */
+    private void sendSetHealth(ChannelHandlerContext ctx) throws Exception {
+        ByteBuf payload = ctx.alloc().buffer();
+        writeVarInt(payload, PacketConstants.PLAY_SET_HEALTH);
+        payload.writeFloat(20.0f);   // full health
+        writeVarInt(payload, 20);    // full food
+        payload.writeFloat(5.0f);    // default saturation
+        ctx.writeAndFlush(frame(ctx, payload));
+        logger.debug("Set Health sent to {}", username);
+    }
+
+    /**
+     * Chunk Batch Start (S→C 0x0D) — opens a chunk batch.
+     * Body is empty; the client uses batches to throttle chunk loading.
+     */
+    private void sendChunkBatchStart(ChannelHandlerContext ctx) throws Exception {
+        ByteBuf payload = ctx.alloc().buffer();
+        writeVarInt(payload, PacketConstants.PLAY_CHUNK_BATCH_START);
+        ctx.writeAndFlush(frame(ctx, payload));
+    }
+
+    /**
+     * Chunk Batch Finished (S→C 0x0C) — closes a chunk batch.
+     *
+     * <pre>
+     * VarInt  batchSize   number of Chunk Data packets in this batch
+     * </pre>
+     */
+    private void sendChunkBatchFinished(ChannelHandlerContext ctx, int batchSize) throws Exception {
+        ByteBuf payload = ctx.alloc().buffer();
+        writeVarInt(payload, PacketConstants.PLAY_CHUNK_BATCH_FINISHED);
+        writeVarInt(payload, batchSize);
+        ctx.writeAndFlush(frame(ctx, payload));
+        logger.debug("Chunk Batch Finished ({} chunks) sent to {}", batchSize, username);
     }
 
     // ─── Angle / UUID helpers ──────────────────────────────────────────────────

@@ -30,10 +30,17 @@ func lookupPlayer(name string) (*player.Player, bool) {
 	return p, ok
 }
 
-const (
-	configPath  = "overmind.toml"
-	bridgeAddr  = ":25566" // internal TCP port for the Java cross-play bridge
-)
+const configPath = "overmind.toml"
+
+// overmindRoot mirrors the top-level structure of overmind.toml so that the
+// Bedrock engine config lives under [bedrock.*] and the bridge address is read
+// from [bridge].
+type overmindRoot struct {
+	Bedrock server.UserConfig `toml:"bedrock"`
+	Bridge  struct {
+		Address string `toml:"address"`
+	} `toml:"bridge"`
+}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -54,20 +61,23 @@ func main() {
 		log.Info("Addons loaded", "count", len(loadedAddons))
 	}
 
-	uc := server.DefaultConfig()
-	uc.Server.Name = "Overmind"
-	uc.Network.Address = ":19132"
-	uc.World.SaveData = true
-	uc.World.Folder = "server/bedrock/world"
-	uc.Players.SaveData = true
-	uc.Players.Folder = "server/bedrock/players"
-	uc.Resources.Folder = "server/bedrock/resources"
-	uc.Resources.AutoBuildPack = true
-	// Disable Xbox Live auth for local development; set AuthEnabled = true in overmind.toml for production.
-	uc.Server.AuthEnabled = false
+	// Defaults — overridden by overmind.toml if present.
+	root := overmindRoot{}
+	root.Bedrock = server.DefaultConfig()
+	root.Bedrock.Server.Name = "Overmind"
+	root.Bedrock.Network.Address = ":19132"
+	root.Bedrock.World.SaveData = true
+	root.Bedrock.World.Folder = "server/bedrock/world"
+	root.Bedrock.Players.SaveData = true
+	root.Bedrock.Players.Folder = "server/bedrock/players"
+	root.Bedrock.Resources.Folder = "server/bedrock/resources"
+	root.Bedrock.Resources.AutoBuildPack = true
+	// Disable Xbox Live auth for local dev; set AuthEnabled = true in overmind.toml for production.
+	root.Bedrock.Server.AuthEnabled = false
+	root.Bridge.Address = ":25566"
 
 	if data, err := os.ReadFile(configPath); err == nil {
-		if err = toml.Unmarshal(data, &uc); err != nil {
+		if err = toml.Unmarshal(data, &root); err != nil {
 			log.Error("parse overmind.toml", "err", err)
 			plugin.DisableAll()
 			os.Exit(1)
@@ -76,6 +86,12 @@ func main() {
 		log.Error("read overmind.toml", "err", err)
 		plugin.DisableAll()
 		os.Exit(1)
+	}
+
+	uc := root.Bedrock
+	bridgeAddr := root.Bridge.Address
+	if bridgeAddr == "" {
+		bridgeAddr = ":25566"
 	}
 
 	conf, err := uc.Config(log)

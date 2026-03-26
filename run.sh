@@ -20,7 +20,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MVN="$SCRIPT_DIR/apache-maven-3.9.6/bin/mvn"
 SERVER_JAR="$SCRIPT_DIR/JARS/overmind-java-1.0.0.jar"
+SERVER_DEV_JAR="$SCRIPT_DIR/JARS/overmind-java-dev-1.0.0.jar"
 BEDROCK_BIN="$SCRIPT_DIR/JARS/overmind-bedrock"
+BEDROCK_DEV_BIN="$SCRIPT_DIR/JARS/overmind-bedrock-dev"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -55,7 +57,7 @@ check_maven() {
 
 check_go() {
     if ! command -v go &>/dev/null; then
-        error "go not found on PATH. Go 1.24+ is required to build the Bedrock engine."
+        error "go not found on PATH. Go 1.25+ is required to build the Bedrock engine."
         exit 1
     fi
 }
@@ -74,15 +76,17 @@ cmd_test() {
 }
 
 cmd_build() {
-    info "Building fat JAR (skipping tests)..."
+    info "Building fat JARs (skipping tests)..."
     mkdir -p "$SCRIPT_DIR/JARS"
     "$MVN" -f "$SCRIPT_DIR/pom.xml" package -DskipTests
-    success "Build complete — JAR: $SERVER_JAR"
+    success "Build complete — JARs: $SERVER_JAR  $SERVER_DEV_JAR"
 
-    info "Building Go Bedrock engine..."
+    info "Building Go Bedrock engines..."
     check_go
-    (cd "$SCRIPT_DIR/bedrock" && go build -o "$BEDROCK_BIN" .)
+    (cd "$SCRIPT_DIR/bedrock"     && go build -o "$BEDROCK_BIN"     .)
     success "Build complete — bin: $BEDROCK_BIN"
+    (cd "$SCRIPT_DIR/bedrock-dev" && go build -o "$BEDROCK_DEV_BIN" .)
+    success "Build complete — bin: $BEDROCK_DEV_BIN"
 }
 
 cmd_start() {
@@ -128,21 +132,61 @@ cmd_bedrock() {
         mkdir -p "$SCRIPT_DIR/JARS"
         (cd "$SCRIPT_DIR/bedrock" && go build -o "$BEDROCK_BIN" .)
     fi
-    info "Starting Dragonfly engine only (port :19132)..."
+    info "Starting Bedrock engine (production, port :19132)..."
     exec "$BEDROCK_BIN"
+}
+
+cmd_bedrock_dev() {
+    if [[ ! -f "$BEDROCK_DEV_BIN" ]]; then
+        warn "bedrock-dev binary not found. Building first..."
+        check_go
+        mkdir -p "$SCRIPT_DIR/JARS"
+        (cd "$SCRIPT_DIR/bedrock-dev" && go build -o "$BEDROCK_DEV_BIN" .)
+        success "Build complete — bin: $BEDROCK_DEV_BIN"
+    fi
+    info "Starting Bedrock engine (dev — plugins + addons enabled, port :19132)..."
+    exec "$BEDROCK_DEV_BIN"
+}
+
+cmd_overmind_dev() {
+    # Ensure both dev binaries exist
+    if [[ ! -f "$SERVER_DEV_JAR" ]] || [[ ! -f "$BEDROCK_DEV_BIN" ]]; then
+        warn "One or more dev binaries missing. Building first..."
+        cmd_build
+    fi
+
+    info "Starting OVERMIND-DEV (Bedrock-primary, dev mode)..."
+    info "Go engine : $BEDROCK_DEV_BIN  → :19132 (plugins + addons) + :25566 (bridge)"
+    info "Java JAR  : $SERVER_DEV_JAR   → :25565 (Java + plugin API)"
+    echo ""
+
+    "$BEDROCK_DEV_BIN" &
+    BEDROCK_PID=$!
+    info "Dragonfly-dev engine started (PID $BEDROCK_PID)"
+
+    trap 'info "Shutting down..."; kill "$BEDROCK_PID" 2>/dev/null; wait "$BEDROCK_PID" 2>/dev/null' EXIT INT TERM
+
+    java -jar "$SERVER_DEV_JAR"
 }
 
 usage() {
     echo -e "${BOLD}Overmind runner${RESET}"
     echo ""
-    echo "  $0 test          Run unit tests"
-    echo "  $0 build         Build fat JAR + Go binary (skip tests)"
-    echo "  $0 start         OVERJAVA mode — Java JAR only"
-    echo "  $0 overmind      OVERMIND mode — Go engine + Java JAR (dual-service)"
-    echo "  $0 bedrock       Start Go Dragonfly engine only"
-    echo "  $0 clean         Remove all build output"
-    echo "  $0 clean-build   clean + build"
-    echo "  $0 clean-test    clean + test"
+    echo "  Production"
+    echo "  $0 start           OVERJAVA mode — Java JAR only (:25565)"
+    echo "  $0 overmind        OVERMIND mode — Go engine (:19132) + Java JAR (:25565)"
+    echo "  $0 bedrock         Bedrock engine only (no Java bridge)"
+    echo ""
+    echo "  Development (plugins + addons enabled)"
+    echo "  $0 overmind-dev    OVERMIND-DEV — bedrock-dev + java-dev (dual-service)"
+    echo "  $0 bedrock-dev     Bedrock-dev engine only"
+    echo ""
+    echo "  Build / CI"
+    echo "  $0 build           Build all JARs + Go binaries (skip tests)"
+    echo "  $0 test            Run all unit tests"
+    echo "  $0 clean           Remove all build output"
+    echo "  $0 clean-build     clean + build"
+    echo "  $0 clean-test      clean + test"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -150,14 +194,16 @@ check_java
 check_maven
 
 case "${1:-}" in
-    test)         cmd_test ;;
-    build)        cmd_build ;;
-    start)        cmd_start ;;
-    overmind)     cmd_overmind ;;
-    bedrock)      cmd_bedrock ;;
-    clean)        cmd_clean ;;
-    clean-build)  cmd_clean; cmd_build ;;
-    clean-test)   cmd_clean; cmd_test ;;
+    test)           cmd_test ;;
+    build)          cmd_build ;;
+    start)          cmd_start ;;
+    overmind)       cmd_overmind ;;
+    overmind-dev)   cmd_overmind_dev ;;
+    bedrock)        cmd_bedrock ;;
+    bedrock-dev)    cmd_bedrock_dev ;;
+    clean)          cmd_clean ;;
+    clean-build)    cmd_clean; cmd_build ;;
+    clean-test)     cmd_clean; cmd_test ;;
     ""|help|--help|-h) usage ;;
     *)
         error "Unknown command: $1"

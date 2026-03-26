@@ -64,11 +64,13 @@ public class LoginHandler extends ChannelInboundHandlerAdapter {
     // -------------------------------------------------------------------------
 
     /**
-     * Login Success (0x02) — Minecraft 1.20.2+ / protocol 764+ format:
+     * Login Success (0x02) — protocol 766+ (1.20.6+) format:
      *   UUID                  16 bytes (two big-endian longs)
      *   Username              String
      *   Number of properties  VarInt  (0 = offline mode, no skin properties)
-     *   Strict error handling Boolean (false)
+     *
+     * Note: "Strict Error Handling" was present only in protocols 765 (1.20.3–1.20.5)
+     * and was removed in 1.20.6 (protocol 766). Not present in protocol 774.
      */
     private void sendLoginSuccess(ChannelHandlerContext ctx, String username) throws Exception {
         ByteBuf response = ctx.alloc().buffer();
@@ -79,7 +81,6 @@ public class LoginHandler extends ChannelInboundHandlerAdapter {
 
         writeString(response, username);
         writeVarInt(response, 0);       // properties count (offline mode → none)
-        response.writeBoolean(false);   // strict error handling
 
         ctx.writeAndFlush(frame(ctx, response));
         logger.info("Login Success sent to {}", username);

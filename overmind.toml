@@ -1,0 +1,77 @@
+# overmind.toml — Unified Overmind server configuration
+# All values shown are the defaults; uncomment and edit as needed.
+#
+# Sections:
+#   [java]          — Java Edition server (OvermindServer.java)
+#   [bridge]        — Internal TCP link between the Go Bedrock engine and the Java server
+#   [bedrock.*]     — Bedrock Edition server (Dragonfly Go engine)
+
+# ── Java Edition ─────────────────────────────────────────────────────────────
+
+[java]
+# TCP port for Java Edition clients (and the HTTP status endpoint).
+port = 25565
+
+# Server mode:
+#   "overmind"  — Bedrock-primary: Go engine owns :19132, Java bridges via [bridge].
+#   "overjava"  — Java-primary: Java server owns :19132 directly (no Go engine).
+mode = "overmind"
+
+# World generation seed.
+seed = 12345
+
+# Chunk view distance (in chunks) sent to Java clients.
+view_distance = 8
+
+# Maximum number of simultaneous Java Edition players.
+max_players = 100
+
+[java.world]
+# Whether to persist the Java world to disk between restarts.
+save_data = true
+
+# Directory where the Java world (LevelDB) is stored.
+folder = "server/java"
+
+# ── Cross-play Bridge ─────────────────────────────────────────────────────────
+
+[bridge]
+# Internal TCP address of the Go → Java event bridge.
+# Go engine listens here; Java server connects as a client.
+# Format: "host:port" or ":port" (":port" means all interfaces / localhost).
+address = ":25566"
+
+# ── Bedrock Edition ───────────────────────────────────────────────────────────
+
+[bedrock.Server]
+# Display name shown in the Bedrock server list and client UI.
+Name = "Overmind"
+
+# Set to true to require Xbox Live authentication (production).
+# Keep false for LAN / development use.
+AuthEnabled = false
+
+[bedrock.Network]
+# UDP address for Bedrock Edition clients (RakNet).
+Address = ":19132"
+
+[bedrock.World]
+# Whether to persist the Bedrock world to disk between restarts.
+SaveData = true
+
+# Directory where LevelDB world chunks are stored.
+Folder = "server/bedrock/world"
+
+[bedrock.Players]
+# Whether to save player data (inventory, position, etc.) between restarts.
+SaveData = true
+
+# Directory where per-player data files are stored.
+Folder = "server/bedrock/players"
+
+[bedrock.Resources]
+# Directory searched for resource pack files (.mcpack / .mcaddon).
+Folder = "server/bedrock/resources"
+
+# Automatically bundle server-side textures into a downloadable pack.
+AutoBuildPack = true

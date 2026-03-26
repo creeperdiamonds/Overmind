@@ -6,6 +6,8 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+
 public class StatusHandler extends ChannelInboundHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(StatusHandler.class);
     
@@ -32,18 +34,22 @@ public class StatusHandler extends ChannelInboundHandlerAdapter {
     }
     
     private void sendStatusResponse(ChannelHandlerContext ctx) throws Exception {
-        String jsonResponse = "{\"version\":{\"name\":\"Overmind 1.21\",\"protocol\":763},\"players\":{\"max\":100,\"online\":0},\"description\":{\"text\":\"Overmind Server - Bedrock-Primary with Java Parity\"}}";
-        
-        ByteBuf response = ctx.alloc().buffer();
-        writeVarInt(response, jsonResponse.length());
-        response.writeBytes(jsonResponse.getBytes("UTF-8"));
-        
+        String jsonResponse = "{\"version\":{\"name\":\"Overmind 1.21.11\",\"protocol\":774},\"players\":{\"max\":100,\"online\":0},\"description\":{\"text\":\"Overmind Server - Bedrock-Primary with Java Parity\"}}";
+        byte[] jsonBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+
+        // Build packet body: [0x00 packet ID][json length VarInt][json bytes]
+        ByteBuf payload = ctx.alloc().buffer();
+        writeVarInt(payload, 0x00);             // packet ID for Status Response
+        writeVarInt(payload, jsonBytes.length);
+        payload.writeBytes(jsonBytes);
+
+        // Prefix with total body length
         ByteBuf packet = ctx.alloc().buffer();
-        writeVarInt(packet, response.readableBytes());
-        packet.writeBytes(response);
-        
+        writeVarInt(packet, payload.readableBytes());
+        packet.writeBytes(payload);
+
         ctx.writeAndFlush(packet);
-        response.release();
+        payload.release();
     }
     
     private void sendPingResponse(ChannelHandlerContext ctx, long payload) throws Exception {
