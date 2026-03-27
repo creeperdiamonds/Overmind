@@ -31,11 +31,11 @@ public final class PacketConstants {
 
     // ── Play state (S→C) ─────────────────────────────────────────────────────
     /** Login (Play) — first Play-state packet from server; sets entity ID, world info, etc. */
-    public static final int PLAY_LOGIN                      = 0x2B;
+    public static final int PLAY_LOGIN                      = 0x30;
     /** Synchronize Player Position — teleports the player to the spawn point. */
-    public static final int PLAY_SYNC_POSITION              = 0x40;
+    public static final int PLAY_SYNC_POSITION              = 0x46;
     /** Keep Alive (server→client) — server heartbeat; client must echo it back. */
-    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x26;
+    public static final int PLAY_KEEP_ALIVE_CLIENTBOUND     = 0x2B;
 
     /**
      * Set Center Chunk (server→client) — tells the client which chunk is the view centre.
@@ -92,10 +92,10 @@ public final class PacketConstants {
      */
     public static final int PLAY_REMOVE_ENTITIES            = 0x4B;
     /**
-     * Teleport Entity (S→C 0x7B) — moves an entity to absolute coordinates.
+     * Teleport Entity (S→C 0x23) — moves an entity to absolute coordinates.
      * Body: VarInt entityId, Double x/y/z, VarInt velX/Y/Z, Angle yaw/pitch, Boolean onGround.
      */
-    public static final int PLAY_TELEPORT_ENTITY            = 0x7B;
+    public static final int PLAY_TELEPORT_ENTITY            = 0x23;
     /**
      * Rotate Head (S→C 0x51) — updates the head yaw of an entity independently of body yaw.
      * Body: VarInt entityId, Angle headYaw.
@@ -110,20 +110,20 @@ public final class PacketConstants {
 
     // ── Play state (S→C) — survival HUD ──────────────────────────────────────
     /**
-     * Set Health (S→C 0x2A) — sends the player's current health, food, and saturation.
+     * Set Health (S→C 0x66) — sends the player's current health, food, and saturation.
      * Body: Float health, VarInt food, Float food_saturation.
      * Must be sent on login so the client renders the health/hunger bar correctly.
      */
-    public static final int PLAY_SET_HEALTH                 = 0x2A;
+    public static final int PLAY_SET_HEALTH                 = 0x66;
 
     // ── Play state (S→C) — world events ──────────────────────────────────────
     /**
-     * Game Event (S→C 0x22) — general-purpose game event packet.
+     * Game Event (S→C 0x26) — general-purpose game event packet.
      * Body: VarInt type, Float value.
      * Type 13 (START_WAITING_FOR_LEVEL_CHUNKS) MUST be sent after Login (Play) and
      * before any chunk data so the client exits the loading screen (required since 1.20.3).
      */
-    public static final int PLAY_GAME_EVENT                 = 0x22;
+    public static final int PLAY_GAME_EVENT                 = 0x26;
     /** Game Event type 13: tells the client to start waiting for level (chunk) data. */
     public static final int GAME_EVENT_START_WAITING_FOR_CHUNKS = 13;
 
@@ -174,17 +174,15 @@ public final class PacketConstants {
 
     // ── Play state (S→C) — chat / disconnect ──────────────────────────────────
     /**
-     * System Chat Message (S→C 0x72) — server-authoritative chat line.
+     * System Chat Message (S→C 0x77) — server-authoritative chat line.
      * Body: String content (JSON text component), Boolean overlay.
-     * Packet ID for 1.21.4 (protocol 769); verify if shifting on 774.
      */
-    public static final int PLAY_SYSTEM_CHAT          = 0x72;
+    public static final int PLAY_SYSTEM_CHAT          = 0x77;
     /**
-     * Disconnect (Play) (S→C 0x1D) — kicks the player with a JSON reason.
+     * Disconnect (Play) (S→C 0x20) — kicks the player with a JSON reason.
      * Body: String reason (JSON text component).
-     * Packet ID for 1.21.4 (protocol 769); verify if shifting on 774.
      */
-    public static final int PLAY_DISCONNECT           = 0x1D;
+    public static final int PLAY_DISCONNECT           = 0x20;
 
     // ── Bedrock RakNet packet IDs ─────────────────────────────────────────────
     /** RakNet: Unconnected Ping (sent by client; timestamp + magic). */
