@@ -18,9 +18,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>On entry (handlerAdded):
  * <ol>
- *   <li>Send Login (Play) (0x2B) — entity ID, game mode, world info
- *   <li>Send Synchronize Player Position (0x40) — spawn point + velocity (required since 1.21.2)
- *   <li>Schedule periodic Keep Alive (S→C 0x26) every 10 seconds
+ *   <li>Send Login (Play) (0x30) — entity ID, game mode, world info
+ *   <li>Send Synchronize Player Position (0x46) — spawn point + velocity (required since 1.21.2)
+ *   <li>Schedule periodic Keep Alive (S→C 0x2B) every 10 seconds
  *   <li>Load spawn chunks via VertexGraphManager, send each chunk with ChunkHandler logic
  * </ol>
  *
@@ -150,7 +150,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     // -------------------------------------------------------------------------
 
     /**
-     * Login (Play) — 0x2B (protocol 774 / 1.21.4).
+     * Login (Play) — 0x30 (protocol 774 / 1.21.11).
      *
      * <pre>
      * Int     entity_id
@@ -207,7 +207,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Synchronize Player Position — 0x40 (protocol 774 / 1.21.4).
+     * Synchronize Player Position — 0x46 (protocol 774 / 1.21.11).
      *
      * <p>Since 1.21.2 the packet includes velocity fields and the Teleport ID
      * moved to the END of the packet.
@@ -245,7 +245,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Keep Alive (S→C) — 0x26.
+     * Keep Alive (S→C) — 0x2B.
      * <pre>
      * Long  keep_alive_id
      * </pre>
@@ -544,7 +544,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     // ── New survival packets ──────────────────────────────────────────────────
 
     /**
-     * Game Event (S→C 0x22) — general-purpose event.
+     * Game Event (S→C 0x26) — general-purpose event.
      * Type 13 (START_WAITING_FOR_LEVEL_CHUNKS) must be sent before chunk data
      * or the client hangs on the loading screen (required since 1.20.3).
      *
@@ -563,7 +563,7 @@ public class PlayHandler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Set Health (S→C 0x2A) — initialises the health and hunger bars.
+     * Set Health (S→C 0x66) — initialises the health and hunger bars.
      *
      * <pre>
      * Float   health          (20.0 = full, 0.0 = dead)

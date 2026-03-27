@@ -17,8 +17,8 @@ import java.util.Map;
  * <h3>Packets used</h3>
  * <ul>
  *   <li><b>0x01 Spawn Entity</b> — creates the display entity in the world</li>
- *   <li><b>0x56 Set Entity Metadata</b> — sets the transformation and item</li>
- *   <li><b>0x04 Remove Entities</b> — despawns the entity when the Bedrock entity leaves</li>
+ *   <li><b>0x61 Set Entity Metadata</b> — sets the transformation and item</li>
+ *   <li><b>0x4B Remove Entities</b> — despawns the entity when the Bedrock entity leaves</li>
  * </ul>
  *
  * <h3>Entity type ID</h3>
@@ -43,10 +43,10 @@ public final class ItemDisplayPacketBuilder {
      */
     public static final int ENTITY_TYPE_ITEM_DISPLAY = 1;
 
-    // Packet IDs (Play state, S→C)
-    private static final int PKT_SPAWN_ENTITY   = 0x01;
-    private static final int PKT_SET_METADATA   = 0x56;
-    private static final int PKT_REMOVE_ENTITIES = 0x04;
+    // Packet IDs (Play state, S→C) — protocol 774 (1.21.11)
+    private static final int PKT_SPAWN_ENTITY    = 0x01;
+    private static final int PKT_SET_METADATA    = 0x61;
+    private static final int PKT_REMOVE_ENTITIES = 0x4B;
 
     // Entity metadata type tags (used in Set Entity Metadata entries)
     private static final int META_TYPE_TRANSFORMATION = 24; // Transformation (T+LR+S+RR)
@@ -88,7 +88,7 @@ public final class ItemDisplayPacketBuilder {
     // ── Transformation ───────────────────────────────────────────────────────
 
     /**
-     * Builds a framed {@code Set Entity Metadata} (0x56) packet that applies a
+     * Builds a framed {@code Set Entity Metadata} (0x61) packet that applies a
      * JOML {@link Matrix4f} as the Item Display entity's transformation.
      *
      * <p>The matrix is decomposed into translation, left-rotation (quaternion), scale, and
@@ -164,7 +164,7 @@ public final class ItemDisplayPacketBuilder {
     // ── Despawn ──────────────────────────────────────────────────────────────
 
     /**
-     * Builds a framed {@code Remove Entities} (0x04) packet to despawn all display bones
+     * Builds a framed {@code Remove Entities} (0x4B) packet to despawn all display bones
      * for one Bedrock entity.
      *
      * @param alloc        Netty allocator
