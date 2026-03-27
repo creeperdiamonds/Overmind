@@ -16,7 +16,7 @@ import java.util.function.IntUnaryOperator;
  * Builds Chunk Data and Update Light packets for Minecraft 1.21.4 (protocol 774).
  *
  * <h3>Packet ID</h3>
- * {@code 0x27} — "Chunk Data and Update Light" in the Play state (S→C).
+ * {@code 0x24} — "Chunk Data and Update Light" in the Play state (S→C) for protocol 774.
  *
  * <h3>Wire format (1.18+)</h3>
  * <pre>
@@ -51,8 +51,8 @@ import java.util.function.IntUnaryOperator;
  */
 public class ChunkPacketBuilder {
 
-    /** Minecraft 1.21.4 Chunk Data and Update Light packet ID (S→C Play). */
-    public static final int CHUNK_DATA_PACKET_ID = 0x27;
+    /** Minecraft 1.21.11 (protocol 774) Chunk Data and Update Light packet ID (S→C Play). */
+    public static final int CHUNK_DATA_PACKET_ID = 0x24;
 
     /** Number of light sections = 24 chunk sections + 1 below + 1 above = 26. */
     private static final int LIGHT_SECTION_COUNT = ChunkNode.JAVA_SECTION_COUNT + 2;
