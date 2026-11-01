@@ -2,3 +2,7 @@
 world/
 *.exe
 node_modules/
+*.pprof
+overmind.toml
+resources/
+players/
