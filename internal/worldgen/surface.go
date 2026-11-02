@@ -189,6 +189,17 @@ func (g *Generator) applyExtension(c *chunk.Chunk, ext columnExtension, x, z uin
 // applySurface covers the ground of each column. top holds the highest solid Y of each
 // column and is raised by extensions.
 func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16][16]int16, cols *[4][4]biomeColumn) {
+	var slopes *slopeGrid
+	for x := range cols {
+		for z := range cols[x] {
+			switch cols[x][z].surface.surface {
+			case surfSnowySlopes, surfJagged, surfFrozenPeaks:
+				if slopes == nil {
+					slopes = g.newSlopeGrid(originX, originZ)
+				}
+			}
+		}
+	}
 	for x := range 16 {
 		for z := range 16 {
 			col := &cols[x>>2][z>>2]
@@ -211,10 +222,9 @@ func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16]
 			s := surfaceColumn{g: g, c: c, x: uint8(x), z: uint8(z), wx: fx, wz: fz, noise: n}
 			// Surface depth, from the study: about 1 to 6 blocks.
 			s.depth = max(int(n*2.75+3+unit(posHash(g.strataSeed^0x7f, wx, 0, wz))*0.25), 1)
-			// Neighbours inside the chunk only, as there may be none beyond it yet.
-			dx := abs16(top[min(x+1, 15)][z] - top[max(x-1, 0)][z])
-			dz := abs16(top[x][min(z+1, 15)] - top[x][max(z-1, 0)])
-			s.steep = dx >= 4 || dz >= 4
+			if slopes != nil {
+				s.steep = slopes.steep(x, z)
+			}
 			s.walk(kind, int(top[x][z]), int(col.ground))
 			if top[x][z] == SeaLevel && g.puddled(kind, wx, wz) {
 				c.SetBlock(uint8(x), SeaLevel, uint8(z), 0, g.blocks.water)
@@ -224,11 +234,56 @@ func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16]
 	}
 }
 
-func abs16(v int16) int16 {
-	if v < 0 {
-		return -v
+// slopeGrid holds the terrain height at the grid points of a chunk and one cell around it. It
+// is worked out from the position alone, so a slope reads the same from either side of a chunk
+// edge, and it has no caves in it, so a cave mouth does not count as a cliff.
+type slopeGrid struct {
+	height [cellsAcross + 3][cellsAcross + 3]float64
+}
+
+func (g *Generator) newSlopeGrid(originX, originZ int) *slopeGrid {
+	s := &slopeGrid{}
+	for i := range s.height {
+		for j := range s.height[i] {
+			s.height[i][j] = g.gridHeight(originX+(i-1)*cellXZ, originZ+(j-1)*cellXZ)
+		}
 	}
-	return v
+	return s
+}
+
+// gridHeight is where the top of the terrain crosses from solid to air at a grid point, found
+// by going down its density nodes.
+func (g *Generator) gridHeight(x, z int) float64 {
+	shape := g.shapeAt(x, z)
+	fx, fz := float64(x), float64(z)
+	above := -1.0
+	for n := columnNodes - 1; n >= 0; n-- {
+		y := float64(minY + n*cellY)
+		if shape.ramp(y) < -maxBase {
+			continue
+		}
+		d := finishDensity(g.slopedDensity(&shape, fx, y, fz), y)
+		if d > 0 {
+			return y + cellY*d/(d-above)
+		}
+		above = d
+	}
+	return minY
+}
+
+// at blends the height at a block offset from the chunk's corner, -1 to 16.
+func (s *slopeGrid) at(x, z int) float64 {
+	i, j := floorDiv(x, cellXZ), floorDiv(z, cellXZ)
+	tx, tz := float64(x-i*cellXZ)/cellXZ, float64(z-j*cellXZ)/cellXZ
+	return bilerp(s.height[i+1][j+1], s.height[i+2][j+1], s.height[i+1][j+2], s.height[i+2][j+2], tx, tz)
+}
+
+// steepHeight is the height change across a block's neighbours that counts as steep (notes
+// section 9).
+const steepHeight = 4
+
+func (s *slopeGrid) steep(x, z int) bool {
+	return math.Abs(s.at(x+1, z)-s.at(x-1, z)) >= steepHeight || math.Abs(s.at(x, z+1)-s.at(x, z-1)) >= steepHeight
 }
 
 // walk goes down a column from its top, covering each run of stone. Only runs near the
@@ -371,11 +426,7 @@ func (s *surfaceColumn) top(kind surfaceKind, y, water int) (uint32, bool) {
 		}
 		return b.gravel, true
 	case surfShore:
-		// A narrow noise band on a first-octave -8 noise, from the study.
-		if v := s.g.surface.gravel.at(s.wx, 0, s.wz); v > -0.05 && v < 0.05 {
-			return b.gravel, true
-		}
-		return 0, false
+		return s.shore()
 	case surfMangrove:
 		return b.mud, true
 	}
@@ -404,14 +455,20 @@ func (s *surfaceColumn) filler(kind surfaceKind) (uint32, bool) {
 			return b.gravel, true
 		}
 	case surfShore:
-		if v := s.g.surface.gravel.at(s.wx, 0, s.wz); v > -0.05 && v < 0.05 {
-			return b.gravel, true
-		}
-		return 0, false
+		return s.shore()
 	case surfMangrove:
 		return b.mud, true
 	}
 	return b.dirt, true
+}
+
+// shore is a stony shore: bare stone with strips of gravel, a narrow band on a first-octave -8
+// noise (notes via GAPS.md).
+func (s *surfaceColumn) shore() (uint32, bool) {
+	if v := s.g.surface.gravel.at(s.wx, 0, s.wz); v > -0.05 && v < 0.05 {
+		return s.g.blocks.gravel, true
+	}
+	return 0, false
 }
 
 // badlandsRule: red sand low down, terracotta bands above and below it, all the way down

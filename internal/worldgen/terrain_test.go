@@ -61,7 +61,7 @@ func TestMountainsHaveOverhangs(t *testing.T) {
 search:
 	for x := -4096; x < 4096; x += 64 {
 		for z := -4096; z < 4096; z += 64 {
-			if g.terrainHeight(x, z) > 150 {
+			if g.highestSolid(x, z) > 150 {
 				fromX, fromZ = int32(x>>4)-15, int32(z>>4)-15
 				break search
 			}

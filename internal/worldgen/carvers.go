@@ -6,22 +6,43 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// Carvers are the old-style worm caves and canyons. Chances, height ranges and shape ranges
-// come from studying Java 26.1. The walk itself is our own: every tunnel is rolled from its
-// source chunk's seed alone, so any chunk it reaches traces the same path, in any order.
+// Carvers are worm caves and canyons. From the notes (section 8): chances per chunk, height
+// ranges, reach, the ranges of the shape numbers, rooms, and the behaviour around water, lava
+// and grass. The way a tunnel is laid out is our own design, tuned by us: a tunnel is a curve
+// written as a formula (see tunnelPath), not a walk, and it has no step-by-step state. The
+// notes give no measured output for carvers (addendum A6); its own numbers are set so the air
+// they add stays near the cave shares in the notes, as TestCarversAddLittleAir checks.
 const (
-	carverReach    = 8    // Source chunks this far away can reach a chunk.
-	caveChance     = 0.15 // Per chunk.
-	caveExtra      = 0.07 // Per chunk, low caves only.
-	canyonChance   = 0.01 // Per chunk.
-	caveBottom     = -56
-	caveTop        = 180
-	caveExtraTop   = 47
-	canyonBottom   = 10
-	canyonTop      = 67
-	carverLavaY    = -56 // Carved space at or under this is lava.
-	tunnelSteps    = 112
-	canyonMaxSteps = 112
+	carverReach  = 8    // Source chunks this far away can reach a chunk (notes).
+	caveChance   = 0.15 // Per chunk (notes).
+	caveExtra    = 0.07 // Per chunk, low caves only (notes).
+	canyonChance = 0.01 // Per chunk (notes).
+	caveBottom   = -56
+	caveTop      = 180
+	caveExtraTop = 47
+	canyonBottom = 10
+	canyonTop    = 67
+	carverLavaY  = -56 // Carved space at or under this is lava.
+)
+
+// Own numbers for the size of a tunnel. A tunnel runs both ways from its start, so its full
+// length can be about 14 chunks, near the notes' "up to about 15". What matters is the sum:
+// the longest half, plus the most the bends can move it, plus the widest radius, is how far
+// any cut can be from the start, and carverReachBlocks says that fits within carverReach.
+const (
+	tunnelHalfMax  = 104.0
+	tunnelBendMax  = 8.0 // The two sideways waves together, each way.
+	tunnelWidthMax = 8.0 // Radius in blocks at its widest.
+	canyonBendMax  = 6.0
+	canyonWidthMax = 10.0
+	// A source chunk's nearest block outside carverReach is carverReach*16 + 1 blocks away.
+	carverReachBlocks = carverReach * 16
+)
+
+// These fail to compile if a tunnel's size could overrun the reach.
+const (
+	_ = uint(carverReachBlocks - (tunnelHalfMax + 2*tunnelBendMax + tunnelWidthMax))
+	_ = uint(carverReachBlocks - (tunnelHalfMax + 2*canyonBendMax + canyonWidthMax))
 )
 
 func (r *rng) intn(n int) int { return int(r.next() % uint64(n)) }
@@ -56,37 +77,42 @@ func (s *carveSink) mark(x, y, z int) {
 }
 
 // sphere cuts an ellipsoid. floor keeps blocks low in the sphere solid, so caves have flat
-// floors; widths, if set, varies the width by height, which gives canyons their ledges.
-func (s *carveSink) sphere(cx, cy, cz, rh, rv, floor float64, widths *[(maxY - minY + 1)]float32) {
+// floors; walls, if not zero, seeds a canyon's wall ledges.
+func (s *carveSink) sphere(cx, cy, cz, rh, rv, floor float64, walls uint64) {
 	if cx+rh < float64(s.x0) || cx-rh > float64(s.x1)+1 || cz+rh < float64(s.z0) || cz-rh > float64(s.z1)+1 {
 		return
 	}
 	x0, x1 := max(int(math.Floor(cx-rh)), s.x0), min(int(math.Ceil(cx+rh)), s.x1)
 	z0, z1 := max(int(math.Floor(cz-rh)), s.z0), min(int(math.Ceil(cz+rh)), s.z1)
 	y0, y1 := max(int(math.Floor(cy-rv)), minY+1), min(int(math.Ceil(cy+rv)), maxY)
-	for x := x0; x <= x1; x++ {
-		dx := (float64(x) + 0.5 - cx) / rh
-		for z := z0; z <= z1; z++ {
-			dz := (float64(z) + 0.5 - cz) / rh
-			flat := dx*dx + dz*dz
-			if flat >= 1 {
-				continue
-			}
-			for y := y0; y <= y1; y++ {
-				dy := (float64(y) + 0.5 - cy) / rv
-				if dy <= floor {
-					continue
-				}
-				f := flat
-				if widths != nil {
-					f *= float64(widths[y-minY])
-				}
-				if f+dy*dy < 1 {
+	for y := y0; y <= y1; y++ {
+		dy := (float64(y) + 0.5 - cy) / rv
+		if dy <= floor {
+			continue
+		}
+		reach := 1 - dy*dy
+		if reach <= 0 {
+			continue
+		}
+		if walls != 0 {
+			reach *= canyonLedge(walls, y)
+		}
+		for x := x0; x <= x1; x++ {
+			dx := (float64(x) + 0.5 - cx) / rh
+			for z := z0; z <= z1; z++ {
+				dz := (float64(z) + 0.5 - cz) / rh
+				if dx*dx+dz*dz < reach {
 					s.mark(x, y, z)
 				}
 			}
 		}
 	}
+}
+
+// canyonLedge narrows a canyon's walls by a step that changes every 3 blocks of height (the
+// notes' width smoothness of 3). The size of the step is our own.
+func canyonLedge(walls uint64, y int) float64 {
+	return 0.55 + 0.45*unit(posHash(walls, 0, floorDiv(y, 3), 0))
 }
 
 // walkCarvers cuts every tunnel from chunks within reach of the chunk at cx, cz.
@@ -96,21 +122,23 @@ func (g *Generator) walkCarvers(cx, cz int, s *carveSink) {
 			h := posHash(g.carveSeed, sx, 0, sz)
 			// Three separate chances from different bits of one hash.
 			if float64(h&0xFFFFF)/(1<<20) < caveChance {
-				g.caveStart(sx, sz, h, caveTop, s)
+				caveStart(sx, sz, h, caveTop, s)
 			}
 			if float64((h>>20)&0xFFFFF)/(1<<20) < caveExtra {
-				g.caveStart(sx, sz, mix64(h), caveExtraTop, s)
+				caveStart(sx, sz, mix64(h), caveExtraTop, s)
 			}
 			if float64((h>>40)&0xFFFFF)/(1<<20) < canyonChance {
-				g.canyonStart(sx, sz, mix64(h+1), s)
+				canyonStart(sx, sz, mix64(h+1), s)
 			}
 		}
 	}
 }
 
-// caveStart rolls one cave system: a nested random count of starts (up to 15), one in four
-// with a room and up to 3 extra tunnels.
-func (g *Generator) caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
+// caveStart rolls one cave system. From the notes: a nested random count of starts, up to 15;
+// one in four with a room of thickness 1 to 7 and up to 3 extra tunnels; the ranges of the
+// radius, vertical, floor and y scales. How deep the count nests (three draws, tuned to the
+// air added) and the room's height are ours.
+func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 	r := rng(seed)
 	starts := r.intn(r.intn(r.intn(15)+1) + 1)
 	for range starts {
@@ -123,108 +151,137 @@ func (g *Generator) caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 		yScale := 0.1 + 0.8*r.float()
 		tunnels := 1
 		if r.intn(4) == 0 {
-			room := 1 + 6*r.float()
-			rh := (1.5 + room) * hScale
-			s.sphere(x, y, z, rh, rh*0.5*vScale, floor, nil)
+			rh := (1 + 6*r.float()) * hScale
+			s.sphere(x, y, z, rh, max(rh*(0.3+0.3*yScale)*vScale, minTunnelHeight), floor, 0)
 			tunnels += r.intn(4)
 		}
 		for range tunnels {
-			yaw := r.float() * 2 * math.Pi
-			pitch := (r.float() - 0.5) / 4
-			thick := r.float()*2 + r.float()
-			if r.intn(10) == 0 {
-				thick *= r.float()*r.float()*3 + 1
-			}
-			steps := tunnelSteps - r.intn(tunnelSteps/4)
-			tunnel(r.next(), x, y, z, yaw, pitch, thick, hScale, vScale, yScale, floor, 0, steps, s)
+			p := newTunnelPath(r.next(), x, y, z, tunnelHalfMax, tunnelBendMax, caveTilt)
+			radius := tunnelRadius(r.float()) * hScale
+			p.cut(s, radius, radius*yScale*vScale, floor, 0)
 		}
 	}
 }
 
-// tunnel walks a worm from step to steps, cutting a swelling sphere at most steps, and
-// splits into two once if thick enough. Its rolls come from its own seed, so it costs the
-// same wherever it is asked from.
-func tunnel(seed uint64, x, y, z, yaw, pitch, thick, hScale, vScale, yScale, floor float64, step, steps int, s *carveSink) {
+// Own numbers: how far a cave tunnel tilts, its lowest ceiling, and its radius at the middle.
+const (
+	caveTilt        = 0.3
+	minTunnelHeight = 1.6
+)
+
+// tunnelRadius turns an even draw into a tunnel's radius before the notes' scales apply. Most
+// tunnels are narrow and few are wide. At most 5.4, so at most 7.56 after the largest scale of
+// 1.4, and at most 7.94 with the lumps in cut, under tunnelWidthMax. Own, tuned to the air added.
+func tunnelRadius(u float64) float64 { return 1 + 4.4*u*u*u*u }
+
+// tunnelPath is a curve through a start point, written as a formula of t from -1 to 1: a
+// straight line, bent sideways by two sine waves and up and down by a third. Every number is
+// drawn when the path is made, so it is the same whichever chunk asks, and nothing is left to
+// chance along the way.
+type tunnelPath struct {
+	x, y, z, axisX, axisZ, half, tilt float64
+	wave                              [2]pathWave // Sideways.
+	lift                              pathWave    // Up and down.
+	lump                              pathWave    // Changes in the radius.
+	bend                              float64     // The sideways waves' amplitudes added up.
+}
+
+// pathWave is one sine wave of t, shifted to be zero at the start, t = 0.
+type pathWave struct{ amp, freq, phase float64 }
+
+func (w *pathWave) at(t float64) float64 {
+	return w.amp * (math.Sin(w.freq*t+w.phase) - math.Sin(w.phase))
+}
+
+func newTunnelPath(seed uint64, x, y, z, halfMax, bendMax, tilt float64) tunnelPath {
 	r := rng(seed)
-	split := r.intn(steps/2+1) + steps/4
-	steep := r.intn(6) == 0
-	var dYaw, dPitch float64
-	// The widest this tunnel or a branch of it can be, for the reach check below.
-	widest := (1.5 + math.Max(thick, 1)) * hScale
-	for i := step; i < steps; i++ {
-		// Too far to get back within the steps left? Then neither it nor a branch can reach
-		// the sink. A branch rolls from its own seed, so stopping changes nothing else.
-		if i%8 == 0 {
-			left := float64(steps-i) + widest + 1
-			if x+left < float64(s.x0) || x-left > float64(s.x1)+1 || z+left < float64(s.z0) || z-left > float64(s.z1)+1 {
-				return
-			}
+	yaw := r.float() * 2 * math.Pi
+	wave := func(amp, freqLow, freqSpan float64) pathWave {
+		return pathWave{amp: amp, freq: math.Pi * (freqLow + freqSpan*r.float()), phase: r.float() * 2 * math.Pi}
+	}
+	first := bendMax * (0.25 + 0.4*r.float())
+	second := (bendMax - first) * r.float()
+	p := tunnelPath{
+		x: x, y: y, z: z, axisX: math.Cos(yaw), axisZ: math.Sin(yaw),
+		half: halfMax * (0.1 + 0.9*cubed(r.float())),
+		tilt: (2*r.float() - 1) * tilt,
+		bend: first + second,
+	}
+	p.wave[0], p.wave[1] = wave(first, 0.8, 1.2), wave(second, 2.5, 3)
+	p.lift = wave(1+5*r.float(), 0.7, 1.6)
+	p.lump = wave(1, 3, 5)
+	return p
+}
+
+func cubed(v float64) float64 { return v * v * v }
+
+// at gives the point on the path at t.
+func (p *tunnelPath) at(t float64) (x, y, z float64) {
+	along := t * p.half
+	side := p.wave[0].at(t) + p.wave[1].at(t)
+	return p.x + p.axisX*along - p.axisZ*side,
+		p.y + p.tilt*along + p.lift.at(t),
+		p.z + p.axisZ*along + p.axisX*side
+}
+
+// alongRange gives the span of the path's axis, from its start, that can touch the sink.
+func (p *tunnelPath) alongRange(s *carveSink, slack float64) (lo, hi float64) {
+	lo, hi = math.Inf(1), math.Inf(-1)
+	for _, x := range [2]int{s.x0, s.x1 + 1} {
+		for _, z := range [2]int{s.z0, s.z1 + 1} {
+			d := (float64(x)-p.x)*p.axisX + (float64(z)-p.z)*p.axisZ
+			lo, hi = math.Min(lo, d), math.Max(hi, d)
 		}
-		cos := math.Cos(pitch)
-		x += math.Cos(yaw) * cos
-		y += math.Sin(pitch)
-		z += math.Sin(yaw) * cos
-		if steep {
-			pitch *= 0.92
-		} else {
-			pitch *= 0.7
-		}
-		pitch += dPitch * 0.1
-		yaw += dYaw * 0.1
-		dPitch = dPitch*0.9 + (r.float()-r.float())*r.float()*2
-		dYaw = dYaw*0.75 + (r.float()-r.float())*r.float()*4
-		if i == split && thick > 1 {
-			tunnel(r.next(), x, y, z, yaw-math.Pi/2, pitch/3, r.float()*0.5+0.5, hScale, vScale, yScale, floor, i, steps, s)
-			tunnel(r.next(), x, y, z, yaw+math.Pi/2, pitch/3, r.float()*0.5+0.5, hScale, vScale, yScale, floor, i, steps, s)
-			return
-		}
-		if r.intn(4) == 0 {
+	}
+	return lo - slack, hi + slack
+}
+
+// cut carves the path as a chain of ellipsoids, about a block apart. The radius tapers to the
+// ends and varies a little along the way, by at most 1/20 of the middle radius each way.
+func (p *tunnelPath) cut(s *carveSink, radius, height, floor float64, walls uint64) {
+	margin := p.half + 2*p.bend + radius*1.1 + 1
+	if p.x+margin < float64(s.x0) || p.x-margin > float64(s.x1)+1 || p.z+margin < float64(s.z0) || p.z-margin > float64(s.z1)+1 {
+		return
+	}
+	steps := int(2 * p.half)
+	// A cut lies within margin - half of its place along the axis, so only that part of the
+	// path can reach the sink. Skipping the rest changes nothing it cuts.
+	lo, hi := p.alongRange(s, margin-p.half)
+	for i := max(int(math.Floor((lo/p.half+1)/2*float64(steps))), 0); i <= min(int(math.Ceil((hi/p.half+1)/2*float64(steps))), steps); i++ {
+		t := 2*float64(i)/float64(steps) - 1
+		taper := 1 - t*t*t*t
+		size := taper * (1 + p.lump.at(t)/40)
+		rh := radius * size
+		if rh < 0.7 {
 			continue
 		}
-		rh := 1.5 + math.Sin(math.Pi*float64(i)/float64(steps))*thick
-		s.sphere(x, y, z, rh*hScale, rh*yScale*vScale, floor, nil)
+		x, y, z := p.at(t)
+		s.sphere(x, y, z, rh, max(height*size, minTunnelHeight), floor, walls)
 	}
 }
 
-// canyonStart rolls one canyon: y scale 3, thickness a trapezoid of 0 to 6 with a plateau
-// of 2, length factor 0.75 to 1, pitch within 0.125, and a width that changes every 3 blocks.
-func (g *Generator) canyonStart(sx, sz int, seed uint64, s *carveSink) {
+// canyonStart rolls one canyon. From the notes: y scale 3, thickness a trapezoid of 0 to 6 with
+// a plateau of 2, distance factor 0.75 to 1, vertical rotation within 0.125. How thickness
+// becomes a radius is ours.
+func canyonStart(sx, sz int, seed uint64, s *carveSink) {
 	r := rng(seed)
 	x := float64(sx*16 + r.intn(16))
 	y := float64(canyonBottom + r.intn(canyonTop-canyonBottom+1))
 	z := float64(sz*16 + r.intn(16))
-	yaw := r.float() * 2 * math.Pi
-	pitch := (r.float() - 0.5) * 0.25
 	thick := trapezoid(&r, 0, 6, 2)
-	steps := int(canyonMaxSteps * (0.75 + 0.25*r.float()))
-	var widths [maxY - minY + 1]float32
-	var w float32 = 1
-	for i := range widths {
-		if i%3 == 0 {
-			f := r.float()
-			w = float32(1 + f*f)
-		}
-		widths[i] = w
-	}
-	var dYaw, dPitch float64
-	for i := range steps {
-		rh := 1.5 + math.Sin(math.Pi*float64(i)/float64(steps))*thick
-		rv := rh * 3
-		cos := math.Cos(pitch)
-		x += math.Cos(yaw) * cos
-		y += math.Sin(pitch)
-		z += math.Sin(yaw) * cos
-		pitch *= 0.7
-		pitch += dPitch * 0.05
-		yaw += dYaw * 0.05
-		dPitch = dPitch*0.8 + (r.float()-r.float())*r.float()*2
-		dYaw = dYaw*0.5 + (r.float()-r.float())*r.float()*4
-		if r.intn(4) == 0 {
-			continue
-		}
-		s.sphere(x, y, z, rh, rv, -2, &widths)
-	}
+	halfMax := tunnelHalfMax * (0.75 + 0.25*r.float())
+	p := newTunnelPath(r.next(), x, y, z, halfMax, canyonBendMax, 0.125)
+	p.half = halfMax // The notes' factor alone sets a canyon's length.
+	radius := (canyonCore + thick) * canyonMiddleWidth
+	p.cut(s, radius, radius*3, -2, r.next()|1)
 }
+
+// A canyon's radius at the middle, from the notes' thickness. At thickness 6 and with the lumps
+// in cut that is at most 6.1, under canyonWidthMax. Own, tuned to the air added.
+const (
+	canyonCore        = 0.8
+	canyonMiddleWidth = 0.85
+)
 
 // trapezoid draws from low to high with a flat middle of the given width.
 func trapezoid(r *rng, low, high, plateau float64) float64 {
@@ -233,18 +290,22 @@ func trapezoid(r *rng, low, high, plateau float64) float64 {
 	return low + r.float()*(span-slope) + r.float()*slope
 }
 
-// carveFill says what a carved block becomes. A wall in the aquifer leaves the block alone.
+// carveFill says what a carved block becomes. Tunnels avoid water by asking the aquifer (notes
+// section 8): where it says water, or a wall, the block stays as it is.
 func (g *Generator) carveFill(a *aquiferCache, x, y, z int, ground float64) fillKind {
 	if y <= carverLavaY {
 		return fillLava
 	}
-	return g.fillAt(a, x, y, z, ground, false)
+	if f := g.fillAt(a, x, y, z, ground, false); f != fillWater {
+		return f
+	}
+	return fillSolid
 }
 
 // applyCarvers cuts the tunnels into a chunk. noiseTop holds each column's highest noise
 // block: icebergs and hoodoos above it are not carved. Removing grass turns the dirt below
 // into grass, so the floor of an opened cave has a surface.
-func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, originZ int, noiseTop *[16][16]int16, cols *[4][4]biomeColumn) {
+func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, originZ int, noiseTop *[16][16]int16) {
 	s.carved = [16][16]carveMask{}
 	sink := carveSink{x0: originX, x1: originX + 15, z0: originZ, z1: originZ + 15, chunk: &s.carved}
 	g.walkCarvers(originX>>4, originZ>>4, &sink)
@@ -257,7 +318,7 @@ func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, origi
 			}
 			i, j := lx/cellXZ, lz/cellXZ
 			tx, tz := float64(lx-i*cellXZ)/cellXZ, float64(lz-j*cellXZ)/cellXZ
-			ground := bilerp(s.shapes[i][j].ground, s.shapes[i+1][j].ground, s.shapes[i][j+1].ground, s.shapes[i+1][j+1].ground, tx, tz)
+			ground := s.groundAt(i, j, tx, tz)
 			wx, wz := originX+lx, originZ+lz
 			x, z := uint8(lx), uint8(lz)
 			lost := uint32(0) // A grass-like top block removed just above.
@@ -287,8 +348,6 @@ func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, origi
 				switch f {
 				case fillAir:
 					c.SetBlock(x, int16(y), z, 0, b.air)
-				case fillWater:
-					c.SetBlock(x, int16(y), z, 0, b.water)
 				case fillLava:
 					c.SetBlock(x, int16(y), z, 0, b.lava)
 				}
@@ -401,7 +460,7 @@ func (g *Generator) applyLakes(c *chunk.Chunk, s *chunkScratch, originX, originZ
 
 // SurfaceHeight returns the Y of the highest solid block in a column, with caves, carvers
 // and lakes taken into account: the same answer as the generated chunk, without needing the
-// chunk to exist. Where a cave opens the ground this is lower than terrainHeight. It walks
+// chunk to exist. Where a cave opens the ground this is lower than highestSolid. It walks
 // every tunnel that could reach the column, so it costs far more than noiseHeight.
 func (g *Generator) SurfaceHeight(x, z int) int {
 	var mask carveMask

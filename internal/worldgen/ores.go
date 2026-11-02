@@ -38,8 +38,6 @@ const (
 	repAndesite
 	repTuff
 	repDeepslate
-
-	repStoneLike = repStone | repGranite | repDiorite | repAndesite | repTuff | repDeepslate
 )
 
 type distribution uint8
@@ -170,7 +168,7 @@ func (g *Generator) veinKindOf(id uint32) uint8 {
 // A blob belongs to the chunk its centre is in and is rolled from that chunk's position
 // alone, so each chunk rebuilds the blobs of itself and its eight neighbours and keeps
 // only the blocks that fall inside itself. highest is the top of the chunk's terrain; a
-// blob wholly above it is in air and skipped. The largest blob reaches about 14 blocks, so
+// blob wholly above it is in air and skipped. No blob reaches past 16 blocks (see blobReach), so
 // the neighbours cover everything that can reach in. Nothing is stored after the call.
 func (g *Generator) placeVeins(c *chunk.Chunk, pos world.ChunkPos, highest int, rocks bool) {
 	originX, originZ := int(pos[0])*16, int(pos[1])*16
@@ -211,18 +209,49 @@ func (s *biomeSource) column() *biomeColumn {
 	return &s.col
 }
 
-// blobReach is how far a blob of a size can reach from its centre on any axis: half its
-// line plus its largest sphere.
+// Our own blob shape, tuned to the block counts in the notes (section 10, addendum A5). A blob
+// is a spindle: a solid of revolution around a short line through its centre, widest in the
+// middle and coming to a point at both ends. The line's length (size/4) and tilt (2 blocks
+// each way on Y) and the swelling mid-way are from the notes' description. The widths are
+// fitted by us, one table entry per size, by measuring TestBlobSizesMatchMeasuredFigures.
+var blobWidths = [...]struct {
+	size   int
+	radius float64 // Radius at the middle.
+}{
+	{3, 0.25}, {4, 0.54}, {7, 0.82}, {8, 0.86}, {9, 0.915}, {10, 1.0}, {12, 1.136},
+	{17, 1.44}, {20, 1.68}, {33, 2.62}, {64, 4.86},
+}
+
+// blobRadius looks up a size's middle radius in the table, blending between entries.
+func blobRadius(size int) float64 {
+	t := blobWidths[:]
+	for i := 1; i < len(t); i++ {
+		if size <= t[i].size {
+			return lerp(t[i-1].radius, t[i].radius, float64(size-t[i-1].size)/float64(t[i].size-t[i-1].size))
+		}
+	}
+	return t[len(t)-1].radius
+}
+
+// blobWiden is the largest a blob's roll can widen it, and blobTip how far its spindle runs
+// past the ends of its line. Both own.
+const (
+	blobWiden = 1.06
+	blobTip   = 1.0
+)
+
+// blobReach is how far a blob of a size can reach from its centre on any axis: half its line,
+// its tip and its widest radius. A blob's centre lies in its source chunk, so as long as this
+// is at most 16, the eight neighbours of a chunk hold every blob that can reach it.
 func blobReach(size int) int {
-	s := float64(size)
-	return int(math.Ceil(s/8+s/16+0.5)) + 2
+	return int(math.Ceil(float64(size)/8+blobTip+blobRadius(size)*blobWiden)) + 1
 }
 
 // placeVein rolls one blob from its origin chunk and writes the part inside the chunk at
-// originX, originZ. The rolls are the same whichever chunk asks. A blob is a chain of
-// spheres along a short line through its centre (length size/4, tilted up to 2 blocks on
-// Y), swelling toward the middle, as the study describes; a size 64 blob holds about 680
-// blocks and a size 17 about 22.
+// originX, originZ. The rolls are the same whichever chunk asks. See blobWidths for the shape.
+// Only blocks whose middle lies inside the shape are placed, so very small blobs often miss
+// every block; that is how a size 3 blob places nothing about two times in three, as the
+// study's addendum A5 measured.
 func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blobZ, originX, originZ, highest int, src *biomeSource) {
 	px, pz := blobX+int(r.next()%16), blobZ+int(r.next()%16)
 	py := f.sampleY(r)
@@ -241,53 +270,58 @@ func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blo
 	}
 
 	b := &g.blocks
-	// Ores stay inside their feature's range, rock patches spill past it.
+	// Ores stay inside their feature's range and rock patches may spill past it. Our own
+	// choice; the notes only give the range for the blob's centre.
 	clipLow, clipHigh := minY, maxY
 	if !f.rock {
 		clipLow, clipHigh = max(f.minY, minY), min(f.maxY, maxY)
 	}
 	blob := rng(key)
 	size := float64(f.size)
-	angle := blob.float() * math.Pi
-	ax, az := math.Sin(angle)*size/8, math.Cos(angle)*size/8
-	x0, x1 := float64(px)+ax, float64(px)-ax
-	z0, z1 := float64(pz)+az, float64(pz)-az
-	y0, y1 := float64(py)+blob.float()*4-2, float64(py)+blob.float()*4-2
-	for i := range f.size {
-		t := float64(i) / size
-		spread := blob.float() * size / 16
-		radius := ((math.Sin(math.Pi*t)+1)*spread + 1) / 2
-		cx, cy, cz := lerp(x0, x1, t), lerp(y0, y1, t), lerp(z0, z1, t)
-		low, high := int(math.Floor(cx-radius)), int(math.Ceil(cx+radius))
-		lowZ, highZ := int(math.Floor(cz-radius)), int(math.Ceil(cz+radius))
-		for x := max(low, originX); x <= min(high, originX+15); x++ {
-			dx := (float64(x) + 0.5 - cx) / radius
-			for z := max(lowZ, originZ); z <= min(highZ, originZ+15); z++ {
-				dz := (float64(z) + 0.5 - cz) / radius
-				flat := dx*dx + dz*dz
-				if flat >= 1 {
+	// The middle of the blob lies anywhere inside its centre block.
+	mx, my, mz := float64(px)+blob.float(), float64(py)+blob.float(), float64(pz)+blob.float()
+	// Half the line, from the middle to one end.
+	angle := blob.float() * 2 * math.Pi
+	hx, hz := math.Cos(angle)*size/8, math.Sin(angle)*size/8
+	hy := (2*blob.float() - 1) * 2
+	lineSq := hx*hx + hy*hy + hz*hz
+	// The spindle's half length runs past the line's end.
+	halfLen := math.Sqrt(lineSq) + blobTip
+	ux, uy, uz := hx/(halfLen-blobTip), hy/(halfLen-blobTip), hz/(halfLen-blobTip)
+	radius := blobRadius(f.size) * (blobWiden - 0.12*blob.float())
+	grainSeed := blob.next()
+	span := halfLen + radius
+	for x := max(int(math.Floor(mx-span)), originX); x <= min(int(math.Ceil(mx+span)), originX+15); x++ {
+		dx := float64(x) + 0.5 - mx
+		for z := max(int(math.Floor(mz-span)), originZ); z <= min(int(math.Ceil(mz+span)), originZ+15); z++ {
+			dz := float64(z) + 0.5 - mz
+			for y := max(int(math.Floor(my-span)), clipLow); y <= min(int(math.Ceil(my+span)), clipHigh); y++ {
+				dy := float64(y) + 0.5 - my
+				along := dx*ux + dy*uy + dz*uz
+				sideSq := dx*dx + dy*dy + dz*dz - along*along
+				axial := along / halfLen
+				width := radius * (1 - axial*axial)
+				if axial*axial >= 1 || sideSq >= width*width {
 					continue
 				}
-				for y := max(int(math.Floor(cy-radius)), clipLow); y <= min(int(math.Ceil(cy+radius)), clipHigh); y++ {
-					dy := (float64(y) + 0.5 - cy) / radius
-					if flat+dy*dy >= 1 {
-						continue
-					}
-					lx, lz := uint8(x-originX), uint8(z-originZ)
-					kind := g.veinKindOf(c.Block(lx, int16(y), lz, 0))
-					if kind == 0 {
-						continue
-					}
-					if f.exposed > 0 && g.touchesAir(c, lx, int16(y), lz) && unit(posHash(g.veinSeed, x, y, z)) < f.exposed {
-						continue
-					}
-					// Deepslate and tuff take the deepslate variant of an ore.
-					variant := 0
-					if kind&(repDeepslate|repTuff) != 0 {
-						variant = 1
-					}
-					c.SetBlock(lx, int16(y), lz, 0, b.veins[f.block][variant])
+				// A rough edge: blocks near the shell are dropped by chance.
+				if f.size > 4 && sideSq > 0.6*width*width && unit(posHash(grainSeed, x, y, z)) < 0.2 {
+					continue
 				}
+				lx, lz := uint8(x-originX), uint8(z-originZ)
+				kind := g.veinKindOf(c.Block(lx, int16(y), lz, 0))
+				if kind == 0 {
+					continue
+				}
+				if f.exposed > 0 && g.touchesAir(c, lx, int16(y), lz) && unit(posHash(g.veinSeed, x, y, z)) < f.exposed {
+					continue
+				}
+				// Deepslate and tuff take the deepslate variant of an ore.
+				variant := 0
+				if kind&(repDeepslate|repTuff) != 0 {
+					variant = 1
+				}
+				c.SetBlock(lx, int16(y), lz, 0, b.veins[f.block][variant])
 			}
 		}
 	}

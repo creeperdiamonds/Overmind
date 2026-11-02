@@ -117,9 +117,7 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 		for cx := range across {
 			for cz := range down {
 				for i := range 16 {
-					// A chunk edge is also a grid cell edge, where blended density has a kink, so
-					// compare it with the cell edges inside a chunk.
-					for j := 3; j < 15; j += 4 {
+					for j := range 15 {
 						inner = append(inner,
 							abs(h[cx][cz][j][i]-h[cx][cz][j+1][i]),
 							abs(h[cx][cz][i][j]-h[cx][cz][i][j+1]))
@@ -212,11 +210,11 @@ func TestBlocksFollowFillRules(t *testing.T) {
 			for z := uint8(0); z < 16; z++ {
 				for y := int16(minY); y <= maxY; y++ {
 					switch r := c.Block(x, y, z, 0); {
-					case r == b.water && y > SeaLevel && g.terrainHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
+					case r == b.water && y > SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						// Under the ground a raised aquifer may hold water: the study measured 0.1%
 						// of blocks at Y 63 to 100.
 						t.Fatalf("water at Y %d above the terrain", y)
-					case r == b.air && y <= SeaLevel && g.terrainHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
+					case r == b.air && y <= SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						t.Fatalf("air at Y %d, below sea level and not in a cave", y)
 					case r != b.air && r != b.water && !slices.Contains(solids, r):
 						t.Fatalf("unexpected block %d at Y %d", r, y)

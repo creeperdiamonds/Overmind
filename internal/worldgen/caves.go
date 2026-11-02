@@ -2,9 +2,9 @@ package worldgen
 
 import "math"
 
-// Noise caves are part of the density, not cut afterwards. The build below, the octave
-// lists and the numbers come from studying Java 26.1; the code is our own. Where the study
-// names a noise without its octaves (rarity and thickness noises) the choice is ours.
+// Noise caves are part of the density, not cut afterwards. The build below comes from the
+// study's notes (section 7); the octave lists, sample scales, rarity tables and thickness
+// ranges from its addendum (A2, A3). The code is our own.
 //
 //	underground = max(min(cheese part, entrances, spaghetti2d + roughness), pillars above 0.03)
 //
@@ -25,22 +25,23 @@ func newCaveNoises(seed int64) caveNoises {
 	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
 	one := []float64{1}
 	return caveNoises{
-		cheese:       newGameLayered(sub(50), -8, []float64{0.5, 1, 2, 1, 2, 1, 0, 2, 0}),
-		layer:        newGameLayered(sub(51), -8, one),
-		entrance:     newGameLayered(sub(52), -7, []float64{0.4, 0.5, 1}),
-		rarity3d:     newGameLayered(sub(53), -11, one),
-		spagA:        newGameLayered(sub(54), -7, one),
-		spagB:        newGameLayered(sub(55), -7, one),
-		thick3d:      newGameLayered(sub(56), -8, one),
-		rarity2d:     newGameLayered(sub(57), -11, one),
-		spag2d:       newGameLayered(sub(58), -7, one),
-		elevation2d:  newGameLayered(sub(59), -8, one),
-		thick2d:      newGameLayered(sub(60), -11, one),
-		roughMod:     newGameLayered(sub(61), -8, one),
-		rough:        newGameLayered(sub(62), -5, one),
-		pillar:       newGameLayered(sub(63), -7, []float64{1, 1}),
-		pillarRare:   newGameLayered(sub(64), -8, one),
-		pillarThick:  newGameLayered(sub(65), -8, one),
+		cheese:      newGameLayered(sub(50), -8, []float64{0.5, 1, 2, 1, 2, 1, 0, 2, 0}),
+		layer:       newGameLayered(sub(51), -8, one),
+		entrance:    newGameLayered(sub(52), -7, []float64{0.4, 0.5, 1}),
+		rarity3d:    newGameLayered(sub(53), -11, one),
+		spagA:       newLayered(sub(54), -7, one, gameSpread(one)*tunnelNoiseScale),
+		spagB:       newLayered(sub(55), -7, one, gameSpread(one)*tunnelNoiseScale),
+		thick3d:     newGameLayered(sub(56), -8, one),
+		rarity2d:    newGameLayered(sub(57), -11, one),
+		spag2d:      newLayered(sub(58), -7, one, gameSpread(one)*tunnelNoiseScale),
+		elevation2d: newGameLayered(sub(59), -8, one),
+		thick2d:     newGameLayered(sub(60), -11, one),
+		roughMod:    newGameLayered(sub(61), -8, one),
+		rough:       newGameLayered(sub(62), -5, one),
+		pillar:      newGameLayered(sub(63), -7, []float64{1, 1}),
+		pillarRare:  newGameLayered(sub(64), -8, one),
+		pillarThick: newGameLayered(sub(65), -8, one),
+		// Fluid and vein octaves: addendum A3.
 		noodleToggle: newGameLayered(sub(66), -8, one),
 		noodleThick:  newGameLayered(sub(67), -8, one),
 		noodleA:      newGameLayered(sub(68), -7, one),
@@ -68,12 +69,14 @@ const (
 	pillarYScale    = 0.3
 )
 
-// spaghettiTrim is our own tuning against the measured air shares; see spaghetti3d.
-const spaghettiTrim = 0.012
+// tunnelNoiseScale widens the spread of the tunnel noises, which narrows tunnels. The study
+// gives their octaves and thickness but no spread, and gameSpread is our own fit, so this is
+// measured and tuned by us against the air shares in the notes, section 7.
+const tunnelNoiseScale = 1.16
 
-// entranceTrim is our own tuning: added to the study's 0.37 so land keeps under 5% of its
-// columns open to the sky with this noise.
-const entranceTrim = 0.07
+// noodleGate: noodle and vein parts are worked out only where the density is above this, to
+// save time; further into open air the blend cannot turn solid. Our own choice.
+const noodleGate = -0.4
 
 // mapUnit maps a noise value from -1..1 onto low..high, clamped.
 func mapUnit(n, low, high float64) float64 {
@@ -86,8 +89,9 @@ func (g *Generator) spaghettiRoughness(x, y, z float64) float64 {
 	return mod * (math.Abs(g.caves.rough.at(x, y, z)) - 0.4)
 }
 
-// spaghetti3d is max(a, b) + thickness: tunnels where two noises are both near zero. A
-// rarity noise picks a stretch of 0.75 to 2.
+// spaghetti3d is max(a, b) + thickness: tunnels where two noises are both near zero. A rarity
+// noise picks a stretch, and the tunnel noises are read at coordinates divided by it, so a
+// bigger stretch is fatter and sparser. Thresholds, stretches and thickness: addendum A2.
 func (g *Generator) spaghetti3d(x, y, z float64) float64 {
 	r := 2.0
 	switch n := g.caves.rarity3d.at(x*2, y, z*2); {
@@ -98,15 +102,14 @@ func (g *Generator) spaghetti3d(x, y, z float64) float64 {
 	case n < 0.5:
 		r = 1.5
 	}
-	a := r * math.Abs(g.caves.spagA.at(x/r, y/r, z/r))
-	b := r * math.Abs(g.caves.spagB.at(x/r, y/r, z/r))
-	// The study gives thickness -0.065 to -0.088. We narrow it by spaghettiTrim: with our
-	// noise those numbers left about 1 point too much air in every band it measured.
-	thick := mapUnit(g.caves.thick3d.at(x, y, z), -0.065, -0.088) + spaghettiTrim
+	a := math.Abs(g.caves.spagA.at(x/r, y/r, z/r))
+	b := math.Abs(g.caves.spagB.at(x/r, y/r, z/r))
+	thick := mapUnit(g.caves.thick3d.at(x, y, z), -0.065, -0.088)
 	return clamp(math.Max(a, b)+thick, -1, 1)
 }
 
 // spaghetti2d makes flat winding tunnels around an elevation that wanders across the world.
+// Rarity table, thicknesses, elevation, gradient and the 0.083 weight: addendum A2.
 func (g *Generator) spaghetti2d(x, y, z float64) float64 {
 	r := 3.0
 	switch n := g.caves.rarity2d.at(x*2, y, z*2); {
@@ -119,7 +122,7 @@ func (g *Generator) spaghetti2d(x, y, z float64) float64 {
 	case n < 0.75:
 		r = 2
 	}
-	rare := r * math.Abs(g.caves.spag2d.at(x/r, y/r, z/r))
+	rare := math.Abs(g.caves.spag2d.at(x/r, y/r, z/r))
 	thick := mapUnit(g.caves.thick2d.at(x*2, y, z*2), -0.6, -1.3)
 	elevation := mapUnit(g.caves.elevation2d.at(x, 0, z), -8, 8)
 	gradient := lerp(8, -40, (y-minY)/(maxY+1-minY))
@@ -131,7 +134,7 @@ func (g *Generator) spaghetti2d(x, y, z float64) float64 {
 func (g *Generator) entrances(x, y, z, roughness float64) float64 {
 	n := g.caves.entrance.at(x*0.75, y*0.5, z*0.75)
 	gradient := 0.3 * clamp((30-y)/40, 0, 1)
-	return math.Min(n+0.37+entranceTrim+gradient, roughness+g.spaghetti3d(x, y, z))
+	return math.Min(n+0.37+gradient, roughness+g.spaghetti3d(x, y, z))
 }
 
 // pillarsAt gives the thin columns inside large caverns, kept only above 0.03.
@@ -175,9 +178,10 @@ func (g *Generator) nodeAt(s *columnShape, xi, yi, zi int) node {
 		v = g.underground(sloped, x, y, z)
 	}
 	n := node{density: finishDensity(v, y), thick: noodleOff}
-	if n.density > -0.2 {
+	if n.density > noodleGate {
 		if yi >= noodleMinY {
-			if t := g.caves.noodleToggle.at(x, y, z); t > 0 {
+			// The toggle noise below 0 turns noodles on (addendum A2).
+			if t := -g.caves.noodleToggle.at(x, y, z); t > 0 {
 				n.toggle = t
 				n.thick = mapUnit(g.caves.noodleThick.at(x, y, z), -0.05, -0.1)
 				n.a = g.caves.noodleA.at(x*noodleScale, y*noodleScale, z*noodleScale)
@@ -274,6 +278,9 @@ const openSkyFluidDepth = 16
 // fillAt says what a block that is not solid in the density becomes, by the aquifer's
 // rules. ground is the column's nominal ground Y, open that nothing solid lies above.
 func (g *Generator) fillAt(a *aquiferCache, x, y, z int, ground float64, open bool) fillKind {
+	if y < lavaLevel {
+		return fillLava // Open space below Y -54 is lava: the study measured no air there.
+	}
 	if fy := float64(y); fy > ground-surfaceFluidMargin || (open && fy > ground-openSkyFluidDepth) {
 		return globalFluid(y).kindAt(y)
 	}
@@ -382,7 +389,7 @@ func (g *Generator) newColumnWalk(x, z int) *columnWalk {
 			w.shapes[i][j] = g.shapeAt(w.gridX+i*cellXZ, w.gridZ+j*cellXZ)
 		}
 	}
-	w.ground = bilerp(w.shapes[0][0].ground, w.shapes[1][0].ground, w.shapes[0][1].ground, w.shapes[1][1].ground, w.tx, w.tz)
+	w.ground = blendGround(&w.shapes[0][0], &w.shapes[1][0], &w.shapes[0][1], &w.shapes[1][1], w.tx, w.tz)
 	col := g.biomeColumnAt(cellCentre(x), cellCentre(z))
 	w.kind = col.surface.surface
 	w.ext = g.extensionAt(w.kind, x, z)
@@ -422,7 +429,7 @@ func (w *columnWalk) layerSkyFast(layer int) bool {
 	for i := range 2 {
 		for j := range 2 {
 			s := &w.shapes[i][j]
-			if 4*quarterNeg(((s.ground-0.5-yLow)/128+s.jag)*s.factor) >= -maxBase {
+			if s.ramp(yLow) >= -maxBase {
 				return false
 			}
 		}

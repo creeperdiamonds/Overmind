@@ -2,6 +2,10 @@ package worldgen
 
 import (
 	"math"
+	"runtime"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -169,19 +173,20 @@ func TestCavesExist(t *testing.T) {
 	}
 }
 
+// Some columns open to the sky, by noise caves alone (the share is asserted in
+// TestNoiseCavesOpenToSky), and SurfaceHeight and the chunk must both show it. Every 2nd column.
 func TestSomeCavesReachSurface(t *testing.T) {
 	g := New(14)
 	var land, open int
 	var found [2]int
-	// Every 8th column: SurfaceHeight walks tunnel paths, which is slow per column.
-	for x := 0; x < 1024; x += 8 {
-		for z := 0; z < 1024; z += 8 {
-			top := g.terrainHeight(x, z)
+	for x := 0; x < 1024; x += 2 {
+		for z := 0; z < 1024; z += 2 {
+			top := g.highestSolid(x, z)
 			if top <= SeaLevel {
 				continue
 			}
 			land++
-			if g.SurfaceHeight(x, z) < top {
+			if g.noiseHeight(x, z) < top {
 				if open == 0 {
 					found = [2]int{x, z}
 				}
@@ -189,19 +194,15 @@ func TestSomeCavesReachSurface(t *testing.T) {
 			}
 		}
 	}
-	share := float64(open) / float64(land)
-	t.Logf("land columns sampled %d, open to the sky %d (%.2f%%)", land, open, share*100)
+	t.Logf("land columns sampled %d, ground top removed by noise caves %d (%.2f%%)", land, open, float64(open)/float64(land)*100)
 	if open == 0 {
 		t.Fatal("no cave reaches the surface in 1024x1024")
-	}
-	if share > 0.05 {
-		t.Errorf("%.1f%% of land is open to caves, want under 5%%", share*100)
 	}
 	// The chunk must agree: the terrain's top block is gone there.
 	x, z := found[0], found[1]
 	c := generate(g, int32(x>>4), int32(z>>4))
-	if got := c.Block(uint8(x&15), int16(g.terrainHeight(x, z)), uint8(z&15), 0); got != ridAir && got != ridWater {
-		t.Errorf("column (%d,%d): SurfaceHeight says open, chunk has block %d at terrain top", x, z, got)
+	if got := c.Block(uint8(x&15), int16(g.highestSolid(x, z)), uint8(z&15), 0); got != ridAir && got != ridWater {
+		t.Errorf("column (%d,%d): noise height says open, chunk has block %d at terrain top", x, z, got)
 	}
 }
 
@@ -215,7 +216,7 @@ func TestSurfaceHeightMatchesChunkWithCaves(t *testing.T) {
 			for x := 0; x < 16 && !open; x += 2 {
 				for z := 0; z < 16 && !open; z += 2 {
 					wx, wz := cx*16+x, cz*16+z
-					open = g.SurfaceHeight(wx, wz) < g.terrainHeight(wx, wz)
+					open = g.SurfaceHeight(wx, wz) < g.highestSolid(wx, wz)
 				}
 			}
 			if !open {
@@ -441,83 +442,139 @@ func TestVeinsCrossChunkEdges(t *testing.T) {
 	}
 }
 
-// Blob sizes from the study (simulated geometry, means): size 9 about 6.7 blocks, size 17
-// about 22, size 33 about 113, size 64 about 679.
+// countBlob rolls one blob of a size and counts its blocks across the chunks it can touch.
+func countBlob(g *Generator, size int, seed uint64) int {
+	f := veinFeature{block: veinDirt, attempts: 1, size: size, minY: 0, maxY: 0, rock: true}
+	src := biomeSource{g: g}
+	reach := int16(blobReach(size))
+	total := 0
+	for a := range 3 {
+		for b := range 3 {
+			c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+			for x := range uint8(16) {
+				for z := range uint8(16) {
+					for y := -reach; y <= reach; y++ {
+						c.SetBlock(x, y, z, 0, ridStone)
+					}
+				}
+			}
+			r := rng(seed)
+			g.placeVein(c, &f, &r, 16, 16, a*16, b*16, 100, &src)
+			for x := range uint8(16) {
+				for z := range uint8(16) {
+					for y := -reach; y <= reach; y++ {
+						if c.Block(x, y, z, 0) != ridStone {
+							total++
+						}
+					}
+				}
+			}
+		}
+	}
+	return total
+}
+
+// Blob sizes from the study (simulated geometry, notes section 10 and addendum A5). Means must
+// be within 20%. Size 3 also has its share of empty blobs: 64.7% place nothing.
 func TestBlobSizesMatchMeasuredFigures(t *testing.T) {
 	g := New(31)
 	for _, c := range []struct {
 		size, runs int
 		want       float64
-	}{{9, 300, 6.7}, {17, 200, 22}, {33, 100, 113}, {64, 40, 679}} {
-		chunks := [3][3]*chunk.Chunk{}
-		var total int
+	}{{3, 1500, 0.46}, {4, 400, 2.1}, {7, 300, 5.0}, {8, 300, 5.7}, {9, 300, 6.7}, {10, 200, 8.4}, {12, 200, 11.5}, {17, 200, 22}, {20, 100, 33}, {33, 60, 113}, {64, 30, 679}} {
+		if reach := blobReach(c.size); reach > 16 {
+			t.Errorf("size %d reaches %d blocks, past the neighbouring chunks", c.size, reach)
+		}
+		var total, empty int
 		for i := range c.runs {
-			for a := range 3 {
-				for b := range 3 {
-					ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-					for x := range uint8(16) {
-						for z := range uint8(16) {
-							for y := int16(-20); y <= 20; y++ {
-								ch.SetBlock(x, y, z, 0, ridStone)
-							}
-						}
-					}
-					chunks[a][b] = ch
-				}
-			}
-			f := veinFeature{block: veinDirt, attempts: 1, size: c.size, minY: 0, maxY: 0, rock: true}
-			src := biomeSource{g: g}
-			seed := posHash(77, i, c.size, 0)
-			for a := range 3 {
-				for b := range 3 {
-					r := rng(seed)
-					g.placeVein(chunks[a][b], &f, &r, 16, 16, a*16, b*16, 100, &src)
-					for x := range uint8(16) {
-						for z := range uint8(16) {
-							for y := int16(-20); y <= 20; y++ {
-								if chunks[a][b].Block(x, y, z, 0) != ridStone {
-									total++
-								}
-							}
-						}
-					}
-				}
+			n := countBlob(g, c.size, posHash(77, i, c.size, 0))
+			total += n
+			if n == 0 {
+				empty++
 			}
 		}
 		got := float64(total) / float64(c.runs)
-		t.Logf("size %d: %.1f blocks a blob, measured %.1f", c.size, got, c.want)
+		t.Logf("size %d: %.2f blocks a blob, measured %.2f; %.0f%% empty", c.size, got, c.want, float64(empty)/float64(c.runs)*100)
 		if math.Abs(got-c.want) > c.want*0.2 {
-			t.Errorf("size %d: %.1f blocks a blob, measured %.1f", c.size, got, c.want)
+			t.Errorf("size %d: %.2f blocks a blob, measured %.2f", c.size, got, c.want)
+		}
+		if c.size == 3 {
+			if share := float64(empty) / float64(c.runs); math.Abs(share-0.647) > 0.05 {
+				t.Errorf("size 3: %.1f%% of blobs empty, measured 64.7%%", share*100)
+			}
 		}
 	}
 }
 
-// Emeralds only form in mountain biomes. The study measured about 0.5 blocks per attempt
-// and asked for a count on a real world, which this logs.
+// Emeralds per chunk over many chunks, against addendum A5. The study assumed a whole chunk in
+// one biome group and ignored surface blocks, and says its figures are slightly high, so ours
+// must lie from 35% under to 15% over.
 func TestEmeraldsInMountains(t *testing.T) {
-	g := New(1)
+	groups := []struct {
+		name   string
+		biomes []string
+		want   float64
+	}{
+		{"peaks", []string{"jagged_peaks", "frozen_peaks", "stony_peaks"}, 10.8},
+		{"snowy slopes and grove", []string{"snowy_slopes", "grove"}, 6.0},
+		{"meadow and cherry grove", []string{"meadow", "cherry_grove"}, 6.2},
+		{"windswept", []string{"extreme_hills", "extreme_hills_plus_trees", "extreme_hills_mutated"}, 4.1},
+	}
 	emerald := oreIDs()["emerald"]
-	var count, chunks int
-	for x := -4096; x < 4096 && chunks < 60; x += 64 {
-		for z := -4096; z < 4096 && chunks < 60; z += 64 {
-			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "jagged_peaks" && name != "frozen_peaks" && name != "stony_peaks" {
-				continue
-			}
-			chunks++
-			c := generate(g, int32(x>>4), int32(z>>4))
-			for lx := range uint8(16) {
-				for lz := range uint8(16) {
-					for y := int16(-16); y <= maxY; y++ {
-						if r := c.Block(lx, y, lz, 0); r == emerald[0] || r == emerald[1] {
-							count++
+	const wanted = 80
+	for _, group := range groups {
+		var chunks []([3]int)
+		for seed := int64(1); seed <= statSeeds && len(chunks) < wanted; seed++ {
+			g := New(seed)
+		search:
+			for x := -8192; x < 8192; x += 48 {
+				for z := -8192; z < 8192; z += 48 {
+					whole := true
+					for _, o := range [5][2]int{{8, 8}, {1, 1}, {14, 1}, {1, 14}, {14, 14}} {
+						whole = whole && slices.Contains(group.biomes, g.BiomeAt(x+o[0], maxY, z+o[1]).String())
+					}
+					if whole {
+						chunks = append(chunks, [3]int{int(seed), x >> 4, z >> 4})
+						if len(chunks) == wanted {
+							break search
 						}
 					}
 				}
 			}
 		}
-	}
-	t.Logf("%d emerald ore in %d peak chunks: %.1f a chunk", count, chunks, float64(count)/float64(chunks))
-	if chunks == 0 || count == 0 {
-		t.Fatalf("no emeralds: %d in %d chunks", count, chunks)
+		var total atomic.Int64
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.NumCPU())
+		gens := map[int]*Generator{1: New(1), 2: New(2), 3: New(3)}
+		for _, p := range chunks {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				c := generate(gens[p[0]], int32(p[1]), int32(p[2]))
+				n := int64(0)
+				for lx := range uint8(16) {
+					for lz := range uint8(16) {
+						for y := int16(-16); y <= maxY; y++ {
+							if r := c.Block(lx, y, lz, 0); r == emerald[0] || r == emerald[1] {
+								n++
+							}
+						}
+					}
+				}
+				total.Add(n)
+			}()
+		}
+		wg.Wait()
+		if len(chunks) < 30 {
+			t.Errorf("%s: only %d whole chunks found", group.name, len(chunks))
+			continue
+		}
+		got := float64(total.Load()) / float64(len(chunks))
+		t.Logf("%s: %.1f emerald blocks a chunk over %d chunks, measured %.1f", group.name, got, len(chunks), group.want)
+		if got < group.want*0.65 || got > group.want*1.15 {
+			t.Errorf("%s: %.1f emerald blocks a chunk, measured %.1f", group.name, got, group.want)
+		}
 	}
 }

@@ -1,6 +1,9 @@
 package worldgen
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // Density is worked out on a coarse grid and blended between grid points: cells of 4 x 8
 // x 4 blocks, the cell size the game uses (from studying Java 26.1).
@@ -63,183 +66,161 @@ func (s *spline) eval(in splineInput) float64 {
 	return lerp(y0, y1, t) + t*(1-t)*lerp(a.slope*span-delta, delta-b.slope*span, t)
 }
 
-// pvKnots are the peaks-and-valleys places of every height row.
-var pvKnots = [5]float64{-1, -0.4, 0, 0.4, 1}
-
-// pvRow builds one height row from the ground Y at the PV knots. The Y values come from
-// studying the game. Its slopes were not transcribed; ours are worked out so that a row
-// never overshoots between knots: the harmonic mean of the slopes on each side, or zero
-// where the row turns or lies flat. This keeps mountain rows nearly straight in PV and
-// flat rows flat, which is how the notes describe the game's rows.
-func pvRow(y [5]float64) *spline {
-	s := &spline{input: inputPV, knots: make([]knot, 5)}
-	sec := func(i int) float64 { return (y[i+1] - y[i]) / (pvKnots[i+1] - pvKnots[i]) }
-	for i := range y {
-		k := knot{at: pvKnots[i], value: y[i]}
-		switch i {
-		case 0:
-			// Valley walls rise fast: twice the straight line (still never overshooting). Our
-			// own tuning, because a straight rise left too much inland ground under the sea
-			// against the measured 45% of columns under Y 63.
-			k.slope = 2 * sec(0)
-		case 4:
-			k.slope = sec(3)
-		default:
-			if a, b := sec(i-1), sec(i); a*b > 0 {
-				k.slope = 2 * a * b / (a + b)
-			}
-		}
-		s.knots[i] = k
+// curve builds a spline from location, value, slope triples, as the study's addendum (A1)
+// writes its knots.
+func curve(input int, t ...float64) *spline {
+	s := &spline{input: input}
+	for i := 0; i+2 < len(t); i += 3 {
+		s.knots = append(s.knots, knot{at: t[i], value: t[i+1], slope: t[i+2]})
 	}
 	return s
 }
 
-// heightRows is one column of the study's height table: erosion knot, then the row.
-type heightRow struct {
-	erosion float64
-	y       [5]float64
+// nest adds a knot that holds another spline, keeping the knots in order. All such knots
+// have slope 0 in the study's tables.
+func (s *spline) nest(at float64, child *spline) *spline {
+	i := 0
+	for i < len(s.knots) && s.knots[i].at < at {
+		i++
+	}
+	s.knots = slices.Insert(s.knots, i, knot{at: at, child: child})
+	return s
 }
 
-func byErosion(rows []heightRow) *spline {
-	s := &spline{input: inputErosion}
-	for _, r := range rows {
-		s.knots = append(s.knots, knot{at: r.erosion, child: pvRow(r.y)})
+// byInput builds a spline whose knots all hold other splines.
+func byInput(input int, at []float64, children ...*spline) *spline {
+	s := &spline{input: input}
+	for i, child := range children {
+		s.knots = append(s.knots, knot{at: at[i], child: child})
 	}
 	return s
 }
 
-// heightSpline gives the nominal ground Y from continentalness, erosion and PV. The knot
-// places and heights come from studying Java 26.1, where the ground lies at
-// Y = 63.5 + 128 * offset; all numbers here are in blocks. Rivers need nothing else: a
+// offsetCurve is a PV row of the study's offset table (addendum A1), given as raw offset
+// values and converted to blocks, where the ground lies at Y = 63.5 + 128 * offset.
+func offsetCurve(t ...float64) *spline {
+	s := curve(inputPV, t...)
+	for i := range s.knots {
+		s.knots[i].value = groundBase + groundPerOffset*s.knots[i].value
+		s.knots[i].slope *= groundPerOffset
+	}
+	return s
+}
+
+const (
+	groundBase      = 63.5
+	groundPerOffset = 128.0
+)
+
+// heightSpline gives the nominal ground Y from continentalness, erosion and PV. Every knot
+// and slope is from the study's addendum, table A1 "Offset". Rivers need nothing else: a
 // valley is PV near -1, which sits at Y 44 to 57 when erosion is high, so it cuts below
-// sea level. Between erosion and continentalness knots the slope is zero.
+// sea level.
 var heightSpline = func() *spline {
-	mountainLow := []heightRow{
-		{-0.85, [5]float64{52, 82, 102, 122, 152}},
-		{-0.7, [5]float64{49, 78, 97, 116, 145}},
-		{-0.4, [5]float64{35, 64, 64, 64, 76}},
+	// Rows shared by several continentalness tables.
+	e85 := func() *spline { return offsetCurve(-1, -0.0888, 0.3894, 1, 0.69, 0.3894) }
+	e70 := func() *spline { return offsetCurve(-1, -0.1158, 0.3779, 1, 0.64, 0.3779) }
+	e40 := func() *spline {
+		return offsetCurve(-1, -0.2222, 0, -0.75, -0.2222, 0, -0.65, 0, 0, 0.5955, 2.98e-08, 0, 0.6055, 2.98e-08, 0.2535, 1, 0.1, 0.2535)
 	}
-	low := byErosion(append(mountainLow[:3:3],
-		heightRow{-0.35, [5]float64{32, 70, 70, 70, 71}},
-		heightRow{-0.1, [5]float64{51, 64, 64, 70, 71}},
-		heightRow{0.2, [5]float64{51, 65, 65, 67, 76}},
-		heightRow{0.7, [5]float64{61, 60, 60, 67, 76}},
-	))
-	beachTable := byErosion(append(mountainLow[:3:3],
-		heightRow{-0.35, [5]float64{25, 70, 70, 70, 71}},
-		heightRow{-0.1, [5]float64{44, 64, 64, 70, 71}},
-		heightRow{0.2, [5]float64{44, 64, 64, 64, 64}},
-		heightRow{0.7, [5]float64{61, 60, 60, 64, 64}},
-	))
-	// The shattered rows are given in the notes only as "51 (or 57) at PV -1, about 85
-	// from PV 0 up"; the value at PV -0.4 is our own, halfway up.
-	mid := byErosion([]heightRow{
-		{-0.85, [5]float64{89, 129, 155, 181, 221}},
-		{-0.7, [5]float64{65, 99, 121, 143, 176}},
-		{-0.4, [5]float64{53, 83, 103, 123, 153}},
-		{-0.35, [5]float64{32, 108, 108, 108, 117}},
-		{-0.1, [5]float64{51, 64, 66, 108, 117}},
-		{0.2, [5]float64{51, 65, 65, 67, 76}},
-		{0.4, [5]float64{51, 65, 65, 67, 76}},
-		{0.45, [5]float64{51, 70, 85, 85, 85}},
-		{0.55, [5]float64{51, 70, 85, 85, 85}},
-		{0.58, [5]float64{51, 65, 65, 67, 76}},
-		{0.7, [5]float64{61, 60, 60, 67, 76}},
-	})
-	high := byErosion([]heightRow{
-		{-0.85, [5]float64{108, 152, 182, 211, 255}},
-		{-0.7, [5]float64{74, 109, 133, 156, 191}},
-		{-0.4, [5]float64{74, 109, 133, 156, 191}},
-		{-0.35, [5]float64{38, 128, 128, 128, 140}},
-		{-0.1, [5]float64{57, 65, 67, 128, 140}},
-		{0.2, [5]float64{57, 65, 65, 67, 76}},
-		{0.4, [5]float64{57, 65, 65, 67, 76}},
-		{0.45, [5]float64{57, 71, 85, 85, 85}},
-		{0.55, [5]float64{57, 71, 85, 85, 85}},
-		{0.58, [5]float64{57, 65, 65, 67, 76}},
-		{0.7, [5]float64{61, 65, 65, 67, 76}},
-	})
-	return &spline{input: inputContinentalness, knots: []knot{
-		{at: -1.1, value: 69}, // Mushroom islands.
-		{at: -1.02, value: 35},
-		{at: -0.51, value: 35}, // Deep ocean.
-		{at: -0.44, value: 48},
-		{at: -0.18, value: 48}, // Ocean.
-		{at: -0.16, child: beachTable},
-		{at: -0.15, child: beachTable},
-		{at: -0.1, child: low},
-		{at: 0.25, child: mid},
-		{at: 1, child: high},
-	}}
+	lowland := func(valley float64) *spline {
+		return offsetCurve(-1, valley, 0.5, -0.4, 0.01, 0, 0, 0.01, 0, 0.4, 0.03, 0.04, 1, 0.1, 0.049)
+	}
+	coastErosion := []float64{-0.85, -0.7, -0.4, -0.35, -0.1, 0.2, 0.7}
+	beach := func() *spline {
+		return byInput(inputErosion, coastErosion, e85(), e70(), e40(),
+			offsetCurve(-1, -0.3, 0.5, -0.4, 0.05, 0, 0, 0.05, 0, 0.4, 0.05, 0, 1, 0.06, 0.007),
+			offsetCurve(-1, -0.15, 0.5, -0.4, 0, 0, 0, 0, 0, 0.4, 0.05, 0.1, 1, 0.06, 0.007),
+			offsetCurve(-1, -0.15, 0.5, -0.4, 0, 0, 0, 0, 0, 0.4, 0, 0, 1, 0, 0),
+			offsetCurve(-1, -0.02, 0, -0.4, -0.03, 0, 0, -0.03, 0, 0.4, 0, 0.06, 1, 0, 0))
+	}
+	low := byInput(inputErosion, coastErosion, e85(), e70(), e40(),
+		offsetCurve(-1, -0.25, 0.5, -0.4, 0.05, 0, 0, 0.05, 0, 0.4, 0.05, 0, 1, 0.06, 0.007),
+		offsetCurve(-1, -0.1, 0.5, -0.4, 0.001, 0.01, 0, 0.003, 0.01, 0.4, 0.05, 0.094, 1, 0.06, 0.007),
+		lowland(-0.1),
+		offsetCurve(-1, -0.02, 0, -0.4, -0.03, 0, 0, -0.03, 0, 0.4, 0.03, 0.12, 1, 0.1, 0.049))
+	// The erosion 0.45 and 0.55 rows hold one more nested row at PV -0.4.
+	shattered := func(valley float64) *spline {
+		return offsetCurve(-1, valley, 0, 0, 0.17, 0).nest(-0.4, lowland(valley))
+	}
+	inlandErosion := []float64{-0.85, -0.7, -0.4, -0.35, -0.1, 0.2, 0.4, 0.45, 0.55, 0.58, 0.7}
+	mid := byInput(inputErosion, inlandErosion,
+		offsetCurve(-1, 0.2024, 0, 0, 0.7162, 0.5138, 1, 1.23, 0.5138),
+		offsetCurve(-1, 0.2, 0, 0, 0.4468, 0.4332, 1, 0.88, 0.4332),
+		offsetCurve(-1, 0.2, 0, 0, 0.3083, 0.3917, 1, 0.7, 0.3917),
+		offsetCurve(-1, -0.25, 0.5, -0.4, 0.35, 0, 0, 0.35, 0, 0.4, 0.35, 0, 1, 0.42, 0.049),
+		offsetCurve(-1, -0.1, 0.5, -0.4, 0.007, 0.07, 0, 0.021, 0.07, 0.4, 0.35, 0.658, 1, 0.42, 0.049),
+		lowland(-0.1), lowland(-0.1), shattered(-0.1), shattered(-0.1), lowland(-0.1),
+		offsetCurve(-1, -0.02, 0, -0.4, -0.03, 0, 0, -0.03, 0, 0.4, 0.03, 0.12, 1, 0.1, 0.049))
+	high := byInput(inputErosion, inlandErosion,
+		offsetCurve(-1, 0.3479, 0, 0, 0.924, 0.576, 1, 1.5, 0.576),
+		offsetCurve(-1, 0.2, 0, 0, 0.5392, 0.4608, 1, 1, 0.4608),
+		offsetCurve(-1, 0.2, 0, 0, 0.5392, 0.4608, 1, 1, 0.4608),
+		offsetCurve(-1, -0.2, 0.5, -0.4, 0.5, 0, 0, 0.5, 0, 0.4, 0.5, 0, 1, 0.6, 0.07),
+		offsetCurve(-1, -0.05, 0.5, -0.4, 0.01, 0.1, 0, 0.03, 0.1, 0.4, 0.5, 0.94, 1, 0.6, 0.07),
+		lowland(-0.05), lowland(-0.05), shattered(-0.05), shattered(-0.05), lowland(-0.05),
+		offsetCurve(-1, -0.02, 0.015, -0.4, 0.01, 0, 0, 0.01, 0, 0.4, 0.03, 0.04, 1, 0.1, 0.049))
+	top := curve(inputContinentalness, -1.1, 0.044, 0, -1.02, -0.2222, 0, -0.51, -0.2222, 0, -0.44, -0.12, 0, -0.18, -0.12, 0)
+	for i := range top.knots {
+		top.knots[i].value = groundBase + groundPerOffset*top.knots[i].value
+	}
+	return top.nest(-0.16, beach()).nest(-0.15, beach()).nest(-0.1, low).nest(0.25, mid).nest(1, high)
 }()
 
-// factorRow runs from 6.3 at weirdness -0.2 to base at weirdness 0.2.
-func factorRow(base float64) *spline {
-	return &spline{input: inputWeirdness, knots: []knot{{at: -0.2, value: 6.3}, {at: 0.2, value: base}}}
+// factorTable is the part every continentalness table of the factor spline shares (addendum
+// A1, "Factor"): erosion knots -0.6 to 0.03.
+func factorTable(base float64) *spline {
+	row := curve(inputWeirdness, -0.2, 6.3, 0, 0.2, base, 0)
+	return byInput(inputErosion, []float64{-0.6, -0.5, -0.35, -0.25, -0.1, 0.03},
+		row,
+		curve(inputWeirdness, -0.05, 6.3, 0, 0.05, 2.67, 0),
+		row, row,
+		curve(inputWeirdness, -0.05, 2.67, 0, 0.05, 6.3, 0),
+		row)
 }
 
-// factorTable is one erosion table of the factor spline. The structure and the factors
-// come from the study's description; how sharply each dip is entered is our own reading,
-// because the notes name the values and places but not every knot.
-func factorTable(base float64, shatteredBand bool) *spline {
-	row := &knot{child: factorRow(base)}
-	k := func(at float64) knot { return knot{at: at, child: row.child} }
-	dipHigh := &spline{input: inputWeirdness, knots: []knot{{at: -0.05, value: 6.3}, {at: 0.05, value: 2.67}}}
-	dipLow := &spline{input: inputWeirdness, knots: []knot{{at: -0.05, value: 2.67}, {at: 0.05, value: base}}}
-	knots := []knot{
-		k(-0.6), {at: -0.5, child: dipHigh}, k(-0.35), k(-0.25), {at: -0.1, child: dipLow}, k(0.03),
-	}
-	if shatteredBand {
-		// Coast and near inland: factor 0.625 at weirdness above 0.1.
-		band := &spline{input: inputWeirdness, knots: []knot{{at: 0, child: row.child}, {at: 0.1, child: &spline{
-			input: inputPV, knots: []knot{{at: -0.75, value: base}, {at: -0.69, value: 0.625}}}}}}
-		knots = append(knots, k(0.05), k(0.4), knot{at: 0.45, child: band}, knot{at: 0.55, child: band}, k(0.58))
-	} else {
-		// Far inland: 1.56 at PV 0.7 on ordinary ground, 1.37 from PV -0.15 in the windswept band.
-		ground := &spline{input: inputPV, knots: []knot{{at: 0.2, child: row.child}, {at: 0.7, value: 1.56}}}
-		band := &spline{input: inputPV, knots: []knot{{at: -0.6, child: row.child}, {at: -0.15, value: 1.37}}}
-		knots = append(knots, knot{at: 0.05, child: ground}, knot{at: 0.4, child: ground},
-			knot{at: 0.45, child: band}, knot{at: 0.55, child: band}, k(0.58))
-	}
-	return &spline{input: inputErosion, knots: knots}
+// coastFactor is a factor table with the shattered band at erosion 0.45 and 0.55.
+func coastFactor(base float64) *spline {
+	band := curve(inputPV, -0.9, base, 0).nest(-0.69, curve(inputWeirdness, 0, base, 0, 0.1, 0.625, 0))
+	s := factorTable(base)
+	s.knots = append(s.knots,
+		knot{at: 0.35, value: base}, knot{at: 0.45, child: band}, knot{at: 0.55, child: band}, knot{at: 0.62, value: base})
+	return s
 }
 
-// factorSpline says how steep the vertical gradient is: a low factor lets the 3D noise
-// move the ground a long way. It is almost everywhere 3.95 to 6.3. Values from the study.
-var factorSpline = &spline{input: inputContinentalness, knots: []knot{
-	{at: -0.19, value: 3.95},
-	{at: -0.15, child: factorTable(6.25, true)},
-	{at: -0.1, child: factorTable(5.47, true)},
-	{at: 0.03, child: factorTable(5.08, true)},
-	{at: 0.06, child: factorTable(4.69, false)},
-}}
-
-// jaggedRow scales jaggedness with PV: zero up to about PV 0.2, a mid value at 0.45, full
-// at 1, scaled 0.63 at negative weirdness and 0.3 at positive. The study gives those
-// places and scales; "mid" is ours, 45% of full.
-func jaggedRow(table float64) *spline {
-	byPV := func(scale float64) *spline {
-		full := table * scale
-		return &spline{input: inputPV, knots: []knot{{at: 0.2, value: 0}, {at: 0.45, value: full * 0.45}, {at: 1, value: full}}}
-	}
-	return &spline{input: inputWeirdness, knots: []knot{{at: -0.01, child: byPV(0.63)}, {at: 0.01, child: byPV(0.3)}}}
+// inlandFactor is the last factor table, at continentalness 0.06.
+func inlandFactor(base float64) *spline {
+	row := curve(inputWeirdness, -0.2, 6.3, 0, 0.2, base, 0)
+	ground := curve(inputPV, 0.7, 1.56, 0).nest(0.45, row)
+	band := curve(inputPV, -0.15, 1.37, 0).nest(-0.7, row)
+	s := factorTable(base)
+	s.knots = append(s.knots,
+		knot{at: 0.05, child: ground}, knot{at: 0.4, child: ground},
+		knot{at: 0.45, child: band}, knot{at: 0.55, child: band}, knot{at: 0.58, value: base})
+	return s
 }
 
-// jaggedSpline gives extra spikes on peaks: zero at continentalness -0.11 and at erosion
-// -0.375 or above, using table values 0.5 and 1.
+// factorSpline says how steep the vertical gradient is: a low factor lets the 3D noise move
+// the ground a long way. All values from addendum A1.
+var factorSpline = curve(inputContinentalness, -0.19, 3.95, 0).
+	nest(-0.15, coastFactor(6.25)).nest(-0.1, coastFactor(5.47)).nest(0.03, coastFactor(5.08)).nest(0.06, inlandFactor(4.69))
+
+// jaggedSpline gives extra spikes on peaks. All values from addendum A1, "Jaggedness".
 var jaggedSpline = func() *spline {
-	byE := func(table float64) *spline {
-		return &spline{input: inputErosion, knots: []knot{
-			{at: -0.78, child: jaggedRow(table)},
-			{at: -0.5775, child: jaggedRow(table * 0.5)},
-			{at: -0.375, value: 0},
-		}}
+	bySign := func(negative, positive float64) *spline {
+		return curve(inputWeirdness, -0.01, negative, 0, 0.01, positive, 0)
 	}
-	return &spline{input: inputContinentalness, knots: []knot{
-		{at: -0.11, value: 0},
-		{at: 0.03, child: byE(0.5)},
-		{at: 0.65, child: byE(1)},
-	}}
+	flatToFull := func(negative, positive float64) *spline {
+		return curve(inputPV, 0.2, 0, 0, 0.45, 0, 0).nest(1, bySign(negative, positive))
+	}
+	erosion := []float64{-1, -0.78, -0.5775}
+	near := byInput(inputErosion, erosion, flatToFull(0.63, 0.3), flatToFull(0.315, 0.15), flatToFull(0.315, 0.15))
+	near.knots = append(near.knots, knot{at: -0.375})
+	far := byInput(inputErosion, erosion,
+		curve(inputPV, 0.2, 0, 0).nest(0.45, bySign(0.63, 0.3)).nest(1, bySign(0.63, 0.3)),
+		flatToFull(0.63, 0.3), flatToFull(0.63, 0.3))
+	far.knots = append(far.knots, knot{at: -0.375})
+	return curve(inputContinentalness, -0.11, 0, 0).nest(0.03, near).nest(0.65, far)
 }()
 
 func quarterNeg(v float64) float64 {
@@ -256,10 +237,9 @@ func halfNeg(v float64) float64 {
 	return v
 }
 
-// squeeze softens large density values, keeping the sign.
-func squeeze(v float64) float64 {
-	v = clamp(v, -1, 1)
-	return v/2 - v*v*v/24
+// blendGround is the nominal ground at a block inside a grid cell, from the cell's corners.
+func blendGround(a, b, c, d *columnShape, tx, tz float64) float64 {
+	return bilerp(a.ground, b.ground, c.ground, d.ground, tx, tz)
 }
 
 // nominalGround is the ground Y from the offset spline alone, with no 3D noise.
@@ -276,10 +256,7 @@ type columnShape struct {
 }
 
 func (g *Generator) shapeAt(x, z int) columnShape {
-	qx, qz := g.warped(x, z)
-	c := clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1)
-	e := clamp(g.climate.erosion.at(qx, 0, qz), -1, 1)
-	w := clamp(g.climate.weirdness.at(qx, 0, qz), -1, 1)
+	c, e, w := g.shapeClimate(g.warped(x, z))
 	in := splineInput{inputContinentalness: c, inputErosion: e, inputPV: peaksAndValleys(w), inputWeirdness: w}
 	s := columnShape{ground: heightSpline.eval(in), factor: factorSpline.eval(in), erosion: e}
 	if j := jaggedSpline.eval(in); j > 0 {
@@ -297,8 +274,9 @@ const jaggedScale = 1500.0 / 65536
 const maxBase = 1.2
 
 // base3D is the blended noise: a selector picks between two limit noises. Wavelengths and
-// the spread (std 0.22) come from the study. Our own limit noises stop at 6 octaves, since
-// finer ones fall inside one 4 x 8 x 4 grid cell.
+// the spread (std 0.22) come from the notes. Our own choices: limit noises stop at 6 octaves
+// and the selector at 4 (the notes list 16 and 8), since finer ones fall inside one 4 x 8 x 4
+// grid cell; and the selector's sharpness of 5 below.
 func (g *Generator) base3D(x, y, z float64) float64 {
 	t := clamp(0.5+g.terrain.selector.at(x/baseSelectorXZ, y/baseSelectorY, z/baseSelectorXZ)*5, 0, 1)
 	var v float64
@@ -337,15 +315,24 @@ func newTerrainNoises(seed int64) terrainNoises {
 
 // baseSpread is the limit noises' standard deviation, set so the blended noise measures
 // about 0.22, the figure from the study.
-const baseSpread = 0.24
+const baseSpread = 0.232
+
+// groundFine moves the zero of the depth gradient off nominal ground: the study's offset
+// constant -0.50375 and gradient (+1.5 at Y -64 to -1.5 at Y 320) put it 0.02 blocks above
+// 63.5 + 128 * offset (notes section 3).
+const groundFine = 0.02
+
+// ramp is 4*quarterNeg(depth*factor), the part of the sloped density without 3D noise.
+func (s *columnShape) ramp(y float64) float64 {
+	return 4 * quarterNeg(((s.ground+groundFine-y)/128+s.jag)*s.factor)
+}
 
 // slopedDensity is the ground before caves: 4*quarterNeg(depth*factor), plus the blended
 // noise when the point is near enough to the ground for it to matter. The lopsided
 // quarterNeg lifts ground 128/factor blocks per unit of noise but lowers it only 32/factor,
 // so bumps and overhangs rise from a firm base.
 func (g *Generator) slopedDensity(s *columnShape, x, y, z float64) float64 {
-	depth := (s.ground-0.5-y)/128 + s.jag
-	sloped := 4 * quarterNeg(depth*s.factor)
+	sloped := s.ramp(y)
 	if sloped < -maxBase || sloped > maxBase+slopedKeepNoise {
 		return sloped
 	}
@@ -368,9 +355,15 @@ func slide(v, y float64) float64 {
 	return v
 }
 
-// finishDensity applies the last steps: the slides, the 0.64 scale and the squeeze.
+const densityEase = 0.8
+
+// finishDensity applies the last steps: the slides and the 0.64 scale, both from the notes.
+// The notes also name a squeeze step with no formula. Ours is a tanh, our own choice: it keeps
+// the sign and eases large values, so blending is not pulled far by a point deep in rock.
+// densityEase is tuned by us. Of the curves we measured, this one passed the chunk edge test
+// and came nearest the inland share of columns under Y 63 (see NOTES.md).
 func finishDensity(v, y float64) float64 {
-	return squeeze(0.64 * slide(v, y))
+	return math.Tanh(0.64 * densityEase * slide(v, y))
 }
 
 // fillColumn works out final density at each grid point of the column at a block position.
@@ -412,14 +405,8 @@ func (c *cell) solidAt(dx, dz, dy int) bool {
 		ty) > 0
 }
 
-// terrainHeight returns the Y of the highest solid block of the terrain in a column,
-// before caves are carved. Caves can open the top, so use SurfaceHeight for the real
-// highest solid block.
-func (g *Generator) terrainHeight(x, z int) int {
-	return g.highestSolid(x, z)
-}
-
-// highestSolid returns the Y of the highest block of the terrain alone in a column.
+// highestSolid returns the Y of the highest block of the terrain alone in a column, before
+// caves are carved. Caves can open the top, so use SurfaceHeight for the real highest block.
 func (g *Generator) highestSolid(x, z int) int {
 	gridX, gridZ := x&^(cellXZ-1), z&^(cellXZ-1)
 	dx, dz := x-gridX, z-gridZ

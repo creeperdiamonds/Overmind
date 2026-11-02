@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -198,13 +199,13 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 		{"beach %", s.share["beach"] + s.share["cold_beach"], 2.0, 1},
 		{"plains %", s.share["plains"], 10.0, 4},
 		{"humidity 0.7+ %", s.humid07, 0.21, 0.4},
-		{"continentalness 0.8+ %", s.cont08, 2.13, 2},
+		{"continentalness 0.8+ %", s.cont08, 2.13, 1},
 		{"distinct biomes", float64(s.biomes), 53, 8},
-		{"patches per 8192 square", s.patches, 4012, 1200},
-		{"area-weighted patch (chunks)", s.weightedPatch, 1734, 700},
-		{"plains patch (chunks)", s.patchOf["plains"], 1507, 1000},
-		{"savanna patch (chunks)", s.patchOf["savanna"], 2156, 1500},
-		{"jungle patch (chunks)", s.patchOf["jungle"], 583, 500},
+		{"patches per 8192 square", s.patches, 4012, 500},
+		{"area-weighted patch (chunks)", s.weightedPatch, 1734, 400},
+		{"plains patch (chunks)", s.patchOf["plains"], 1507, 500},
+		{"savanna patch (chunks)", s.patchOf["savanna"], 2156, 700},
+		{"jungle patch (chunks)", s.patchOf["jungle"], 583, 250},
 		{"land median Y", float64(s.landMedian), 71, 4},
 		{"land p99 Y", float64(s.landP99), 150, 15},
 		{"land p99.9 Y", float64(s.landP999), 182, 20},
@@ -222,8 +223,14 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 		{"weirdness std", s.std[4], 0.353, 0.05},
 		{"continentalness median", s.contMedian, 0.04, 0.12},
 		{"far inland %", s.farInland, 25, 7},
-		{"below Y 63 %", s.below63, 45, 8},
 	}
+	// Under Y 63: the row is over 12 seeds, because 3 seeds alone move this figure by about 8
+	// points (42 to 50 across groups of 3). The game's figure is from its own 3 seeds.
+	below, inland := measureBelowSea()
+	t.Logf("below Y 63: first 3 seeds %.1f%%, 12 seeds %.1f%%; inland not river or swamp %.1f%%", s.below63, below, inland)
+	rows = append(rows,
+		row{"below Y 63 %, 12 seeds", below, 45, 3},
+		row{"inland under Y 63 %, 12 seeds", inland, inlandBelowSeaFigure, 2})
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n%-30s %9s %9s %7s\n", "measure", "ours", "mojang", "tol")
 	for _, r := range rows {
@@ -245,22 +252,73 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 	}
 }
 
-// caveShares measures blocks at least 8 under the column top, with noise caves and fluids
-// only (no carvers), on the study bands. Mojang figures are from NOTES-how-it-works.md.
+// inlandBelowSeaFigure is the target share of inland columns (continentalness -0.11 or more,
+// not river or swamp biomes) with top solid under Y 63: about 14% as set for this fix. A recount
+// of the study's raw probe grid (mojang-grid.csv) gives 12.8%.
+const inlandBelowSeaFigure = 14.0
+
+// measureBelowSea gives the share of all columns under Y 63, and the inland share above, over
+// 12 seeds on the study's sampling grid.
+func measureBelowSea() (below, inland float64) {
+	const n = statSpan/statStep + 1
+	var total, under, inlandTotal, inlandUnder atomic.Int64
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
+	for seed := int64(1); seed <= 12; seed++ {
+		g := New(seed)
+		for i := range n {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				for j := range n {
+					x, z := -statSpan/2+i*statStep, -statSpan/2+j*statStep
+					h := g.noiseHeight(x, z)
+					total.Add(1)
+					if h < SeaLevel {
+						under.Add(1)
+					}
+					if g.Climate(x, z).Continentalness < -0.11 {
+						continue
+					}
+					switch g.BiomeAt(x, maxY, z).String() {
+					case "river", "frozen_river", "swampland", "mangrove_swamp":
+						continue
+					}
+					inlandTotal.Add(1)
+					if h < SeaLevel {
+						inlandUnder.Add(1)
+					}
+				}
+			}()
+		}
+	}
+	wg.Wait()
+	return float64(under.Load()) / float64(total.Load()) * 100, float64(inlandUnder.Load()) / float64(inlandTotal.Load()) * 100
+}
+
+// TestCaveSharesMatchMeasuredFigures measures blocks at least 8 under the column top, with
+// noise caves and fluids only (no carvers), on the study's bands, 3 seeds over 8192 blocks. Air
+// must be within 1.5 points and each fluid within 1. Figures are the table in the notes,
+// section 7, except Y 100 to 160: the notes' 7.8% rests on 1,359 blocks, and a recount of the
+// study's larger probe output (mojang-cols2.csv, 60,000 columns, 65,497 blocks in that band)
+// gives 4.41%, so that is the figure asserted. NOTES.md records this.
 func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
+	const airTol, fluidTol = 1.5, 1.0
 	bands := []struct {
-		lo, hi                int
-		air, water, lava, tol float64
+		lo, hi           int
+		air, water, lava float64
 	}{
-		{-64, -54, 0.0, 0.0, 0.4, 2.5},
-		{-54, -40, 3.9, 0.0, 0.0, 2.5},
-		{-40, -20, 6.6, 0.3, 0.2, 3},
-		{-20, 0, 7.7, 0.6, 0.0, 3},
-		{0, 20, 6.1, 2.8, 0.0, 3},
-		{20, 40, 4.4, 1.6, 0.0, 2.5},
-		{40, 63, 3.1, 1.4, 0.0, 2.5},
-		{63, 100, 4.2, 0.1, 0.0, 2.5},
-		{100, 160, 7.8, 0.0, 0.0, 4},
+		{-64, -54, 0.0, 0.0, 0.4},
+		{-54, -40, 3.9, 0.0, 0.0},
+		{-40, -20, 6.6, 0.3, 0.2},
+		{-20, 0, 7.7, 0.6, 0.0},
+		{0, 20, 6.1, 2.8, 0.0},
+		{20, 40, 4.4, 1.6, 0.0},
+		{40, 63, 3.1, 1.4, 0.0},
+		{63, 100, 4.2, 0.1, 0.0},
+		{100, 160, 4.41, 0.0, 0.0},
 	}
 	var air, water, lava, total [9]float64
 	var mu sync.Mutex
@@ -268,8 +326,8 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 	sem := make(chan struct{}, runtime.NumCPU())
 	for seed := int64(1); seed <= statSeeds; seed++ {
 		g := New(seed)
-		for cx := -256; cx < 256; cx += 16 {
-			for cz := -256; cz < 256; cz += 16 {
+		for cx := -statSpan / 32; cx < statSpan/32; cx += 8 {
+			for cz := -statSpan / 32; cz < statSpan/32; cz += 8 {
 				wg.Add(1)
 				sem <- struct{}{}
 				go func() {
@@ -317,14 +375,251 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 	for i, r := range bands {
 		pa, pw, pl := air[i]/total[i]*100, water[i]/total[i]*100, lava[i]/total[i]*100
 		fmt.Fprintf(&b, "%4d to %4d   %6.1f /%5.1f  %6.1f /%5.1f  %6.1f /%5.1f\n", r.lo, r.hi, pa, r.air, pw, r.water, pl, r.lava)
-		// Known gap, reported in NOTES.md rather than tuned away: air at Y 100 to 160 is about
-		// half the measured figure, and the study does not say which part of the game gives it.
-		if r.lo == 100 {
-			continue
+		if math.Abs(pa-r.air) > airTol || math.Abs(pw-r.water) > fluidTol || math.Abs(pl-r.lava) > fluidTol {
+			t.Errorf("Y %d to %d: air %.2f water %.2f lava %.2f; measured from the game %.2f %.2f %.2f", r.lo, r.hi, pa, pw, pl, r.air, r.water, r.lava)
 		}
-		if math.Abs(pa-r.air) > r.tol || math.Abs(pw-r.water) > r.tol || math.Abs(pl-r.lava) > r.tol {
-			t.Errorf("Y %d to %d: air %.1f water %.1f lava %.1f; measured from the game %.1f %.1f %.1f, tolerance %.1f", r.lo, r.hi, pa, pw, pl, r.air, r.water, r.lava, r.tol)
+		if r.lo == -64 && pa != 0 {
+			t.Errorf("Y -64 to -54: %.2f%% air, the study measured none; open space there is lava", pa)
 		}
 	}
 	t.Log(b.String())
+}
+
+// openNoiseCaves measures land columns whose cave air joins the sky, by the study's method
+// (addendum A4): noise caves only, no carvers; random 32 x 32 windows; air flooded from the top
+// of the window over 6 directions inside it; land is a top solid block at Y 63 or above. Every
+// column of each window counts.
+func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
+	const height = maxY - minY + 1
+	index := func(x, y, z int) int { return (x*32+z)*height + y }
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
+	for w := range windows {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h := posHash(uint64(seed), w, 0, 99)
+			cx, cz := int(h%512)-256, int((h>>20)%512)-256
+			var chunks [2][2]*chunk.Chunk
+			var tops [2][2][16][16]int16
+			for a := range 2 {
+				for b := range 2 {
+					chunks[a][b] = chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+					s := new(chunkScratch)
+					s.aq.reset((cx+a)*16, (cz+b)*16)
+					g.fillNoise(chunks[a][b], s, (cx+a)*16, (cz+b)*16, &tops[a][b])
+				}
+			}
+			air := make([]bool, 32*32*height)
+			seen := make([]bool, 32*32*height)
+			var stack []int
+			for x := range 32 {
+				for z := range 32 {
+					for y := range height {
+						air[index(x, y, z)] = chunks[x/16][z/16].Block(uint8(x%16), int16(y+minY), uint8(z%16), 0) == g.blocks.air
+					}
+					i := index(x, height-1, z)
+					seen[i] = true
+					stack = append(stack, i)
+				}
+			}
+			for len(stack) > 0 {
+				p := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				y, q := p%height, p/height
+				x, z := q/32, q%32
+				for _, d := range [6][3]int{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}} {
+					u, v, k := x+d[0], y+d[1], z+d[2]
+					if u < 0 || u >= 32 || k < 0 || k >= 32 || v < 0 || v >= height {
+						continue
+					}
+					if i := index(u, v, k); air[i] && !seen[i] {
+						seen[i] = true
+						stack = append(stack, i)
+					}
+				}
+			}
+			l, o := 0, 0
+			for x := range 32 {
+				for z := range 32 {
+					top := int(tops[x/16][z/16][x%16][z%16])
+					if top < SeaLevel {
+						continue
+					}
+					l++
+					for y := top - 1; y >= minY; y-- {
+						if seen[index(x, y-minY, z)] {
+							o++
+							break
+						}
+					}
+				}
+			}
+			mu.Lock()
+			land += l
+			open += o
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return land, open
+}
+
+// TestNoiseCavesOpenToSky asserts the measured figure: 4.7% of land columns over 3 seeds, 3.5 to
+// 6.6 per seed (addendum A4). Carvers are left out, as they were there.
+func TestNoiseCavesOpenToSky(t *testing.T) {
+	var land, open int
+	for seed := int64(1); seed <= statSeeds; seed++ {
+		l, o := openNoiseCaves(New(seed), seed, 60)
+		t.Logf("seed %d: %d land columns, %.2f%% open to the sky", seed, l, float64(o)/float64(l)*100)
+		land += l
+		open += o
+	}
+	share := float64(open) / float64(land) * 100
+	t.Logf("all seeds: %d land columns, %.2f%% open; measured from the game 4.7%%", land, share)
+	if share < 3.5 || share > 6.6 {
+		t.Errorf("%.2f%% of land columns open to the sky, the game's seeds measured 3.5 to 6.6", share)
+	}
+}
+
+// Carver outputs were not measurable in the study (addendum A6), so this is our own bound: the
+// air carvers add on top of noise caves must stay between 0.3 and 1.5 points in each band up to
+// Y 100, so caves overall stay near the shares in the notes. Lakes and geodes count here too.
+func TestCarversAddLittleAir(t *testing.T) {
+	bands := [][2]int{{-54, -40}, {-40, -20}, {-20, 0}, {0, 20}, {20, 40}, {40, 63}, {63, 100}}
+	added, total := make([]float64, len(bands)), make([]float64, len(bands))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
+	for seed := int64(1); seed <= statSeeds; seed++ {
+		g := New(seed)
+		for cx := -statSpan / 32; cx < statSpan/32; cx += 16 {
+			for cz := -statSpan / 32; cz < statSpan/32; cz += 16 {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+					full := generate(g, int32(cx), int32(cz))
+					noise := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+					s := new(chunkScratch)
+					s.aq.reset(cx*16, cz*16)
+					var top [16][16]int16
+					g.fillNoise(noise, s, cx*16, cz*16, &top)
+					a, n := make([]float64, len(bands)), make([]float64, len(bands))
+					for x := uint8(0); x < 16; x += 3 {
+						for z := uint8(0); z < 16; z += 3 {
+							for i, b := range bands {
+								for y := b[0]; y < min(b[1], int(top[x][z])-8); y++ {
+									n[i]++
+									if full.Block(x, int16(y), z, 0) == g.blocks.air {
+										a[i]++
+									}
+									if noise.Block(x, int16(y), z, 0) == g.blocks.air {
+										a[i]--
+									}
+								}
+							}
+						}
+					}
+					mu.Lock()
+					for i := range a {
+						added[i] += a[i]
+						total[i] += n[i]
+					}
+					mu.Unlock()
+				}()
+			}
+		}
+	}
+	wg.Wait()
+	for i, b := range bands {
+		p := added[i] / total[i] * 100
+		t.Logf("Y %d to %d: carvers and lakes add %.2f points of air", b[0], b[1], p)
+		if p < 0.3 || p > 1.5 {
+			t.Errorf("Y %d to %d: carvers add %.2f points of air, own bound 0.3 to 1.5", b[0], b[1], p)
+		}
+	}
+}
+
+// A cut can never be further from its start than the constants say, for any roll, so a chunk's
+// carverReach covers every tunnel that can touch it. Rolled with the longest length and the
+// widest radius, every point of a path plus its radius must stay within the limit on each axis.
+func TestTunnelsStayWithinReach(t *testing.T) {
+	r := carverReachBlocks
+	check := func(name string, furthest float64) {
+		if furthest > float64(r) {
+			t.Errorf("%s reached %.1f blocks from its start, the limit is %d", name, furthest, r)
+		}
+	}
+	for i := range 4000 {
+		seed := posHash(99, i, 0, 0)
+		var far float64
+		// Largest allowed rolls for radius and height.
+		p := newTunnelPath(seed, 0, 0, 0, tunnelHalfMax, tunnelBendMax, caveTilt)
+		widest := tunnelRadius(1) * 1.4 * (1 + 2.0/40)
+		for s := 0; s <= 400; s++ {
+			px, _, pz := p.at(float64(s)/200 - 1)
+			far = max(far, math.Abs(px)+widest, math.Abs(pz)+widest)
+		}
+		check("a tunnel", far)
+		far = 0
+		c := newTunnelPath(seed, 0, 0, 0, tunnelHalfMax, canyonBendMax, 0.125)
+		c.half = tunnelHalfMax
+		widest = (canyonCore + 6) * canyonMiddleWidth * (1 + 2.0/40)
+		for s := 0; s <= 400; s++ {
+			px, _, pz := c.at(float64(s)/200 - 1)
+			far = max(far, math.Abs(px)+widest, math.Abs(pz)+widest)
+		}
+		check("a canyon", far)
+	}
+}
+
+// A slope reads the same from either side of a chunk edge, so snowy slope stone must not follow
+// chunk lines: the share of stone tops in edge columns must be like that in inner columns.
+func TestSteepStoneIgnoresChunkEdges(t *testing.T) {
+	g := New(1)
+	var edge, inner, edgeStone, innerStone int
+	chunks := 0
+	for x := -8192; x < 8192 && chunks < 150; x += 48 {
+		for z := -8192; z < 8192 && chunks < 150; z += 48 {
+			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "snowy_slopes" && name != "jagged_peaks" {
+				continue
+			}
+			chunks++
+			c := generate(g, int32(x>>4), int32(z>>4))
+			for a := range uint8(16) {
+				for b := range uint8(16) {
+					top := topSolid(c, a, b)
+					if top < SeaLevel {
+						continue
+					}
+					stone := c.Block(a, int16(top), b, 0) == ridStone
+					switch {
+					case a == 0 || a == 15 || b == 0 || b == 15:
+						edge++
+						if stone {
+							edgeStone++
+						}
+					case a >= 4 && a <= 11 && b >= 4 && b <= 11:
+						inner++
+						if stone {
+							innerStone++
+						}
+					}
+				}
+			}
+		}
+	}
+	e, i := float64(edgeStone)/float64(edge), float64(innerStone)/float64(inner)
+	t.Logf("%d chunks: stone tops %.3f at chunk edges, %.3f inside", chunks, e, i)
+	if chunks < 30 {
+		t.Fatalf("only %d steep biome chunks found", chunks)
+	}
+	if math.Abs(e-i) > 0.04 {
+		t.Errorf("stone tops %.3f at chunk edges against %.3f inside", e, i)
+	}
 }

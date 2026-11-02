@@ -67,10 +67,16 @@ type chunkScratch struct {
 
 const cellsAcross = 16 / cellXZ
 
+// groundAt is the nominal ground at a block inside grid cell i, j.
+func (s *chunkScratch) groundAt(i, j int, tx, tz float64) float64 {
+	return blendGround(&s.shapes[i][j], &s.shapes[i+1][j], &s.shapes[i][j+1], &s.shapes[i+1][j+1], tx, tz)
+}
+
 var scratchPool = sync.Pool{New: func() any { return new(chunkScratch) }}
 
-// GenerateChunk runs the passes in the game's order: noise (stone, caves, fluids, ore
-// veins), biomes, surface, carvers, then decoration. Everything is worked out from the seed
+// GenerateChunk runs noise (stone, caves, fluids, ore veins), then biomes, surface, carvers
+// and decoration. The game does biomes before noise (notes section 1); ours can do them after,
+// because density never reads a stored biome. Everything is worked out from the seed
 // and the chunk position, with no look at neighbouring chunks.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	originX, originZ := int(pos[0])*16, int(pos[1])*16
@@ -92,7 +98,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 			highest = max(highest, int(top[x][z]))
 		}
 	}
-	g.applyCarvers(c, s, originX, originZ, &noiseTop, &cols)
+	g.applyCarvers(c, s, originX, originZ, &noiseTop)
 	g.applyLakes(c, s, originX, originZ, highest)
 	g.placeGeodes(c, int(pos[0]), int(pos[1]))
 	g.placeVeins(c, pos, highest, true)
@@ -138,7 +144,7 @@ func (g *Generator) fillNoise(c *chunk.Chunk, s *chunkScratch, originX, originZ 
 			dx, dz := lx-i*cellXZ, lz-j*cellXZ
 			tx, tz := float64(dx)/cellXZ, float64(dz)/cellXZ
 			wx, wz := originX+lx, originZ+lz
-			ground := bilerp(s.shapes[i][j].ground, s.shapes[i+1][j].ground, s.shapes[i][j+1].ground, s.shapes[i+1][j+1].ground, tx, tz)
+			ground := s.groundAt(i, j, tx, tz)
 			colTop := minY - 1
 			prevWater := false
 			for l := columnNodes - 2; l >= 0; l-- {

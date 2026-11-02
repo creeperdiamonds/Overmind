@@ -2,11 +2,12 @@ package worldgen
 
 import "math"
 
-// Aquifers decide what fills space the density leaves open. The grid, thresholds and
-// rules below come from studying Java 26.1: cells of 16 x 12 x 16, each with one jittered
-// centre, of which a block looks at 12 and finds the nearest. Where the study describes a
-// term in words rather than numbers (the barrier pressure, the surface sample pattern) the
-// exact form is our own.
+// Aquifers decide what fills space the density leaves open. From the notes (section 5): the
+// cell grid, the jitter, the anchor, the 12 candidate centres of which the 4 nearest count, the
+// nearest deciding the fluid, the similarity measure, flood thresholds, random levels and lava
+// cells. Noise octaves and scales are from addendum A3. Our own design, because the notes
+// describe it only in words: when a border between two centres becomes a stone wall (see
+// wallStrength), and the 13 surface sample offsets.
 const (
 	lavaLevel    = -54 // The global fluid is lava below this.
 	aquiferCellX = 16
@@ -91,11 +92,7 @@ func (g *Generator) chunkGround(a *aquiferCache, cx, cz int) float64 {
 	if !a.haveGround[i][j] {
 		a.haveGround[i][j] = true
 		x, z := cx*16+8, cz*16+8
-		qx, qz := g.warped(x, z)
-		a.grounds[i][j] = nominalGround(
-			clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
-			clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
-			clamp(g.climate.weirdness.at(qx, 0, qz), -1, 1))
+		a.grounds[i][j] = nominalGround(g.shapeClimate(g.warped(x, z)))
 	}
 	return a.grounds[i][j]
 }
@@ -163,7 +160,7 @@ func (g *Generator) computeStatus(a *aquiferCache, cx, cy, cz int) fluidStatus {
 	}
 	// A random level in a cell of 16 x 40 x 16, capped at the lowest nearby surface.
 	ry := floorDiv(cy, 40)
-	n := g.caves.spread.at(float64(floorDiv(cx, 16)*16), float64(ry*40)*0.71, float64(floorDiv(cz, 16)*16))
+	n := g.caves.spread.at(float64(floorDiv(cx, 16)*16), float64(ry*40)*0.714, float64(floorDiv(cz, 16)*16))
 	level := 40*ry + 20 + int(math.Round(n*10/3))*3
 	level = min(level, int(lowest))
 	st := fluidStatus{level: int32(level)}
@@ -174,34 +171,38 @@ func (g *Generator) computeStatus(a *aquiferCache, cx, cy, cz int) fluidStatus {
 	return st
 }
 
-// aquiferPressure says how strongly two neighbouring aquifers want a wall between them at
-// height y: water against lava always strongly, otherwise by the difference in level and
-// how far y lies from their average.
-func aquiferPressure(a, b fluidStatus, y int) float64 {
-	af, bf := a.kindAt(y) != fillAir, b.kindAt(y) != fillAir
-	if !af && !bf {
+// Own numbers for walls, measured and tuned against the water and air shares in the notes.
+const (
+	wallFade      = 4.0  // Blocks past the span between two levels where a wall fades out.
+	wallFullGap   = 6.0  // A level difference this large gets the full strength.
+	wallThreshold = 0.35 // How strong the border must be, before noise.
+	wallRoughness = 0.5  // How much the barrier noise moves that threshold.
+)
+
+// wallStrength says from 0 to 1 how much two neighbouring aquifers need stone between them at
+// height y. Our own form of what the notes describe: water against lava always counts in
+// full. Otherwise a wall is needed in the span where one side holds fluid and the other does
+// not, which is the span between their levels, so strength is full across that span, fades
+// just past its ends, and grows with the size of the level difference.
+func wallStrength(a, b fluidStatus, y int) float64 {
+	wetA, wetB := a.kindAt(y) != fillAir, b.kindAt(y) != fillAir
+	if !wetA && !wetB {
 		return 0
 	}
-	if (af && a.lava && bf && !b.lava) || (bf && b.lava && af && !a.lava) {
-		return 2
+	if wetA && wetB && a.lava != b.lava {
+		return 1
 	}
-	diff := math.Abs(float64(a.level - b.level))
-	if diff == 0 {
+	gap := math.Abs(float64(a.level - b.level))
+	if gap == 0 {
 		return 0
 	}
-	h := float64(y) + 0.5 - (float64(a.level)+float64(b.level))/2
-	o := diff/2 - math.Abs(h)
-	if h > 0 {
-		if o > 0 {
-			return o / 1.5
-		}
-		return o / 2.5
-	}
-	if q := 3 + o; q > 0 {
-		return q / 3
-	}
-	return (3 + o) / 10
+	middle := (float64(a.level) + float64(b.level)) / 2
+	past := math.Abs(float64(y)+0.5-middle) - gap/2
+	return clamp(gap/wallFullGap, 0, 1) * clamp(1-past/wallFade, 0, 1)
 }
+
+// aquiferNear is how many of the 12 candidate centres a block weighs (notes section 5).
+const aquiferNear = 4
 
 // aquiferAt finds the block's fluid from the nearest centres, or a stone wall between two.
 func (g *Generator) aquiferAt(a *aquiferCache, x, y, z int) fillKind {
@@ -209,35 +210,47 @@ func (g *Generator) aquiferAt(a *aquiferCache, x, y, z int) fillKind {
 		a.reset(x, z)
 	}
 	ax, ay, az := floorDiv(x-5, aquiferCellX), floorDiv(y+1, aquiferCellY), floorDiv(z-5, aquiferCellX)
-	var near [3]*aquiferCentre
-	dist := [3]int{math.MaxInt, math.MaxInt, math.MaxInt}
+	var near [aquiferNear]*aquiferCentre
+	var dist [aquiferNear]int
+	found := 0
 	for i := range 2 {
 		for j := -1; j <= 1; j++ {
 			for k := range 2 {
 				c := g.centreAt(a, ax+i, ay+j, az+k)
 				dx, dy, dz := int(c.x)-x, int(c.y)-y, int(c.z)-z
 				d := dx*dx + dy*dy + dz*dz
-				switch {
-				case d < dist[0]:
-					dist[2], near[2], dist[1], near[1], dist[0], near[0] = dist[1], near[1], dist[0], near[0], d, c
-				case d < dist[1]:
-					dist[2], near[2], dist[1], near[1] = dist[1], near[1], d, c
-				case d < dist[2]:
-					dist[2], near[2] = d, c
+				// Keep the nearest few in order.
+				at := found
+				for at > 0 && d < dist[at-1] {
+					at--
 				}
+				if at == aquiferNear {
+					continue
+				}
+				found = min(found+1, aquiferNear)
+				for m := found - 1; m > at; m-- {
+					near[m], dist[m] = near[m-1], dist[m-1]
+				}
+				near[at], dist[at] = c, d
 			}
 		}
 	}
 	s0 := g.statusOf(a, near[0])
-	if sim := similarity(dist[0], dist[1]); sim > 0 {
-		s1 := g.statusOf(a, near[1])
-		if g.barrierAt(sim, aquiferPressure(s0, s1, y), x, y, z) {
-			return fillSolid
+	barrier, haveBarrier := 0.0, false
+	for i := 1; i < aquiferNear; i++ {
+		sim := similarity(dist[0], dist[i])
+		if sim <= 0 {
+			break
 		}
-		if sim2 := similarity(dist[0], dist[2]); sim2 > 0 {
-			if g.barrierAt(sim2, aquiferPressure(s0, g.statusOf(a, near[2]), y), x, y, z) {
-				return fillSolid
-			}
+		strength := sim * wallStrength(s0, g.statusOf(a, near[i]), y)
+		if strength == 0 {
+			continue
+		}
+		if !haveBarrier {
+			barrier, haveBarrier = g.caves.barrier.at(float64(x), float64(y)*0.5, float64(z)), true
+		}
+		if strength > wallThreshold+wallRoughness*barrier {
+			return fillSolid
 		}
 	}
 	return s0.kindAt(y)
@@ -247,12 +260,4 @@ func (g *Generator) aquiferAt(a *aquiferCache, x, y, z int) fillKind {
 // distances, and at or under 0 away from the border between them.
 func similarity(d1, d2 int) float64 {
 	return 1 - float64(d2-d1)/25
-}
-
-func (g *Generator) barrierAt(sim, pressure float64, x, y, z int) bool {
-	if pressure == 0 {
-		return false
-	}
-	n := g.caves.barrier.at(float64(x), float64(y)*0.5, float64(z))
-	return 2*sim*pressure+n > 0
 }

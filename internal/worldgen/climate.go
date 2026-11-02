@@ -40,15 +40,24 @@ func (g *Generator) warped(x, z int) (qx, qz float64) {
 	return bx + g.climate.shiftX.at(bx, 0, bz)*4, bz + g.climate.shiftZ.at(bz, 0, bx)*4
 }
 
+// shapeClimate returns the three climate values terrain shape reads, at warped coordinates.
+// The clamps are our own bounds, wide enough that the measured spreads rarely reach them.
+func (g *Generator) shapeClimate(qx, qz float64) (continentalness, erosion, weirdness float64) {
+	return clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
+		clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
+		clamp(g.climate.weirdness.at(qx, 0, qz), -1, 1)
+}
+
 // Climate returns the climate values at a column.
 func (g *Generator) Climate(x, z int) Climate {
 	qx, qz := g.warped(x, z)
+	c, e, w := g.shapeClimate(qx, qz)
 	return Climate{
 		Temperature:     clamp(g.climate.temperature.at(qx, 0, qz), -1, 1),
 		Humidity:        clamp(g.climate.humidity.at(qx, 0, qz), -1, 1),
-		Continentalness: clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
-		Erosion:         clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
-		Weirdness:       clamp(g.climate.weirdness.at(qx, 0, qz), -1, 1),
+		Continentalness: c,
+		Erosion:         e,
+		Weirdness:       w,
 	}
 }
 
