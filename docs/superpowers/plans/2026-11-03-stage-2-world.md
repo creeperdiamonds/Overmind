@@ -195,6 +195,10 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
+## Task 4b: Same seed as Bedrock
+
+Owner asked on 2026-11-03. Rewrite the noise, climate, terrain and noise-cave layers to reproduce Mojang's values for a given seed, in our own Go code, from study notes. Accept: on the measured Bedrock worlds (seeds 100, 1, 12345, 987654321), biomes and height match at least as well as Java does (98.69-99.92% biomes; height within 2 blocks on 97.39% at seed 100), compared with a tool that reads reference data from outside the repo. Reference worlds stay outside the repo. Decorations keep their statistical targets.
+
 ## Task 5: Playing in the world
 
 **Files:** Modify `internal/config/config.go` (add `Seed`, default chosen randomly on first start, then kept in the world folder), `internal/app/app.go`. Create `internal/app/world_test.go`.

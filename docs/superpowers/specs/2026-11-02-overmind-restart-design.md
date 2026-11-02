@@ -87,6 +87,7 @@ The long-term goal is an ordinary vanilla survival server. These complete it: en
 - **Cheating:** no anti-cheat in the first release. The owner expects to add one later, such as GrimAC.
 - **Identity:** one person on both editions counts as two separate players.
 - **Size:** 20-30 players at once on the owner's 12GB VPS first, growing from there.
+- **Same seed as Bedrock (owner, 2026-11-03):** biomes, terrain shape and noise caves reproduce Mojang's Bedrock world for the same seed, tested against real Bedrock worlds, following Mojang's algorithms in our own Go code. Tunnels, canyons, ores, trees and plants stay statistically matched, not block-exact, because their placement is hidden inside Bedrock's program. This raises the licensing question for the review before public release.
 - **Weight:** the world must be production-ready, and the server must be lighter than Quarry.ts, using megabytes rather than gigabytes of memory.
 
 ## Left to the builder (Claude's calls, open to correction)
@@ -95,7 +96,6 @@ The long-term goal is an ordinary vanilla survival server. These complete it: en
 - **Go,** because Dragonfly is written in Go. Old Java code is reference material, to be ported rather than run.
 - **Java support is a translation layer** on top of the Bedrock-native game: it speaks the Java protocol and maps blocks, items, entities and actions between the editions. Protocol and block data come from generated tables, not hand-written constants, so another Java version means another table.
 - **The real game is only a test reference.** Real Bedrock and Java clients join the server for testing, and a world made in the real game is the comparison for terrain. Nothing from them goes into the repo.
-- **Terrain will look and feel vanilla, but a seed will not match Mojang's block for block.** An exact match is a much harder target. Test by comparing against a real Bedrock world, by eye and by measured features such as heights and biome spread.
 - **Dragonfly becomes our own fork.** We pull in its Bedrock update code when new versions come out, rather than trying to stay fully mergeable. A new client version can lock players out until the server is updated.
 - **Testing:** scripted bots on both editions test each stage, and the test setup is built early. The owner plays each stage at its end, and that playthrough is what signs it off.
 - **First release in five stages, each joinable and playable, and each working on both editions:**
