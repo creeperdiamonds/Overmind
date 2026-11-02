@@ -124,6 +124,13 @@ func newFractal(seed uint64, wavelengthXZ, wavelengthY float64, octaves int) *fr
 	return f
 }
 
+// newFractalSpread builds a fractal in unit coordinates with a set standard deviation.
+func newFractalSpread(seed uint64, octaves int, spread float64) *fractal {
+	f := newFractal(seed, 1, 1, octaves)
+	f.gain *= spread * 3
+	return f
+}
+
 // at samples the fractal at a block position.
 func (f *fractal) at(x, y, z float64) float64 {
 	x, y, z = x*f.freqXZ, y*f.freqY, z*f.freqXZ
@@ -135,6 +142,60 @@ func (f *fractal) at(x, y, z float64) float64 {
 		strength /= 2
 	}
 	return sum * f.gain
+}
+
+// layer is one octave of a layered noise: a gradient noise, how many wavelengths it fits
+// into one noise unit, and its weight.
+type layer struct {
+	noise        *gradientNoise
+	freq, weight float64
+}
+
+// layered is our double noise: two octave stacks added together, the second read at
+// 1.01813 times the coordinates so that the lattice of one never lines up with the other.
+// Octave i has a wavelength of 2^(-first-i) noise units and a weight of amps[i]*2^-i, and
+// the sum is scaled so its standard deviation is about target. The shape of this noise
+// and the octave lists passed to it come from studying the Java 26.1 generator; the code
+// is our own.
+type layered struct {
+	first, second []layer
+	gain          float64
+}
+
+// secondStackScale is the coordinate scale of the second stack, from the same study.
+const secondStackScale = 1.01813
+
+// newLayered builds a layered noise. Octaves with amplitude zero cost nothing.
+func newLayered(seed uint64, first int, amps []float64, target float64) *layered {
+	l := &layered{}
+	var power float64
+	freq, strength := math.Pow(2, float64(first)), 1.0
+	for i, amp := range amps {
+		if amp != 0 {
+			w := amp * strength
+			power += w * w
+			l.first = append(l.first, layer{newGradientNoise(mix64(seed + uint64(i)*2 + 1)), freq, w})
+			l.second = append(l.second, layer{newGradientNoise(mix64(seed + uint64(i)*2 + 2)), freq, w})
+		}
+		freq, strength = freq*2, strength/2
+	}
+	l.gain = target / (noiseSpread * math.Sqrt(2*power))
+	return l
+}
+
+// at samples the noise at a point in noise units.
+func (l *layered) at(x, y, z float64) float64 {
+	var sum float64
+	for i := range l.first {
+		o := &l.first[i]
+		sum += o.noise.at(x*o.freq, y*o.freq, z*o.freq) * o.weight
+	}
+	x, y, z = x*secondStackScale, y*secondStackScale, z*secondStackScale
+	for i := range l.second {
+		o := &l.second[i]
+		sum += o.noise.at(x*o.freq, y*o.freq, z*o.freq) * o.weight
+	}
+	return sum * l.gain
 }
 
 func clamp(v, low, high float64) float64 {

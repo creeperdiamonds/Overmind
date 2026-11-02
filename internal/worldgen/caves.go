@@ -280,3 +280,6 @@ func (g *Generator) SurfaceHeight(x, z int) int {
 		return carves(cc.blend(x-gridX, z-gridZ, y-cellY), y, top, entrance)
 	})
 }
+
+// noiseHeight is the top of the ground with noise caves but without carvers.
+func (g *Generator) noiseHeight(x, z int) int { return g.SurfaceHeight(x, z) }

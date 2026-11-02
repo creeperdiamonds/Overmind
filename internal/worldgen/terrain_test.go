@@ -17,7 +17,7 @@ func TestPeaksAndValleysFollowsWikiFormula(t *testing.T) {
 func TestSplineHitsKnotsAndClampsEnds(t *testing.T) {
 	s := &spline{input: inputErosion, knots: []knot{{at: -1, value: 10}, {at: 0, value: 20}, {at: 1, value: 40}}}
 	for _, c := range []struct{ at, want float64 }{{-5, 10}, {-1, 10}, {0, 20}, {-0.5, 15}, {1, 40}, {9, 40}} {
-		if got := s.eval([3]float64{inputErosion: c.at}); math.Abs(got-c.want) > 1e-9 {
+		if got := s.eval(splineInput{inputErosion: c.at}); math.Abs(got-c.want) > 1e-9 {
 			t.Errorf("eval(%v) = %v, want %v", c.at, got, c.want)
 		}
 	}
@@ -26,7 +26,7 @@ func TestSplineHitsKnotsAndClampsEnds(t *testing.T) {
 func TestSplineNests(t *testing.T) {
 	inner := &spline{input: inputErosion, knots: []knot{{at: 0, value: 100}, {at: 1, value: 200}}}
 	s := &spline{input: inputContinentalness, knots: []knot{{at: 0, value: 0}, {at: 1, child: inner}}}
-	got := s.eval([3]float64{inputContinentalness: 1, inputErosion: 1})
+	got := s.eval(splineInput{inputContinentalness: 1, inputErosion: 1})
 	if got != 200 {
 		t.Fatalf("nested eval = %v, want 200", got)
 	}
@@ -36,7 +36,7 @@ func TestSplineNests(t *testing.T) {
 // and high peaks-and-valleys raises it.
 func TestHeightSplineFollowsWikiDirections(t *testing.T) {
 	h := func(c, e, pv float64) float64 {
-		return heightSpline.eval([3]float64{inputContinentalness: c, inputErosion: e, inputPV: pv})
+		return heightSpline.eval(splineInput{inputContinentalness: c, inputErosion: e, inputPV: pv})
 	}
 	if h(-0.8, 0, 0) >= h(-0.3, 0, 0) || h(-0.3, 0, 0) >= SeaLevel || h(0.5, 0, 0) <= h(0, 0, 0) {
 		t.Error("height does not rise with continentalness across the sea level")

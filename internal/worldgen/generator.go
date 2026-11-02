@@ -17,26 +17,31 @@ const (
 // Generator builds Overworld chunks from a seed. It holds only data that never changes
 // after New, so any number of workers can share it.
 type Generator struct {
-	climate  climateNoises
-	overhang *fractal
-	patch    *fractal // Patches of surface material.
-	caves    caveNoises
-	blocks   blocks
-	// Seeds for position-based chances: bedrock and deepslate, veins, aquifers.
-	strataSeed, veinSeed, aquiferSeed uint64
+	climate climateNoises
+	terrain terrainNoises
+	jagged  *layered
+	surface surfaceNoises
+	caves   caveNoises
+	blocks  blocks
+	// bandTable is the world's terracotta band pattern.
+	bandTable [bandTableSize]uint8
+	// Seeds for position-based chances: bedrock and deepslate, veins, aquifers, disks.
+	strataSeed, veinSeed, aquiferSeed, diskSeed uint64
 }
 
 // New returns a Generator for a seed.
 func New(seed int64) *Generator {
 	return &Generator{
 		climate: newClimateNoises(seed),
-		// Own tuning; the wiki publishes no noise settings. Taller than wide would
-		// make spires, so wide bumps with a shorter vertical span make ledges.
-		overhang: newFractal(mix64(uint64(seed)^mix64(6)), 96, 64, 4),
-		// Own tuning: patches a few dozen blocks across.
-		patch:       newFractal(mix64(uint64(seed)^mix64(7)), 40, 40, 3),
+		terrain: newTerrainNoises(seed),
+		// First octave -16 at xz scale 1500, from the study. The game lists 16 equal
+		// amplitudes; finer than 6 octaves falls inside one grid cell.
+		jagged:      newLayered(mix64(uint64(seed)^mix64(6)), 0, []float64{1, 1, 1, 1, 1, 1}, 1.0/3),
+		surface:     newSurfaceNoises(seed),
 		caves:       newCaveNoises(seed),
 		blocks:      newBlocks(),
+		bandTable:   newBandTable(mix64(uint64(seed) ^ mix64(7))),
+		diskSeed:    mix64(uint64(seed) ^ mix64(23)),
 		strataSeed:  mix64(uint64(seed) ^ mix64(20)),
 		veinSeed:    mix64(uint64(seed) ^ mix64(21)),
 		aquiferSeed: mix64(uint64(seed) ^ mix64(22)),
@@ -80,6 +85,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	var cols [4][4]biomeColumn
 	g.fillBiomes(c, originX, originZ, &cols)
 	g.applySurface(c, originX, originZ, &top, &cols)
+	g.placeDisks(c, int(pos[0]), int(pos[1]), &top)
 	highest := minY
 	for x := range top {
 		for z := range top[x] {

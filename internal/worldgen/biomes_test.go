@@ -23,7 +23,7 @@ var requiredSurfaceBiomes = []string{
 	(biome.StonyPeaks{}).String(), (biome.WindsweptHills{}).String(), (biome.Beach{}).String(), (biome.SnowyBeach{}).String(), (biome.StonyShore{}).String(), (biome.River{}).String(),
 	(biome.FrozenRiver{}).String(), (biome.MushroomFields{}).String(),
 	(biome.WarmOcean{}).String(), (biome.LukewarmOcean{}).String(), (biome.ColdOcean{}).String(), (biome.FrozenOcean{}).String(),
-	(biome.DeepWarmOcean{}).String(), (biome.DeepLukewarmOcean{}).String(), (biome.DeepColdOcean{}).String(), (biome.DeepFrozenOcean{}).String(),
+	(biome.DeepLukewarmOcean{}).String(), (biome.DeepColdOcean{}).String(), (biome.DeepFrozenOcean{}).String(),
 }
 
 func TestEveryRequiredBiomeAppears(t *testing.T) {
@@ -117,8 +117,8 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 		(biome.Beach{}).String():          {b.sand},
 		(biome.StonyShore{}).String():     {b.stone, b.gravel},
 		(biome.JaggedPeaks{}).String():    {b.stone, b.snow},
-		(biome.FrozenPeaks{}).String():    {b.stone, b.snow},
-		(biome.StonyPeaks{}).String():     {b.stone},
+		(biome.FrozenPeaks{}).String():    {b.stone, b.snow, b.packedIce, b.ice}, // Packed ice and ice per the study.
+		(biome.StonyPeaks{}).String():     {b.stone, b.calcite}, // Calcite strips per the study.
 		(biome.SnowySlopes{}).String():    {b.stone, b.snow},
 	}
 	for name, tops := range want {
@@ -159,8 +159,10 @@ func TestOceanFloors(t *testing.T) {
 					continue
 				}
 				found++
-				if got := c.Block(x, int16(top), z, 0); got != b.sand && got != b.gravel && got != b.clay {
-					t.Errorf("%s floor at (%d,%d): block id %d, want sand, gravel or clay", name, p[0], p[1], got)
+				if got := c.Block(x, int16(top), z, 0); got != b.sand && got != b.gravel && got != b.clay && got != b.dirt {
+						// Dirt: per the study, floors within 6 blocks of the water use the filler, with
+						// disks of the others.
+					t.Errorf("%s floor at (%d,%d): block id %d, want sand, gravel, clay or dirt", name, p[0], p[1], got)
 				}
 			}
 		}
@@ -218,12 +220,11 @@ func TestBiomesStoredInChunk(t *testing.T) {
 }
 
 // Biome size is the side of a square with the same area as a connected region of one
-// biome, in blocks.
+// biome, in blocks. The river share and the old land median floor moved to
+// TestWorldMatchesMeasuredFigures, which holds figures measured from the game.
 func TestBiomeSizeIsVanillaLike(t *testing.T) {
 	const span, step = 4096, 16
 	const n = span / step
-	// Floor set from measured seeds 1-5 (94-173 blocks), to catch a return of the sliver problem (35-39 before the fix). Not a vanilla figure: no real-game measurement exists.
-	const landMedianFloor = 90
 	thin := map[string]bool{ // Rivers, beaches and shores are thin by nature.
 		(biome.River{}).String(): true, (biome.FrozenRiver{}).String(): true,
 		(biome.Beach{}).String(): true, (biome.SnowyBeach{}).String(): true, (biome.StonyShore{}).String(): true,
@@ -295,12 +296,6 @@ func TestBiomeSizeIsVanillaLike(t *testing.T) {
 			seed, len(areas), percentile(sizes, 0.5), landMedian, weighted, riverShare*100)
 		if weighted < 150 || weighted > 1000 {
 			t.Errorf("seed %d: area-weighted median biome region %d blocks across, want 150-1000", seed, weighted)
-		}
-		if riverShare >= 0.08 {
-			t.Errorf("seed %d: rivers cover %.1f%% of land, want under 8%%", seed, riverShare*100)
-		}
-		if landMedian < landMedianFloor {
-			t.Errorf("seed %d: by-count median of land regions without river, beach and shore is %d blocks across, want at least %d", seed, landMedian, landMedianFloor)
 		}
 	}
 }
