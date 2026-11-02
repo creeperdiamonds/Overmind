@@ -1,28 +1,57 @@
 # worldgen
 
-Our own vanilla-like Overworld generator. A chunk depends only on the seed and its position, so chunks can be built in any order on any number of workers.
+Our own Overworld generator. A chunk depends only on the seed and its position, so chunks can be built in any order on any number of workers. GenerateChunk keeps nothing afterwards except pooled scratch memory, which is always rewritten before it is read.
 
-- `noise.go`: seeded noise.
-- `climate.go`: the five climate values at a column.
-- `terrain.go`: turns climate into ground height, then 3D density for overhangs. `terrainHeight` is the top of the terrain before caves.
-- `biomes.go`: picks a biome from climate (`BiomeAt`), and stores biomes in the chunk, 4x4x4 blocks at a time. Dripstone and lush caves sit 26 to 115 blocks under the ground.
-- `surface.go`: covers the top of the ground with each biome's blocks (grass, sand, snow, red sand and terracotta bands, gravel, mycelium, ocean floors).
-- `generator.go`: fills the chunk: stone (deepslate low down, bedrock at the bottom), water up to Y 63, air above, then biomes, surface, rock patches, caves and ores.
-- `strata.go`: where stone turns to deepslate (Y 8 down to 0) and where bedrock thins out (Y -64 to -60).
-- `caves.go`: cheese and spaghetti caves from 3D noise, lava below Y -54, simple water aquifers, and `SurfaceHeight`, the real top of the ground once caves are carved.
-- `ores.go`: every ore and the granite, diorite, andesite and tuff patches, as blobs that each chunk rebuilds for itself and its eight neighbours, keeping only the blocks inside itself.
-- `blocks.go`: block IDs, looked up once.
+## Where the numbers come from
 
-The biome band edges (temperature, humidity, erosion, continentalness, valleys and peaks) come from the wiki's World generation page. Its tables of which biome sits in which cell are pictures we could not read, so which biome goes where is our own tuning, following the wiki's rules (snow when cold, desert when hot, and so on). Frozen oceans have no ice cap yet, so surface height stays equal to the top block.
+The owner had the Java 26.1 generator studied (decompiled and measured with a probe) and asked for corrections from that study. Numeric parameters in this package come from the study's written notes unless a comment says otherwise: octave lists, spline tables, biome tables, cave and aquifer rules, ore tables, carver chances. The code and structure are our own and no Mojang code or data file is in the repo. Earlier versions of this package cited minecraft.wiki and own tuning; those claims no longer apply.
 
-The wiki gives climate band edges and how each value should affect terrain, and those are used as written. It does not publish spline heights or noise settings, so those numbers are our own tuning, and comments say which is which.
+Our own choices, where the notes give an idea but no number, are marked in comments:
+
+- `pvRow`: the height tables' Y values are from the study, but their slopes were not transcribed. Ours are worked out from the table so a row never overshoots; the valley slope is doubled against the measured 45% of columns under Y 63.
+- `factorTable`, `jaggedRow`: how sharply a dip is entered, and jaggedness's mid value.
+- `gameSpread`: the spread of each noise other than the five climate ones is a formula we fitted to the five measured spreads.
+- `base3D`: limit noises stop at 6 octaves and the jagged noise at 6, since finer ones fall inside a grid cell.
+- `spaghettiTrim` and `entranceTrim`: small shifts against the measured air shares and the 5% limit on land open to the sky.
+- Surface band thresholds, band table run lengths, iceberg and hoodoo height curves, disk radii, geode shape, lake sizes.
+- Aquifer: the barrier pressure formula, the 13 surface sample offsets, `surfaceFluidMargin` and `openSkyFluidDepth`.
+- Sealing: water with air under it in the noise pass gets stone instead. The game lets such water flow later; here it would hang until something updated it.
+
+The study reads Java only. Bedrock may differ on any of this, and that is unmeasured.
+
+## Files
+
+- `noise.go`: seeded gradient noise, `layered` (two octave stacks, the second read at 1.01813 times the coordinates), and the plain `fractal` used by the 3D ground noise.
+- `climate.go`: the five climate values and the domain warp. Spreads are the measured ones.
+- `terrain.go`: Hermite splines, the height, factor and jaggedness tables, and the sloped density `4*quarterNeg(depth*factor) + noise`. `terrainHeight` is the top before caves.
+- `caves.go`: cheese, spaghetti, entrances, pillars and noodle caves as density terms, ore veins (copper and iron) in the noise pass, and `columnWalk`, which works out a column without a chunk.
+- `aquifer.go`: nearest of 12 jittered centres, flood thresholds, random levels, barrier stone, lava aquifers, the dry deep dark zone.
+- `carvers.go`: worm caves, canyons and lava lakes. Every tunnel is recomputed from its source chunk's seed, up to 8 chunks away. `SurfaceHeight` is here.
+- `biomes.go`: the Middle, Plateau and Shattered tables and the slice tables, plus cave biomes as nearest-box by climate and depth. Biomes are stored 4 x 4 x 4 blocks.
+- `surface.go`: surface rules by water depth, badlands bands, hoodoos, icebergs, puddles, sand, clay and gravel disks.
+- `ores.go`: the ore table, rock, dirt, gravel and clay patches, infested stone, geodes and springs. A blob is a chain of spheres rolled from its origin chunk.
+- `strata.go`: deepslate and bedrock chances.
+- `generator.go`: the pass order: noise, biomes, surface, disks, carvers, lakes, geodes, patches, ores, springs.
+
+## Rivers
+
+There is no river noise any more; this reverses the earlier choice of a separate 1600-block noise. A river is the weirdness valley, |weirdness| under 0.05, wherever the slice table says so. Its bed comes from the height spline at PV near -1. With weirdness back at its 512 and 256 wavelengths the valley is a thin winding band, and rivers cover about 7% of the sample, close to the measured 6.8%.
+
+## Heights
+
+- `SurfaceHeight` matches the generated chunk exactly, including carvers and lakes, but it walks every tunnel that could reach the column (under a millisecond). Use it for a few columns.
+- `NoiseHeight` skips carvers and lakes and takes tens of microseconds. The map tool and the statistics use it, and it is what the study measured.
+- `terrainHeight` has no caves at all.
+
+## Known differences from the game
+
+- Water reaches Y 63 inclusive; Java's top water block is Y 62.
+- Biome borders follow the 4-block storage grid. The game adds a jittered lookup at block level; the warp already roughens the edges, and `BiomeAt` must match what is stored.
+- Air at Y 100 to 160 is about half the measured share; the study does not show why (see `TestCaveSharesMatchMeasuredFigures`).
+- Columns under Y 63 are about 50%, measured 45%.
+- Monster rooms are left out, because they need spawners and this stage has no mobs. Snow layers, ice and plants are a later task.
+- Dragonfly has no powder snow or budding amethyst block; plain snow and plain amethyst stand in. Dragonfly has `DeepWarmOcean`, but Java has none, so the hottest deep ocean is `WarmOcean`.
+- Springs stay single source blocks until something next to them changes.
+- A vein's air-exposure rule only sees air inside the chunk.
 
 Worlds match across machines of the same CPU type. Go may round floating-point sums differently on ARM, so a seed could differ slightly there.
-
-Rivers follow the zero line of their own noise (1600-block wavelength, about 16 blocks wide), so they are single continuous courses several hundred blocks apart, about 1.5-3% of land. Terrain is pulled down to the valley floor along the same line (`terrainPV`). Peaks-and-valleys valleys from weirdness no longer make rivers. Beach width varies with weirdness. Climate noises are smoother than before (fewer octaves, longer weirdness and continentalness wavelengths), which makes biome regions larger. Surface materials were checked against minecraft.wiki biome pages; `surface.go` lists what the pages say and what is our own tuning (snowy plains and snowy taiga are grass without snow layers; plain ocean floors are mostly gravel; stony shore is stone with gravel strips; windswept hills are patchy grass and stone).
-
-Underground: caves, ore ranges and sizes follow the wiki's Cave page and the individual ore pages; the cave noise settings, the blob shape and the rock patch sizes are our own tuning, and the comments in `caves.go` and `ores.go` say which numbers are which. Left out for now: noodle caves, carver caves and canyons, lava aquifers (lava stays below Y -54), and aquifer stone barriers (water that would hang in the air drains instead).
-
-`SurfaceHeight` now counts caves: where a cave opens the top of the ground it returns the lower height, and it matches the generated chunk. `terrainHeight` is the height before caves, and is what biomes use. Under ocean and river water the floor is kept (4 blocks), and caves reach the sky only where an entrance noise is high (about 0.25% of land columns).
-
-Veins and caves look only at the chunk being built. A vein's air-exposure rule only sees air inside the chunk, so a block touching air in the next chunk counts as not exposed.

@@ -4,8 +4,7 @@ import "math"
 
 // noiseSpread is the typical size (standard deviation) of one octave of gradient
 // noise, measured by TestNoiseSpreadFitsMinusOneToOne. Dividing by three times this
-// puts about 99.7% of values within -1 to 1, the spread minecraft.wiki's "Noise" page
-// describes for a normalised noise.
+// puts about 99.7% of values within -1 to 1.
 const noiseSpread = 0.27
 
 // mix64 is the SplitMix64 step. It turns a counter into a well-mixed number. We use
@@ -103,8 +102,7 @@ func (n *gradientNoise) at(x, y, z float64) float64 {
 }
 
 // fractal adds octaves of noise. Each octave has half the wavelength and half the
-// strength of the one before it, which minecraft.wiki's "Noise" page calls fractal
-// Brownian motion. Values mostly fall within -1 to 1 but can go a little outside.
+// strength of the one before it. Values mostly fall within -1 to 1 but can go a little outside.
 type fractal struct {
 	octaves       []*gradientNoise
 	freqXZ, freqY float64

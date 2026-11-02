@@ -20,7 +20,7 @@ func TestNoiseIsDeterministicAndSeeded(t *testing.T) {
 	}
 }
 
-// Biome ranges on the wiki assume values spread across -1 to 1, so the normalising
+// Band edges assume values spread across -1 to 1, so the normalising
 // gain has to hold for every octave count the generator uses.
 func TestNoiseSpreadFitsMinusOneToOne(t *testing.T) {
 	for _, octaves := range []int{1, 3, 4, 6} {

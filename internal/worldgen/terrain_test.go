@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPeaksAndValleysFollowsWikiFormula(t *testing.T) {
+func TestPeaksAndValleysFormula(t *testing.T) {
 	cases := map[float64]float64{0: -1, 1.0 / 3: 0, 2.0 / 3: 1, 1: 0, -2.0 / 3: 1}
 	for weirdness, want := range cases {
 		if got := peaksAndValleys(weirdness); math.Abs(got-want) > 1e-9 {
@@ -32,9 +32,9 @@ func TestSplineNests(t *testing.T) {
 	}
 }
 
-// The wiki says larger continentalness raises terrain, higher erosion flattens it
-// and high peaks-and-valleys raises it.
-func TestHeightSplineFollowsWikiDirections(t *testing.T) {
+// Larger continentalness raises terrain, higher erosion flattens it and high
+// peaks-and-valleys raises it, in the height table from the study.
+func TestHeightSplineDirections(t *testing.T) {
 	h := func(c, e, pv float64) float64 {
 		return heightSpline.eval(splineInput{inputContinentalness: c, inputErosion: e, inputPV: pv})
 	}
@@ -98,7 +98,7 @@ search:
 	}
 }
 
-func TestClimateValuesInWikiRanges(t *testing.T) {
+func TestClimateValuesInRanges(t *testing.T) {
 	g := New(8)
 	for x := -20000; x < 20000; x += 97 {
 		c := g.Climate(x, x*3-1000)

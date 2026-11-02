@@ -78,7 +78,10 @@ func pvRow(y [5]float64) *spline {
 		k := knot{at: pvKnots[i], value: y[i]}
 		switch i {
 		case 0:
-			k.slope = sec(0)
+			// Valley walls rise fast: twice the straight line (still never overshooting). Our
+			// own tuning, because a straight rise left too much inland ground under the sea
+			// against the measured 45% of columns under Y 63.
+			k.slope = 2 * sec(0)
 		case 4:
 			k.slope = sec(3)
 		default:
@@ -413,12 +416,11 @@ func (c *cell) solidAt(dx, dz, dy int) bool {
 // before caves are carved. Caves can open the top, so use SurfaceHeight for the real
 // highest solid block.
 func (g *Generator) terrainHeight(x, z int) int {
-	return g.highestSolid(x, z, nil)
+	return g.highestSolid(x, z)
 }
 
-// highestSolid returns the Y of the highest terrain block in a column that is solid and
-// not skipped. skip may be nil.
-func (g *Generator) highestSolid(x, z int, skip func(y int) bool) int {
+// highestSolid returns the Y of the highest block of the terrain alone in a column.
+func (g *Generator) highestSolid(x, z int) int {
 	gridX, gridZ := x&^(cellXZ-1), z&^(cellXZ-1)
 	dx, dz := x-gridX, z-gridZ
 	var corners [2][2][columnNodes]float64
@@ -437,7 +439,7 @@ func (g *Generator) highestSolid(x, z int, skip func(y int) bool) int {
 		}
 		for dy := cellY - 1; dy >= 0; dy-- {
 			y := minY + layer*cellY + dy
-			if c.solidAt(dx, dz, dy) && (skip == nil || !skip(y)) {
+			if c.solidAt(dx, dz, dy) {
 				return y
 			}
 		}

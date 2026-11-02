@@ -202,7 +202,7 @@ func TestBlocksFollowFillRules(t *testing.T) {
 	// deepslate, bedrock, rock patches, ores and (below Y -54) lava.
 	solids := append([]uint32{b.stone, b.grass, b.dirt, b.podzol, b.mycelium, b.sand, b.redSand,
 		b.sandstone, b.redSandstone, b.gravel, b.clay, b.snow, b.deepslate, b.bedrock, b.lava,
-		b.coarseDirt, b.packedIce, b.ice, b.calcite, b.mud, b.rawIron, b.rawCopper}, b.terracotta...)
+		b.coarseDirt, b.packedIce, b.ice, b.calcite, b.mud, b.rawIron, b.rawCopper, b.amethyst, b.smoothBasalt}, b.terracotta...)
 	for _, pair := range b.veins {
 		solids = append(solids, pair[0], pair[1])
 	}
@@ -243,4 +243,22 @@ func BenchmarkGenerateChunk(b *testing.B) {
 		i++
 	}
 	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N), "ms/op")
+}
+
+func BenchmarkSurfaceHeight(b *testing.B) {
+	g := New(1)
+	var i int
+	for b.Loop() {
+		g.SurfaceHeight(i*7, -i*5)
+		i++
+	}
+}
+
+func BenchmarkNoiseHeight(b *testing.B) {
+	g := New(1)
+	var i int
+	for b.Loop() {
+		g.NoiseHeight(i*7, -i*5)
+		i++
+	}
 }

@@ -491,3 +491,33 @@ func TestBlobSizesMatchMeasuredFigures(t *testing.T) {
 		}
 	}
 }
+
+// Emeralds only form in mountain biomes. The study measured about 0.5 blocks per attempt
+// and asked for a count on a real world, which this logs.
+func TestEmeraldsInMountains(t *testing.T) {
+	g := New(1)
+	emerald := oreIDs()["emerald"]
+	var count, chunks int
+	for x := -4096; x < 4096 && chunks < 60; x += 64 {
+		for z := -4096; z < 4096 && chunks < 60; z += 64 {
+			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "jagged_peaks" && name != "frozen_peaks" && name != "stony_peaks" {
+				continue
+			}
+			chunks++
+			c := generate(g, int32(x>>4), int32(z>>4))
+			for lx := range uint8(16) {
+				for lz := range uint8(16) {
+					for y := int16(-16); y <= maxY; y++ {
+						if r := c.Block(lx, y, lz, 0); r == emerald[0] || r == emerald[1] {
+							count++
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d emerald ore in %d peak chunks: %.1f a chunk", count, chunks, float64(count)/float64(chunks))
+	if chunks == 0 || count == 0 {
+		t.Fatalf("no emeralds: %d in %d chunks", count, chunks)
+	}
+}
