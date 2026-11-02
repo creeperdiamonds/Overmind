@@ -31,10 +31,10 @@ func newClimateNoises(seed int64) climateNoises {
 	}
 }
 
-// warped returns the climate coordinates of a column in noise units (block/4). The warp
-// moves samples about 5 blocks typically and about 25 at most, wiggling every 8 to 32
-// blocks, which is what makes biome borders and coasts ragged. All climate noises read
-// the same warped point, as in the game.
+// warped returns the climate coordinates of a column in noise units (block/4). The warp moves
+// samples 5.4 blocks at the median and 21 at most, measured on ours over 6 seeds (the notes say
+// about 5 and up to about 25 for the game), wiggling every 8 to 32 blocks, which is what makes
+// biome borders and coasts ragged. All climate noises read the same warped point, as in the game.
 func (g *Generator) warped(x, z int) (qx, qz float64) {
 	bx, bz := float64(x)/4, float64(z)/4
 	return bx + g.climate.shiftX.at(bx, 0, bz)*4, bz + g.climate.shiftZ.at(bz, 0, bx)*4
@@ -42,8 +42,8 @@ func (g *Generator) warped(x, z int) (qx, qz float64) {
 
 // shapeClimate returns the three climate values terrain shape reads, at warped coordinates.
 // The clamps on continentalness and erosion are our own bounds; past them the splines hold
-// their last knot anyway. Weirdness has no clamp: the game's reaches 1.33 (0.25 to 0.42% of
-// columns are beyond 1 on the 4 seeds probed), and PV keeps falling there.
+// their last knot anyway. Weirdness has no clamp: the game's reaches 1.33 and ours 1.49 (0.25
+// to 0.42% of the game's columns are beyond 1 on the 4 seeds probed), and PV keeps falling there.
 func (g *Generator) shapeClimate(qx, qz float64) (continentalness, erosion, weirdness float64) {
 	return clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
 		clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
