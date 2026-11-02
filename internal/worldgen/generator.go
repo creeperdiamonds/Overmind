@@ -19,6 +19,7 @@ const (
 type Generator struct {
 	climate  climateNoises
 	overhang *fractal
+	patch    *fractal // Patches of surface material.
 	blocks   blocks
 }
 
@@ -29,16 +30,25 @@ func New(seed int64) *Generator {
 		// Own tuning; the wiki publishes no noise settings. Taller than wide would
 		// make spires, so wide bumps with a shorter vertical span make ledges.
 		overhang: newFractal(mix64(uint64(seed)^mix64(6)), 96, 64, 4),
-		blocks:   newBlocks(),
+		// Own tuning: patches a few dozen blocks across.
+		patch:  newFractal(mix64(uint64(seed)^mix64(7)), 40, 40, 3),
+		blocks: newBlocks(),
 	}
 }
 
 // GenerateChunk fills a chunk with stone, then water up to sea level, leaving air above.
+// It then stores biomes and covers the ground with each biome's surface blocks.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	const cellsAcross = 16 / cellXZ
 	originX, originZ := int(pos[0])*16, int(pos[1])*16
 
 	// The grid is on the stack, so nothing outlives this call.
+	var top [16][16]int16
+	for i := range top {
+		for j := range top[i] {
+			top[i][j] = minY - 1
+		}
+	}
 	var grid [cellsAcross + 1][cellsAcross + 1][columnNodes]float64
 	for i := range grid {
 		for j := range grid[i] {
@@ -53,14 +63,18 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 					{{grid[i][j][layer], grid[i][j][layer+1]}, {grid[i][j+1][layer], grid[i][j+1][layer+1]}},
 					{{grid[i+1][j][layer], grid[i+1][j][layer+1]}, {grid[i+1][j+1][layer], grid[i+1][j+1][layer+1]}},
 				}
-				g.fillCell(c, &corners, i*cellXZ, j*cellXZ, minY+layer*cellY)
+				g.fillCell(c, &top, &corners, i*cellXZ, j*cellXZ, minY+layer*cellY)
 			}
 		}
 	}
+
+	var cols [4][4]biomeColumn
+	g.fillBiomes(c, originX, originZ, &cols)
+	g.applySurface(c, originX, originZ, &top, &cols)
 }
 
-// fillCell writes one grid cell into the chunk.
-func (g *Generator) fillCell(c *chunk.Chunk, corners *cell, baseX, baseZ, baseY int) {
+// fillCell writes one grid cell into the chunk, and raises top to the highest stone.
+func (g *Generator) fillCell(c *chunk.Chunk, top *[16][16]int16, corners *cell, baseX, baseZ, baseY int) {
 	same, solid := corners.uniform()
 	if same && !solid && baseY > SeaLevel {
 		return // Open air is what a new chunk already holds.
@@ -73,6 +87,7 @@ func (g *Generator) fillCell(c *chunk.Chunk, corners *cell, baseX, baseZ, baseY 
 				switch {
 				case same && solid, !same && corners.solidAt(dx, dz, dy):
 					rid = g.blocks.stone
+					top[baseX+dx][baseZ+dz] = max(top[baseX+dx][baseZ+dz], int16(y))
 				case y > SeaLevel:
 					continue
 				}

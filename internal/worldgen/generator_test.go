@@ -196,6 +196,9 @@ func TestSurfaceHeightMatchesChunk(t *testing.T) {
 
 func TestBlocksFollowFillRules(t *testing.T) {
 	g, b := New(3), newBlocks()
+	// Surface blocks replace stone near the top of a column.
+	solids := append([]uint32{b.stone, b.grass, b.dirt, b.podzol, b.mycelium, b.sand, b.redSand,
+		b.sandstone, b.redSandstone, b.gravel, b.clay, b.snow}, b.terracotta...)
 	for _, p := range [][2]int32{{0, 0}, {40, 40}, {-90, 15}, {300, -120}} {
 		c := generate(g, p[0], p[1])
 		for x := uint8(0); x < 16; x++ {
@@ -206,7 +209,7 @@ func TestBlocksFollowFillRules(t *testing.T) {
 						t.Fatalf("water at Y %d", y)
 					case r == b.air && y <= SeaLevel:
 						t.Fatalf("air at Y %d, below sea level", y)
-					case r != b.air && r != b.water && r != b.stone:
+					case r != b.air && r != b.water && !slices.Contains(solids, r):
 						t.Fatalf("unexpected block %d at Y %d", r, y)
 					}
 				}

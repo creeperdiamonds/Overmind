@@ -84,6 +84,9 @@ func byErosion(rows [5]*spline) *spline {
 // heights, so the heights below are our own tuning, checked against the map and the
 // terrain statistics test.
 var heightSpline = &spline{input: inputContinentalness, knots: []knot{
+	// Own tuning: mushroom fields (continentalness under -1.05) rise as islands.
+	{at: -1.2, value: 68},
+	{at: -1.06, value: 64},
 	{at: -1.05, value: 30}, // Deep ocean.
 	{at: -0.455, value: 38},
 	{at: -0.19, value: 54}, // Ocean to coast.
