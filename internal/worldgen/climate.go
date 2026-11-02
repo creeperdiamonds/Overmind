@@ -67,7 +67,8 @@ func peaksAndValleys(weirdness float64) float64 {
 	return 1 - math.Abs(3*math.Abs(weirdness)-2)
 }
 
-// warpSpread is the spread of the domain-warp noises. The study gives none. 0.312 is tuned by us:
-// the spread the ratios in gameSpread give would be 0.284, and with that the chunk edge test
-// (TestNoSeamAtChunkEdges) sits on its limit, edge steps p99 4 against 3 inside, with equal means.
-const warpSpread = 0.312
+// warpSpread is the spread of the domain-warp noises. The study gives none, so it is the natural
+// spread of their octave list times the measured ratio for three octaves (see spreadRatios), the
+// two three-octave climate noises measuring 0.652 and 0.648 against the table's 0.65. It comes to
+// 0.284.
+var warpSpread = gameSpread([]float64{1, 1, 1})

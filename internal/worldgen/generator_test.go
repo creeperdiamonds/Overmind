@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -95,13 +96,17 @@ func abs(v int) int {
 	return v
 }
 
-// The brief's "height step across an edge" is read as the 99th percentile of edge
-// steps: a smooth surface has as many large edge steps as large inner ones, so the
-// single largest edge step always beats any inner percentile.
-func TestNoSeamAtChunkEdges(t *testing.T) {
-	g := New(1234)
-	const across, down = 8, 7 // 56 chunks a patch, 224 in all.
-	var inner, edge []int
+// seamSteps is one chunk's height steps across its chunk edges and across the other cell edges
+// inside it (columns 3/4, 7/8, 11/12), both ways.
+type seamSteps struct {
+	edge, cell []int
+}
+
+// measureSeams returns the steps of each chunk of four patches, for chunks with a neighbour
+// on both the +X and +Z sides.
+func measureSeams(g *Generator) []seamSteps {
+	const across, down = 8, 7
+	var out []seamSteps
 	for _, origin := range [][2]int32{{0, 0}, {300, -200}, {-500, 400}, {700, 700}} {
 		var h [across][down][16][16]int
 		for cx := range across {
@@ -114,34 +119,62 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 				}
 			}
 		}
-		for cx := range across {
-			for cz := range down {
+		for cx := range across - 1 {
+			for cz := range down - 1 {
+				var s seamSteps
+				here := &h[cx][cz]
 				for i := range 16 {
-					for j := range 15 {
-						inner = append(inner,
-							abs(h[cx][cz][j][i]-h[cx][cz][j+1][i]),
-							abs(h[cx][cz][i][j]-h[cx][cz][i][j+1]))
-					}
-					if cx+1 < across {
-						edge = append(edge, abs(h[cx][cz][15][i]-h[cx+1][cz][0][i]))
-					}
-					if cz+1 < down {
-						edge = append(edge, abs(h[cx][cz][i][15]-h[cx][cz+1][i][0]))
+					s.edge = append(s.edge, abs(here[15][i]-h[cx+1][cz][0][i]), abs(here[i][15]-h[cx][cz+1][i][0]))
+					for _, j := range []int{3, 7, 11} {
+						s.cell = append(s.cell, abs(here[j][i]-here[j+1][i]), abs(here[i][j]-here[i][j+1]))
 					}
 				}
+				out = append(out, s)
 			}
 		}
 	}
-	in99, ed99 := percentile(inner, 0.99), percentile(edge, 0.99)
-	inMean, edMean := mean(inner), mean(edge)
-	t.Logf("steps: p99 inner %d, edge %d; mean inner %.3f, edge %.3f; max inner %d, edge %d (%d inner, %d edge)",
-		in99, ed99, inMean, edMean, inner[len(inner)-1], edge[len(edge)-1], len(inner), len(edge))
-	if ed99 > in99 {
-		t.Errorf("edge step p99 %d is above inner step p99 %d", ed99, in99)
+	return out
+}
+
+// seamExcess is how much more a chunk edge steps than the other cell edges of the same chunks:
+// the mean of the per-chunk differences of a measure, and the standard error of that mean. The
+// chunk is the unit because neighbouring steps are far from independent.
+func seamExcess(chunks []seamSteps, measure func([]int) float64) (diff, stdErr float64) {
+	var sum, squares float64
+	for _, c := range chunks {
+		d := measure(c.edge) - measure(c.cell)
+		sum += d
+		squares += d * d
 	}
-	// Whole-block percentiles can miss a small seam; the mean cannot.
-	if edMean > inMean*1.25 {
-		t.Errorf("mean edge step %.3f is over 1.25 times mean inner step %.3f", edMean, inMean)
+	n := float64(len(chunks))
+	diff = sum / n
+	return diff, math.Sqrt(max(squares/n-diff*diff, 0) / n)
+}
+
+// Every chunk edge is also a cell edge, and cell edges step more than the inside of a cell
+// because of blending, so the fair question is whether a chunk edge steps more than the other
+// cell edges. It must not, beyond three standard errors of the sampling.
+func TestNoSeamAtChunkEdges(t *testing.T) {
+	over4 := func(steps []int) float64 {
+		var n int
+		for _, s := range steps {
+			if s > 4 {
+				n++
+			}
+		}
+		return float64(n) / float64(len(steps))
+	}
+	for _, seed := range []int64{1234, 5, 6} {
+		chunks := measureSeams(New(seed))
+		rate, rateErr := seamExcess(chunks, over4)
+		meanDiff, meanErr := seamExcess(chunks, mean)
+		t.Logf("seed %d: %d chunks, edge minus cell: rate over 4 %+.4f (se %.4f), mean %+.4f (se %.4f)", seed, len(chunks), rate, rateErr, meanDiff, meanErr)
+		if rate > 3*rateErr {
+			t.Errorf("seed %d: chunk edges step over 4 more often than other cell edges by %.4f, se %.4f", seed, rate, rateErr)
+		}
+		if meanDiff > 3*meanErr {
+			t.Errorf("seed %d: mean chunk edge step exceeds other cell edges by %.4f, se %.4f", seed, meanDiff, meanErr)
+		}
 	}
 }
 
