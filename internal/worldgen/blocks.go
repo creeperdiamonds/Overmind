@@ -16,6 +16,7 @@ type blocks struct {
 	tuff, granite, diorite, andesite       uint32
 	coarseDirt, packedIce, ice, calcite    uint32
 	mud, rawIron, rawCopper                uint32
+	amethyst, smoothBasalt                 uint32
 	// veins holds the blocks the vein pass places, by veinBlock: the stone variant first,
 	// then the deepslate variant. The rock patches have the same block in both.
 	veins [numVeinBlocks][2]uint32
@@ -62,6 +63,8 @@ func newBlocks() blocks {
 		calcite:      id(block.Calcite{}),
 		mud:          id(block.Mud{}),
 		rawIron:      id(block.RawIron{}),
+		amethyst:     id(block.Amethyst{}),
+		smoothBasalt: id(block.SmoothBasalt{}),
 		rawCopper:    id(block.RawCopper{}),
 		terracotta: []uint32{
 			id(block.Terracotta{}), stained(item.ColourOrange()), stained(item.ColourYellow()),
@@ -81,5 +84,9 @@ func newBlocks() blocks {
 	b.veins[veinDiorite] = rock(block.Diorite{})
 	b.veins[veinAndesite] = rock(block.Andesite{})
 	b.veins[veinTuff] = rock(block.Tuff{})
+	b.veins[veinDirt] = rock(block.Dirt{})
+	b.veins[veinGravel] = rock(block.Gravel{})
+	b.veins[veinClay] = rock(block.Clay{})
+	b.veins[veinInfested] = [2]uint32{id(block.InfestedStone{}), id(block.InfestedDeepslate{})}
 	return b
 }

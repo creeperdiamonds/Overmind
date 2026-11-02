@@ -19,10 +19,14 @@ const (
 	veinLapis
 	veinDiamond
 	veinEmerald
+	veinInfested
 	veinGranite
 	veinDiorite
 	veinAndesite
 	veinTuff
+	veinDirt
+	veinGravel
+	veinClay
 	numVeinBlocks
 )
 
@@ -42,7 +46,7 @@ type distribution uint8
 
 const (
 	distUniform  distribution = iota
-	distTriangle              // Most common at peak, thinning to nothing at both ends.
+	distTriangle              // Most common in the middle, thinning to nothing at both ends.
 )
 
 // biomeRule limits a feature to some biomes.
@@ -52,99 +56,64 @@ const (
 	biomeAny          biomeRule = iota
 	biomeNotDripstone           // Anywhere but dripstone caves.
 	biomeDripstone              // Dripstone caves only.
-	biomeBadlands               // Badlands surface biome only.
-	biomeMountain               // The mountain biomes the Emerald Ore page lists.
+	biomeBadlands               // Any badlands surface biome.
+	biomeMountain               // The mountain biomes listed in the study.
+	biomeLush                   // Lush caves only.
 )
 
-// veinFeature is one row of the tables below: a batch of blobs placed in each chunk.
-// Attempts below one is a chance. maxSize is the largest blob, in blocks; each blob has
-// a size from 1 to maxSize. exposed is the chance that a block touching air is dropped.
+// veinFeature is one row of the table below: a batch of blobs placed in each chunk.
+// Attempts below one is a chance. exposed is the chance that a block touching air is
+// dropped. A triangle's height range can run outside the world: the blob centre is drawn
+// from the whole range, and those that land outside are lost, which is how the game thins
+// out diamonds and redstone.
 type veinFeature struct {
 	block      veinBlock
 	attempts   float64
-	maxSize    int
+	size       int
 	minY, maxY int
 	dist       distribution
-	peak       int
 	exposed    float64
-	replace    uint8
 	biome      biomeRule
-	rock       bool // Rock patches go in before the caves are carved, ores after.
+	rock       bool // Patches of rock, dirt and gravel; placed before the ores, and may spill past the range.
 }
 
-// veinFeatures is the table. Numbers come from minecraft.wiki, read 2026-11-03: the
-// "Natural generation" sections of the Coal Ore, Iron Ore, Copper Ore, Gold Ore, Redstone
-// Ore, Lapis Lazuli Ore, Diamond Ore, Emerald Ore, Tuff, Granite, Diorite and Andesite
-// pages (the "Ore" page itself holds only a summary of heights). The wiki states each
-// attempt count, the largest blob ("blobs of 0-37"), the Y range and where an ore is
-// "most common"; a triangle with that peak is our reading of "most common". Where the page
-// gives no distribution (diamond) the ore is spread evenly, and where it gives no air rule
-// (coal upper, iron, copper, redstone, emerald) nothing is dropped.
-//
-// Our own tuning, not on the wiki pages: the sizes of rock patches (the Granite, Diorite
-// and Andesite pages give only Bedrock Edition numbers, "size 0-864", which are not
-// block counts we can use, so patches here are up to 100 blocks), what size inside 0-N a
-// blob gets (even from 1 to N), and the blob shape.
-//
-// Edition note: Granite, Diorite and Andesite use the Bedrock Edition numbers on their
-// pages (2 attempts at Y 0 to 60, then a one in six chance at Y 64 to 128), because the
-// Java sections give none. Diorite stays out of Y below 0, as the Diorite page's history
-// says.
+// veinFeatures is the table from the study of Java 26.1: attempts, size, air discard and
+// height of each batch.
 var veinFeatures = [...]veinFeature{
-	// Coal Ore page.
-	{block: veinCoal, attempts: 30, maxSize: 37, minY: 136, maxY: 320, replace: repStoneLike},
-	{block: veinCoal, attempts: 20, maxSize: 37, minY: 0, maxY: 192, dist: distTriangle, peak: 96, exposed: 0.5, replace: repStoneLike},
-	// Iron Ore page: upper, middle and small batches.
-	{block: veinIron, attempts: 90, maxSize: 13, minY: 80, maxY: 384, dist: distTriangle, peak: 232, replace: repStoneLike},
-	{block: veinIron, attempts: 10, maxSize: 13, minY: -24, maxY: 56, dist: distTriangle, peak: 16, replace: repStoneLike},
-	{block: veinIron, attempts: 10, maxSize: 5, minY: -64, maxY: 72, replace: repStoneLike},
-	// Copper Ore page: the second batch is the only one in dripstone caves, with larger blobs.
-	{block: veinCopper, attempts: 16, maxSize: 16, minY: -16, maxY: 112, dist: distTriangle, peak: 48, replace: repStoneLike, biome: biomeNotDripstone},
-	{block: veinCopper, attempts: 16, maxSize: 52, minY: -16, maxY: 112, dist: distTriangle, peak: 48, replace: repStoneLike, biome: biomeDripstone},
-	// Gold Ore page: normal, deep, and the badlands batch that ignores the air rule.
-	{block: veinGold, attempts: 4, maxSize: 13, minY: -64, maxY: 32, dist: distTriangle, peak: -16, exposed: 0.5, replace: repStoneLike},
-	{block: veinGold, attempts: 0.5, maxSize: 13, minY: -64, maxY: -48, exposed: 0.5, replace: repStoneLike},
-	{block: veinGold, attempts: 50, maxSize: 13, minY: 32, maxY: 256, replace: repStoneLike, biome: biomeBadlands},
-	// Redstone Ore page: the second batch is more common the lower it goes.
-	{block: veinRedstone, attempts: 4, maxSize: 10, minY: -64, maxY: 15, replace: repStoneLike},
-	{block: veinRedstone, attempts: 8, maxSize: 10, minY: -63, maxY: -32, dist: distTriangle, peak: -63, replace: repStoneLike},
-	// Lapis Lazuli Ore page: the second batch never touches air.
-	{block: veinLapis, attempts: 2, maxSize: 10, minY: -32, maxY: 32, dist: distTriangle, peak: 0, replace: repStoneLike},
-	{block: veinLapis, attempts: 4, maxSize: 10, minY: -64, maxY: 64, exposed: 1, replace: repStoneLike},
-	// Diamond Ore page: four batches. The second is the rare large one, one chance in nine.
-	{block: veinDiamond, attempts: 7, maxSize: 5, minY: -63, maxY: 16, exposed: 0.5, replace: repStoneLike},
-	{block: veinDiamond, attempts: 1.0 / 9, maxSize: 23, minY: -63, maxY: 16, exposed: 0.7, replace: repStoneLike},
-	{block: veinDiamond, attempts: 4, maxSize: 10, minY: -63, maxY: 16, exposed: 1, replace: repStoneLike},
-	{block: veinDiamond, attempts: 2, maxSize: 10, minY: -63, maxY: -4, exposed: 0.5, replace: repStoneLike},
-	// Emerald Ore page: scattered, only in mountain biomes, peak at Y 232.
-	{block: veinEmerald, attempts: 100, maxSize: 3, minY: -16, maxY: 320, dist: distTriangle, peak: 232, replace: repStoneLike, biome: biomeMountain},
+	// Rock patches.
+	{block: veinDirt, attempts: 7, size: 33, minY: 0, maxY: 160, rock: true},
+	{block: veinGravel, attempts: 14, size: 33, minY: minY, maxY: maxY, rock: true},
+	{block: veinGranite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
+	{block: veinGranite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
+	{block: veinDiorite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
+	{block: veinDiorite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
+	{block: veinAndesite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
+	{block: veinAndesite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
+	{block: veinTuff, attempts: 2, size: 64, minY: minY, maxY: 0, rock: true},
+	{block: veinClay, attempts: 46, size: 33, minY: minY, maxY: 256, biome: biomeLush, rock: true},
 
-	// Rock patches. Tuff page: 2 attempts, Y -64 to 0. Granite, Diorite and Andesite pages
-	// (Bedrock Edition numbers): 2 attempts at Y 0 to 60, and 1/6 at Y 64 to 128.
-	{block: veinTuff, attempts: 2, maxSize: rockSize, minY: -64, maxY: 0, replace: repStone | repDeepslate, rock: true},
-	{block: veinGranite, attempts: 2, maxSize: rockSize, minY: 0, maxY: 60, replace: repStone, rock: true},
-	{block: veinGranite, attempts: 1.0 / 6, maxSize: rockSize, minY: 64, maxY: 128, replace: repStone, rock: true},
-	{block: veinDiorite, attempts: 2, maxSize: rockSize, minY: 0, maxY: 60, replace: repStone, rock: true},
-	{block: veinDiorite, attempts: 1.0 / 6, maxSize: rockSize, minY: 64, maxY: 128, replace: repStone, rock: true},
-	{block: veinAndesite, attempts: 2, maxSize: rockSize, minY: 0, maxY: 60, replace: repStone, rock: true},
-	{block: veinAndesite, attempts: 1.0 / 6, maxSize: rockSize, minY: 64, maxY: 128, replace: repStone, rock: true},
+	// Ores.
+	{block: veinCoal, attempts: 30, size: 17, minY: 136, maxY: 320},
+	{block: veinCoal, attempts: 20, size: 17, minY: 0, maxY: 192, dist: distTriangle, exposed: 0.5},
+	{block: veinIron, attempts: 90, size: 9, minY: 80, maxY: 384, dist: distTriangle},
+	{block: veinIron, attempts: 10, size: 9, minY: -24, maxY: 56, dist: distTriangle},
+	{block: veinIron, attempts: 10, size: 4, minY: minY, maxY: 72},
+	{block: veinCopper, attempts: 16, size: 10, minY: -16, maxY: 112, dist: distTriangle, biome: biomeNotDripstone},
+	{block: veinCopper, attempts: 16, size: 20, minY: -16, maxY: 112, dist: distTriangle, biome: biomeDripstone},
+	{block: veinGold, attempts: 4, size: 9, minY: -64, maxY: 32, dist: distTriangle, exposed: 0.5},
+	{block: veinGold, attempts: 0.5, size: 9, minY: -64, maxY: -48, exposed: 0.5},
+	{block: veinGold, attempts: 50, size: 9, minY: 32, maxY: 256, biome: biomeBadlands},
+	{block: veinRedstone, attempts: 4, size: 8, minY: minY, maxY: 15},
+	{block: veinRedstone, attempts: 8, size: 8, minY: -96, maxY: -32, dist: distTriangle},
+	{block: veinLapis, attempts: 2, size: 7, minY: -32, maxY: 32, dist: distTriangle},
+	{block: veinLapis, attempts: 4, size: 7, minY: minY, maxY: 64, exposed: 1},
+	{block: veinDiamond, attempts: 7, size: 4, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.5},
+	{block: veinDiamond, attempts: 2, size: 8, minY: -64, maxY: -4, exposed: 0.5},
+	{block: veinDiamond, attempts: 1.0 / 9, size: 12, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.7},
+	{block: veinDiamond, attempts: 4, size: 8, minY: -144, maxY: 16, dist: distTriangle, exposed: 1},
+	{block: veinEmerald, attempts: 100, size: 3, minY: -16, maxY: 480, dist: distTriangle, biome: biomeMountain},
+	{block: veinInfested, attempts: 14, size: 9, minY: minY, maxY: 63, biome: biomeMountain},
 }
-
-// rockSize is the largest rock patch in blocks. Own tuning, see above.
-const rockSize = 100
-
-// maxStretch bounds how much longer than its radius a blob can be along one axis: the
-// longest stretch is 1.25 and the volume factor cbrt(1.25*0.75*0.75) is about 0.89.
-const maxStretch = 1.25 / 0.88
-
-// blobRadius is the radius of a round blob of each size, indexed by size. A blob's
-// volume is about 4/3*pi*r^3, and the 1.15 makes up for the ragged edge.
-var blobRadius = func() (r [rockSize + 1]float64) {
-	for size := 1; size <= rockSize; size++ {
-		r[size] = math.Cbrt(3*float64(size)/(4*math.Pi)) * 1.15
-	}
-	return
-}()
 
 // rng is a tiny seeded generator. Every blob has its own, started from the blob's origin
 // chunk, so any chunk that a blob reaches rolls the same numbers.
@@ -172,11 +141,9 @@ func (f *veinFeature) sampleY(r *rng) int {
 	if f.dist == distUniform {
 		return f.minY + int(u*float64(f.maxY-f.minY+1))
 	}
-	span, low, high := float64(f.maxY-f.minY), float64(f.peak-f.minY), float64(f.maxY-f.peak)
-	if u < low/span {
-		return f.minY + int(math.Round(math.Sqrt(u*span*low)))
-	}
-	return f.maxY - int(math.Round(math.Sqrt((1-u)*span*high)))
+	// A triangle is the sum of two even draws.
+	half := float64(f.maxY-f.minY) / 2
+	return f.minY + int(math.Round(u*half+r.float()*half))
 }
 
 // veinKindOf says which replaceable kind a block is, or zero for anything else.
@@ -202,13 +169,15 @@ func (g *Generator) veinKindOf(id uint32) uint8 {
 // placeVeins writes the rock patches (rocks true) or the ores (rocks false) into a chunk.
 // A blob belongs to the chunk its centre is in and is rolled from that chunk's position
 // alone, so each chunk rebuilds the blobs of itself and its eight neighbours and keeps
-// only the blocks that fall inside itself. highest is the top of the chunk's terrain; a blob wholly above it is in air and skipped. Blobs are small enough that the neighbours
-// cover everything that can reach in. Nothing is stored after the call.
+// only the blocks that fall inside itself. highest is the top of the chunk's terrain; a
+// blob wholly above it is in air and skipped. The largest blob reaches about 14 blocks, so
+// the neighbours cover everything that can reach in. Nothing is stored after the call.
 func (g *Generator) placeVeins(c *chunk.Chunk, pos world.ChunkPos, highest int, rocks bool) {
 	originX, originZ := int(pos[0])*16, int(pos[1])*16
 	for dx := -1; dx <= 1; dx++ {
 		for dz := -1; dz <= 1; dz++ {
 			cx, cz := int(pos[0])+dx, int(pos[1])+dz
+			src := biomeSource{g: g, x: cx*16 + 8, z: cz*16 + 8}
 			for i := range veinFeatures {
 				f := &veinFeatures[i]
 				if f.rock != rocks {
@@ -220,66 +189,105 @@ func (g *Generator) placeVeins(c *chunk.Chunk, pos world.ChunkPos, highest int, 
 					n++
 				}
 				for range n {
-					g.placeVein(c, f, &r, cx*16, cz*16, originX, originZ, highest)
+					g.placeVein(c, f, &r, cx*16, cz*16, originX, originZ, highest, &src)
 				}
 			}
 		}
 	}
 }
 
+// biomeSource answers biome rules for a source chunk, looking the biome up at most once.
+type biomeSource struct {
+	g    *Generator
+	x, z int
+	have bool
+	col  biomeColumn
+}
+
+func (s *biomeSource) column() *biomeColumn {
+	if !s.have {
+		s.col, s.have = s.g.biomeColumnAt(cellCentre(s.x), cellCentre(s.z)), true
+	}
+	return &s.col
+}
+
+// blobReach is how far a blob of a size can reach from its centre on any axis: half its
+// line plus its largest sphere.
+func blobReach(size int) int {
+	s := float64(size)
+	return int(math.Ceil(s/8+s/16+0.5)) + 2
+}
+
 // placeVein rolls one blob from its origin chunk and writes the part inside the chunk at
-// originX, originZ. The rolls are the same whichever chunk asks.
-func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blobZ, originX, originZ, highest int) {
+// originX, originZ. The rolls are the same whichever chunk asks. A blob is a chain of
+// spheres along a short line through its centre (length size/4, tilted up to 2 blocks on
+// Y), swelling toward the middle, as the study describes; a size 64 blob holds about 680
+// blocks and a size 17 about 22.
+func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blobZ, originX, originZ, highest int, src *biomeSource) {
 	px, pz := blobX+int(r.next()%16), blobZ+int(r.next()%16)
 	py := f.sampleY(r)
-	size := 1 + int(r.next()%uint64(f.maxSize))
-	a1, a2, a3 := 0.75+0.5*r.float(), 0.75+0.5*r.float(), 0.75+0.5*r.float()
 	key := r.next()
 
-	// A blob of this many blocks has this radius; the three stretches keep its volume.
-	// No axis is longer than maxStretch times the radius, which gives a quick reject
-	// before the exact stretch is worked out.
-	radius := blobRadius[size]
-	reach := int(math.Ceil(radius * maxStretch))
+	reach := blobReach(f.size)
 	if px+reach < originX || px-reach >= originX+16 || pz+reach < originZ || pz-reach >= originZ+16 ||
-		py+reach < f.minY || py-reach > f.maxY || py-reach > highest {
+		py+reach < minY || py-reach > maxY || py-reach > highest {
 		return
 	}
-	norm := math.Cbrt(a1 * a2 * a3)
-	rx, ry, rz := radius*a1/norm, radius*a2/norm, radius*a3/norm
-	reach = int(math.Ceil(max(rx, ry, rz)))
-
-	if px+reach < originX || px-reach >= originX+16 || pz+reach < originZ || pz-reach >= originZ+16 ||
-		py+reach < f.minY || py-reach > f.maxY || py-reach > highest {
+	if !f.rock && (py < minY || py > maxY) {
 		return
 	}
-	if f.biome != biomeAny && !g.veinBiome(f.biome, px, py, pz) {
+	if f.biome != biomeAny && !veinBiome(f.biome, src, py) {
 		return
 	}
 
 	b := &g.blocks
-	for x := max(px-reach, originX); x <= min(px+reach, originX+15); x++ {
-		for z := max(pz-reach, originZ); z <= min(pz+reach, originZ+15); z++ {
-			for y := max(py-reach, f.minY, minY); y <= min(py+reach, f.maxY, maxY); y++ {
-				ex, ey, ez := float64(x-px)/rx, float64(y-py)/ry, float64(z-pz)/rz
-				d := ex*ex + ey*ey + ez*ez
-				if d > 1 || (d > 0.2 && unit(posHash(key, x, y, z)) < d*0.6) {
-					continue // Ragged edge: the outer blocks are left out more often.
-				}
-				lx, lz := uint8(x-originX), uint8(z-originZ)
-				kind := g.veinKindOf(c.Block(lx, int16(y), lz, 0))
-				if kind&f.replace == 0 {
+	// Ores stay inside their feature's range, rock patches spill past it.
+	clipLow, clipHigh := minY, maxY
+	if !f.rock {
+		clipLow, clipHigh = max(f.minY, minY), min(f.maxY, maxY)
+	}
+	blob := rng(key)
+	size := float64(f.size)
+	angle := blob.float() * math.Pi
+	ax, az := math.Sin(angle)*size/8, math.Cos(angle)*size/8
+	x0, x1 := float64(px)+ax, float64(px)-ax
+	z0, z1 := float64(pz)+az, float64(pz)-az
+	y0, y1 := float64(py)+blob.float()*4-2, float64(py)+blob.float()*4-2
+	for i := range f.size {
+		t := float64(i) / size
+		spread := blob.float() * size / 16
+		radius := ((math.Sin(math.Pi*t)+1)*spread + 1) / 2
+		cx, cy, cz := lerp(x0, x1, t), lerp(y0, y1, t), lerp(z0, z1, t)
+		low, high := int(math.Floor(cx-radius)), int(math.Ceil(cx+radius))
+		lowZ, highZ := int(math.Floor(cz-radius)), int(math.Ceil(cz+radius))
+		for x := max(low, originX); x <= min(high, originX+15); x++ {
+			dx := (float64(x) + 0.5 - cx) / radius
+			for z := max(lowZ, originZ); z <= min(highZ, originZ+15); z++ {
+				dz := (float64(z) + 0.5 - cz) / radius
+				flat := dx*dx + dz*dz
+				if flat >= 1 {
 					continue
 				}
-				if f.exposed > 0 && g.touchesAir(c, lx, int16(y), lz) && unit(posHash(g.veinSeed, x, y, z)) < f.exposed {
-					continue
+				for y := max(int(math.Floor(cy-radius)), clipLow); y <= min(int(math.Ceil(cy+radius)), clipHigh); y++ {
+					dy := (float64(y) + 0.5 - cy) / radius
+					if flat+dy*dy >= 1 {
+						continue
+					}
+					lx, lz := uint8(x-originX), uint8(z-originZ)
+					kind := g.veinKindOf(c.Block(lx, int16(y), lz, 0))
+					if kind == 0 {
+						continue
+					}
+					if f.exposed > 0 && g.touchesAir(c, lx, int16(y), lz) && unit(posHash(g.veinSeed, x, y, z)) < f.exposed {
+						continue
+					}
+					// Deepslate and tuff take the deepslate variant of an ore.
+					variant := 0
+					if kind&(repDeepslate|repTuff) != 0 {
+						variant = 1
+					}
+					c.SetBlock(lx, int16(y), lz, 0, b.veins[f.block][variant])
 				}
-				// Deepslate and tuff take the deepslate variant of an ore.
-				variant := 0
-				if kind&(repDeepslate|repTuff) != 0 {
-					variant = 1
-				}
-				c.SetBlock(lx, int16(y), lz, 0, b.veins[f.block][variant])
 			}
 		}
 	}
@@ -294,21 +302,127 @@ func (g *Generator) touchesAir(c *chunk.Chunk, x uint8, y int16, z uint8) bool {
 		(y > minY && c.Block(x, y-1, z, 0) == air) || (y < maxY && c.Block(x, y+1, z, 0) == air)
 }
 
-// veinBiome checks a biome rule at a blob centre.
-func (g *Generator) veinBiome(rule biomeRule, x, y, z int) bool {
-	col := g.biomeColumnAt(cellCentre(x), cellCentre(z))
+// veinBiome checks a biome rule at a blob's height, for the blob's source chunk.
+func veinBiome(rule biomeRule, src *biomeSource, y int) bool {
+	col := src.column()
 	switch rule {
 	case biomeDripstone:
 		return col.at(cellCentre(y)) == dripstoneCaves
 	case biomeNotDripstone:
 		return col.at(cellCentre(y)) != dripstoneCaves
+	case biomeLush:
+		return col.lush < 0.5 && col.at(cellCentre(y)) == lushCaves
 	case biomeBadlands:
-		return col.surface == badlands
+		switch col.surface {
+		case badlands, erodedBadlands, woodedBadlands:
+			return true
+		}
 	case biomeMountain:
 		switch col.surface {
-		case meadow, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks, windsweptHills:
+		case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks, windsweptHills, windsweptForest, gravellyHills:
 			return true
 		}
 	}
 	return false
+}
+
+// Decoration rates from the study: an amethyst geode in 1 of 24 chunks at Y -58 to 30, 25
+// water and 20 lava springs per chunk. Geode size and layers are our own, from the look
+// of the feature: Dragonfly has no budding amethyst, so the shell is plain amethyst.
+const (
+	geodeChance      = 1.0 / 24
+	geodeBottom      = -58
+	geodeTop         = 30
+	geodeMarginAbove = 10
+	waterSprings     = 25
+	waterSpringTop   = 192
+	lavaSprings      = 20
+)
+
+// placeGeodes writes the geodes that reach a chunk. Only rock is replaced, and a geode stays
+// well under the nominal ground, so it never opens to the sky or the sea.
+func (g *Generator) placeGeodes(c *chunk.Chunk, cx, cz int) {
+	b := &g.blocks
+	for sx := cx - 1; sx <= cx+1; sx++ {
+		for sz := cz - 1; sz <= cz+1; sz++ {
+			h := posHash(g.featureSeed, sx, 0, sz)
+			if unit(h) >= geodeChance {
+				continue
+			}
+			r := rng(h)
+			px, pz := sx*16+r.intn(16), sz*16+r.intn(16)
+			py := geodeBottom + r.intn(geodeTop-geodeBottom+1)
+			radius := 4 + 3*r.float()
+			cl := g.Climate(px, pz)
+			if float64(py)+radius+geodeMarginAbove >= nominalGround(cl.Continentalness, cl.Erosion, cl.Weirdness) {
+				continue
+			}
+			ox, oz := cx*16, cz*16
+			reach := int(math.Ceil(radius))
+			for x := max(px-reach, ox); x <= min(px+reach, ox+15); x++ {
+				for z := max(pz-reach, oz); z <= min(pz+reach, oz+15); z++ {
+					for y := max(py-reach, minY+1); y <= min(py+reach, maxY); y++ {
+						dx, dy, dz := float64(x-px), float64(y-py), float64(z-pz)
+						d := math.Sqrt(dx*dx+dy*dy+dz*dz) / radius
+						if d >= 1 {
+							continue
+						}
+						lx, lz := uint8(x-ox), uint8(z-oz)
+						if g.veinKindOf(c.Block(lx, int16(y), lz, 0)) == 0 {
+							continue
+						}
+						switch {
+						case d < 0.55:
+							c.SetBlock(lx, int16(y), lz, 0, b.air)
+						case d < 0.7:
+							c.SetBlock(lx, int16(y), lz, 0, b.amethyst)
+						case d < 0.84:
+							c.SetBlock(lx, int16(y), lz, 0, b.calcite)
+						default:
+							c.SetBlock(lx, int16(y), lz, 0, b.smoothBasalt)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// placeSprings sets single fluid sources in rock walls: rock above, below and on three
+// sides, air on the fourth. Dragonfly has no way to start a generated source flowing, so
+// a spring stays a single block until something next to it changes. Only positions inside
+// the chunk are used, so the check needs no neighbours.
+func (g *Generator) placeSprings(c *chunk.Chunk, cx, cz int) {
+	b := &g.blocks
+	r := rng(posHash(g.featureSeed^1, cx, 0, cz))
+	try := func(y int, id uint32) {
+		x, z := uint8(1+r.intn(14)), uint8(1+r.intn(14))
+		if y <= minY+1 || y >= maxY {
+			return
+		}
+		rock := func(x uint8, y int, z uint8) bool { return g.veinKindOf(c.Block(x, int16(y), z, 0)) != 0 }
+		if !rock(x, y, z) || !rock(x, y+1, z) || !rock(x, y-1, z) {
+			return
+		}
+		open, solid := 0, 0
+		for _, n := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			nx, nz := uint8(int(x)+n[0]), uint8(int(z)+n[1])
+			switch {
+			case c.Block(nx, int16(y), nz, 0) == b.air:
+				open++
+			case rock(nx, y, nz):
+				solid++
+			}
+		}
+		if open == 1 && solid == 3 {
+			c.SetBlock(x, int16(y), z, 0, id)
+		}
+	}
+	for range waterSprings {
+		try(minY+r.intn(waterSpringTop-minY+1), b.water)
+	}
+	for range lavaSprings {
+		// Heavily biased low, by nesting even draws.
+		try(minY+r.intn(r.intn(r.intn(maxY-minY)+1)+1), b.lava)
+	}
 }

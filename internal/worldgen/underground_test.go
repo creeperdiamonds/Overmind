@@ -326,7 +326,7 @@ func TestOreRanges(t *testing.T) {
 			}
 		}
 	}
-	// The overall Y range of each ore across its table rows, from the wiki's ore pages.
+	// The overall Y range of each ore across its table rows, from the study's ore table.
 	limits := map[string][2]int{
 		"coal": {0, 320}, "iron": {-64, 384}, "copper": {-16, 112}, "gold": {-64, 256},
 		"redstone": {-64, 15}, "lapis": {-64, 64}, "diamond": {-64, 16}, "emerald": {-16, 320},
@@ -438,5 +438,56 @@ func TestVeinsCrossChunkEdges(t *testing.T) {
 	t.Logf("ore next to ore: inside chunks %.3f (%d), across edges %.3f (%d)", in, inner, ed, edge)
 	if edge < 100 || ed < in*0.7 {
 		t.Errorf("veins break at chunk edges: %.3f across edges against %.3f inside", ed, in)
+	}
+}
+
+// Blob sizes from the study (simulated geometry, means): size 9 about 6.7 blocks, size 17
+// about 22, size 33 about 113, size 64 about 679.
+func TestBlobSizesMatchMeasuredFigures(t *testing.T) {
+	g := New(31)
+	for _, c := range []struct {
+		size, runs int
+		want       float64
+	}{{9, 300, 6.7}, {17, 200, 22}, {33, 100, 113}, {64, 40, 679}} {
+		chunks := [3][3]*chunk.Chunk{}
+		var total int
+		for i := range c.runs {
+			for a := range 3 {
+				for b := range 3 {
+					ch := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+					for x := range uint8(16) {
+						for z := range uint8(16) {
+							for y := int16(-20); y <= 20; y++ {
+								ch.SetBlock(x, y, z, 0, ridStone)
+							}
+						}
+					}
+					chunks[a][b] = ch
+				}
+			}
+			f := veinFeature{block: veinDirt, attempts: 1, size: c.size, minY: 0, maxY: 0, rock: true}
+			src := biomeSource{g: g}
+			seed := posHash(77, i, c.size, 0)
+			for a := range 3 {
+				for b := range 3 {
+					r := rng(seed)
+					g.placeVein(chunks[a][b], &f, &r, 16, 16, a*16, b*16, 100, &src)
+					for x := range uint8(16) {
+						for z := range uint8(16) {
+							for y := int16(-20); y <= 20; y++ {
+								if chunks[a][b].Block(x, y, z, 0) != ridStone {
+									total++
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		got := float64(total) / float64(c.runs)
+		t.Logf("size %d: %.1f blocks a blob, measured %.1f", c.size, got, c.want)
+		if math.Abs(got-c.want) > c.want*0.2 {
+			t.Errorf("size %d: %.1f blocks a blob, measured %.1f", c.size, got, c.want)
+		}
 	}
 }

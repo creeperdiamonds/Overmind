@@ -100,6 +100,11 @@ var biomeColours = map[string]color.RGBA{
 	"warm_ocean": {0, 0, 172, 255}, "deep_warm_ocean": {0, 0, 80, 255}, "lukewarm_ocean": {0, 0, 144, 255},
 	"deep_lukewarm_ocean": {0, 0, 64, 255}, "cold_ocean": {32, 32, 112, 255}, "deep_cold_ocean": {32, 32, 56, 255},
 	"frozen_ocean": {112, 112, 214, 255}, "deep_frozen_ocean": {64, 64, 144, 255},
+	"birch_forest_mutated": {80, 150, 100, 255}, "mega_taiga": {40, 90, 70, 255}, "redwood_taiga_mutated": {60, 110, 90, 255},
+	"pale_garden": {190, 190, 190, 255}, "savanna_plateau": {167, 157, 100, 255}, "savanna_mutated": {229, 218, 135, 255},
+	"jungle_edge": {98, 139, 23, 255}, "bamboo_jungle": {60, 150, 20, 255}, "mangrove_swamp": {50, 180, 140, 255},
+	"mesa_bryce": {255, 109, 61, 255}, "mesa_plateau_stone": {176, 151, 101, 255}, "cherry_grove": {240, 170, 200, 255},
+	"extreme_hills_plus_trees": {80, 112, 80, 255}, "extreme_hills_mutated": {136, 136, 136, 255},
 }
 
 // biomeColour shades a biome's colour a little by height so relief shows.

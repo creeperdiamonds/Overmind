@@ -132,6 +132,9 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 				if top < SeaLevel {
 					continue // Floors are checked in TestOceanFloors.
 				}
+				if top != g.noiseHeight(p[0], p[1]) {
+					continue // A carver opened this column; carvers leave bare rock, as in the game.
+				}
 				found++
 				if got := c.Block(x, int16(top), z, 0); !slices.Contains(tops, got) {
 					t.Errorf("%s at (%d,%d) Y %d: top block id %d, want one of %v", name, p[0], p[1], top, got, tops)
@@ -155,8 +158,8 @@ func TestOceanFloors(t *testing.T) {
 				c := generate(g, int32(p[0]>>4), int32(p[1]>>4))
 				x, z := uint8(p[0]&15), uint8(p[1]&15)
 				top := topSolid(c, x, z)
-				if top >= SeaLevel {
-					continue
+				if top >= SeaLevel || top != g.noiseHeight(p[0], p[1]) {
+					continue // Land, or a floor a carver opened, which is bare rock as in the game.
 				}
 				found++
 				if got := c.Block(x, int16(top), z, 0); got != b.sand && got != b.gravel && got != b.clay && got != b.dirt {

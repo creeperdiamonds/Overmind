@@ -94,8 +94,10 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	}
 	g.applyCarvers(c, s, originX, originZ, &noiseTop, &cols)
 	g.applyLakes(c, s, originX, originZ, highest)
+	g.placeGeodes(c, int(pos[0]), int(pos[1]))
 	g.placeVeins(c, pos, highest, true)
 	g.placeVeins(c, pos, highest, false)
+	g.placeSprings(c, int(pos[0]), int(pos[1]))
 }
 
 // fillNoise is the noise pass. It works down each block column so that fluids can see what
