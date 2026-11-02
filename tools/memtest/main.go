@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/overmind/overmind/bots/bedrock"
@@ -23,33 +24,62 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Sampling starts before the first bot dials so the burst of chunks
+	// sent at join time is part of the peak. The OS-recorded peak (Windows
+	// PeakWorkingSetSize, Linux VmHWM) covers anything between samples.
+	var (
+		mu         sync.Mutex
+		peak, last uint64
+		sampleErr  error
+	)
+	stop := make(chan struct{})
+	sampled := make(chan struct{})
+	go func() {
+		defer close(sampled)
+		for {
+			cur, osPeak, err := processBytes(*pid)
+			mu.Lock()
+			if err != nil {
+				sampleErr = err
+				mu.Unlock()
+				return
+			}
+			last = cur
+			peak = max(peak, cur, osPeak)
+			mu.Unlock()
+			select {
+			case <-stop:
+				return
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+	}()
+
 	// Bots join one at a time: the RakNet dialer has a data race when
 	// several dial at once.
 	var joined []*bedrock.Bot
+	failed := 0
 	for i := 0; i < *bots; i++ {
 		b, err := bedrock.Join(*addr, fmt.Sprintf("Bot%d", i))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bot %d: %v\n", i, err)
+			failed++
 			continue
 		}
 		b.Walk(2 * math.Pi * float64(i) / float64(*bots))
 		joined = append(joined, b)
 	}
 
-	var peak, last uint64
-	end := time.Now().Add(time.Duration(*seconds) * time.Second)
-	for time.Now().Before(end) {
-		b, err := processBytes(*pid)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "memtest: read memory: %v\n", err)
-			os.Exit(1)
-		}
-		last = b
-		peak = max(peak, b)
-		time.Sleep(250 * time.Millisecond)
-	}
+	// The measured period starts now that every bot has had its turn.
+	time.Sleep(time.Duration(*seconds) * time.Second)
+	close(stop)
+	<-sampled
 	for _, b := range joined {
 		_ = b.Close()
+	}
+	if sampleErr != nil {
+		fmt.Fprintf(os.Stderr, "memtest: read memory: %v\n", sampleErr)
+		os.Exit(1)
 	}
 
 	const mb = 1024 * 1024
@@ -57,4 +87,8 @@ func main() {
 	fmt.Println("|---|---|---|---|")
 	fmt.Printf("| %d walking, %d s (%d joined) | %d MB | %d MB | not measured |\n",
 		*bots, *seconds, len(joined), last/mb, peak/mb)
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "memtest: %d of %d bots failed to join\n", failed, *bots)
+		os.Exit(1)
+	}
 }

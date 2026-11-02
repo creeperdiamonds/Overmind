@@ -5,8 +5,11 @@ import (
 	"net"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/df-mc/dragonfly/server"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/go-gl/mathgl/mgl64"
 
 	"github.com/overmind/overmind/internal/app"
 	"github.com/overmind/overmind/internal/config"
@@ -45,6 +48,25 @@ func Start(t *testing.T) *Server {
 func (s *Server) PlayerByName(name string) (found bool) {
 	_, found = s.Server.PlayerByName(name)
 	return found
+}
+
+// PlayerPosition returns where the server thinks the named player is.
+func (s *Server) PlayerPosition(name string) (pos mgl64.Vec3, ok bool) {
+	h, found := s.Server.PlayerByName(name)
+	if !found {
+		return pos, false
+	}
+	done := make(chan struct{})
+	h.Do(func(tx *world.Tx, e world.Entity) {
+		pos = e.Position()
+		close(done)
+	})
+	select {
+	case <-done:
+		return pos, true
+	case <-time.After(2 * time.Second):
+		return pos, false
+	}
 }
 
 func spareUDP(t *testing.T) string {

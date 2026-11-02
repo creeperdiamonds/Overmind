@@ -5,6 +5,7 @@ import (
 	"context"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-gl/mathgl/mgl32"
@@ -28,6 +29,7 @@ type Bot struct {
 	angle    float64
 	walking  bool
 	tickNum  uint64
+	chunks   atomic.Int64
 	done     chan struct{}
 	closeOne sync.Once
 }
@@ -55,9 +57,14 @@ func Join(addr, name string) (*Bot, error) {
 // read drains packets so the connection never backs up.
 func (b *Bot) read() {
 	for {
-		if _, err := b.conn.ReadPacket(); err != nil {
+		pk, err := b.conn.ReadPacket()
+		if err != nil {
 			b.Close()
 			return
+		}
+		switch pk.(type) {
+		case *packet.LevelChunk, *packet.SubChunk:
+			b.chunks.Add(1)
 		}
 	}
 }
@@ -97,6 +104,9 @@ func (b *Bot) Walk(angle float64) {
 	b.angle, b.walking = angle, true
 	b.mu.Unlock()
 }
+
+// ChunksReceived is how many chunk packets the server has sent so far.
+func (b *Bot) ChunksReceived() int64 { return b.chunks.Load() }
 
 // Say sends a chat message.
 func (b *Bot) Say(text string) {
