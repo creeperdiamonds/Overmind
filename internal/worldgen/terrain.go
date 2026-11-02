@@ -175,9 +175,18 @@ func (c *cell) solidAt(dx, dz, dy int) bool {
 		ty) > 0
 }
 
-// SurfaceHeight returns the Y of the highest solid block in a column. It gives the same
-// answer as the generated chunk, without needing the chunk to exist.
-func (g *Generator) SurfaceHeight(x, z int) int {
+
+
+// terrainHeight returns the Y of the highest solid block of the terrain in a column,
+// before caves are carved. Caves can open the top, so use SurfaceHeight for the real
+// highest solid block.
+func (g *Generator) terrainHeight(x, z int) int {
+	return g.highestSolid(x, z, nil)
+}
+
+// highestSolid returns the Y of the highest terrain block in a column that is solid and
+// not skipped. skip may be nil.
+func (g *Generator) highestSolid(x, z int, skip func(y int) bool) int {
 	gridX, gridZ := x&^(cellXZ-1), z&^(cellXZ-1)
 	dx, dz := x-gridX, z-gridZ
 	var corners [2][2][columnNodes]float64
@@ -195,8 +204,9 @@ func (g *Generator) SurfaceHeight(x, z int) int {
 			continue
 		}
 		for dy := cellY - 1; dy >= 0; dy-- {
-			if c.solidAt(dx, dz, dy) {
-				return minY + layer*cellY + dy
+			y := minY + layer*cellY + dy
+			if c.solidAt(dx, dz, dy) && (skip == nil || !skip(y)) {
+				return y
 			}
 		}
 	}

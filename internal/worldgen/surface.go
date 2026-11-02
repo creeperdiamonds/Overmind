@@ -105,7 +105,7 @@ func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16]
 // layer puts block id into count blocks going down from y, over stone only.
 func (s *surfaceInfo) layer(y, count int, id uint32) int {
 	for ; count > 0 && y >= minY; count-- {
-		if s.c.Block(s.x, int16(y), s.z, 0) != s.g.blocks.stone {
+		if r := s.c.Block(s.x, int16(y), s.z, 0); r != s.g.blocks.stone && r != s.g.blocks.deepslate {
 			break
 		}
 		s.c.SetBlock(s.x, int16(y), s.z, 0, id)

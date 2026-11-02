@@ -320,7 +320,7 @@ func (g *Generator) biomeColumnAt(cx, cz int) biomeColumn {
 	if dripstone && (!lush || (cl.Continentalness-dripstoneContinentalness)/0.2 > (cl.Humidity-lushHumidity)/0.3) {
 		col.cave = dripstoneCaves
 	}
-	ground := g.SurfaceHeight(cx, cz)
+	ground := g.terrainHeight(cx, cz)
 	col.caveTop = ground - int(math.Ceil(caveDepthMin/depthPerBlock))
 	col.caveBottom = ground - int(math.Floor(caveDepthMax/depthPerBlock))
 	return col

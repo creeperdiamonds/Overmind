@@ -12,6 +12,11 @@ type blocks struct {
 	grass, dirt, podzol, mycelium          uint32
 	sand, redSand, sandstone, redSandstone uint32
 	gravel, clay, snow                     uint32
+	bedrock, deepslate, lava               uint32
+	tuff, granite, diorite, andesite       uint32
+	// veins holds the blocks the vein pass places, by veinBlock: the stone variant first,
+	// then the deepslate variant. The rock patches have the same block in both.
+	veins [numVeinBlocks][2]uint32
 	// terracotta holds the badlands band colours, from the plain block to the stained ones.
 	terracotta []uint32
 }
@@ -23,7 +28,11 @@ func newBlocks() blocks {
 	world.DefaultBlockRegistry.Finalize()
 	id := func(b world.Block) uint32 { return world.BlockRuntimeID(b) }
 	stained := func(c item.Colour) uint32 { return id(block.StainedTerracotta{Colour: c}) }
-	return blocks{
+	ore := func(make func(block.OreType) world.Block) [2]uint32 {
+		return [2]uint32{id(make(block.StoneOre())), id(make(block.DeepslateOre()))}
+	}
+	rock := func(b world.Block) [2]uint32 { return [2]uint32{id(b), id(b)} }
+	b := blocks{
 		air:          id(block.Air{}),
 		stone:        id(block.Stone{}),
 		water:        id(block.Water{Still: true, Depth: 8}),
@@ -38,10 +47,30 @@ func newBlocks() blocks {
 		gravel:       id(block.Gravel{}),
 		clay:         id(block.Clay{}),
 		snow:         id(block.Snow{}),
+		bedrock:      id(block.Bedrock{}),
+		deepslate:    id(block.Deepslate{}),
+		lava:         id(block.Lava{Still: true, Depth: 8}),
+		tuff:         id(block.Tuff{}),
+		granite:      id(block.Granite{}),
+		diorite:      id(block.Diorite{}),
+		andesite:     id(block.Andesite{}),
 		terracotta: []uint32{
 			id(block.Terracotta{}), stained(item.ColourOrange()), stained(item.ColourYellow()),
 			stained(item.ColourBrown()), stained(item.ColourRed()), stained(item.ColourWhite()),
 			stained(item.ColourLightGrey()),
 		},
 	}
+	b.veins[veinCoal] = ore(func(t block.OreType) world.Block { return block.CoalOre{Type: t} })
+	b.veins[veinIron] = ore(func(t block.OreType) world.Block { return block.IronOre{Type: t} })
+	b.veins[veinCopper] = ore(func(t block.OreType) world.Block { return block.CopperOre{Type: t} })
+	b.veins[veinGold] = ore(func(t block.OreType) world.Block { return block.GoldOre{Type: t} })
+	b.veins[veinRedstone] = ore(func(t block.OreType) world.Block { return block.RedstoneOre{Type: t} })
+	b.veins[veinLapis] = ore(func(t block.OreType) world.Block { return block.LapisOre{Type: t} })
+	b.veins[veinDiamond] = ore(func(t block.OreType) world.Block { return block.DiamondOre{Type: t} })
+	b.veins[veinEmerald] = ore(func(t block.OreType) world.Block { return block.EmeraldOre{Type: t} })
+	b.veins[veinGranite] = rock(block.Granite{})
+	b.veins[veinDiorite] = rock(block.Diorite{})
+	b.veins[veinAndesite] = rock(block.Andesite{})
+	b.veins[veinTuff] = rock(block.Tuff{})
+	return b
 }
