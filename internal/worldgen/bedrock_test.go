@@ -333,3 +333,167 @@ func TestBedrockClimateValues(t *testing.T) {
 		}
 	}
 }
+
+// bedrockVolume is the blocks under the ground top per chunk at each Y from 64 to 191, the mean of
+// the 4 Bedrock worlds' height maps (seedN-maps.npz).
+var bedrockVolume = [128]float64{141.9, 136.6, 130.6, 124.5, 118.2, 111.8, 105.3, 99.4, 94.5, 92.0, 89.7, 87.5, 85.4, 83.2, 80.9, 78.5, 76.1, 74.7, 73.4, 72.2, 71.1, 69.9, 68.4, 66.5, 64.6, 63.6, 62.5, 61.4, 59.6, 57.3, 55.2, 52.9, 50.7, 49.6, 48.4, 47.2, 45.9, 44.6, 43.1, 41.4, 39.6, 38.6, 37.6, 36.5, 35.5, 34.4, 33.0, 31.4, 29.9, 29.1, 28.2, 27.3, 26.3, 25.2, 23.9, 22.7, 21.5, 20.7, 20.0, 19.2, 18.4, 17.6, 16.8, 15.9, 14.9, 14.4, 14.0, 13.5, 13.0, 12.5, 12.0, 11.4, 10.9, 10.5, 10.2, 9.9, 9.5, 9.2, 8.8, 8.4, 8.0, 7.8, 7.5, 7.2, 6.9, 6.6, 6.2, 5.8, 5.4, 5.2, 4.9, 4.7, 4.4, 4.1, 3.7, 3.4, 3.1, 2.8, 2.6, 2.4, 2.2, 1.9, 1.7, 1.5, 1.2, 1.1, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1}
+
+// Ore density above Y 64: ore blocks per 1000 blocks under the ground top. A plain count there says
+// more about how much land a window holds than about ore, so both worlds divide by their own
+// volume. Bedrock's volumes come from the 4 worlds' height maps, and its counts from each seed's
+// per_chunk_by_y. A seed with under 50 blocks a chunk in a band is left out. Within a band ore
+// density changes with Y (iron rises fast from Y 96) and the land thins out upward at a different
+// rate in each world, so ours is measured per Y and weighted by Bedrock's volume at that Y. The
+// tolerance is two standard errors of the seeds' densities, with a floor of 20%.
+func TestOreDensityMatchesBedrock(t *testing.T) {
+	rows := []struct {
+		ore    string
+		band   int // Index into oreBands.
+		bySeed []float64
+	}{
+		{"coal", 8, []float64{10.99, 6.30, 12.03, 9.45}},
+		{"coal", 9, []float64{11.13, 12.15, 12.36}},
+		{"coal", 10, []float64{18.97, 21.54, 23.40}},
+		{"iron", 8, []float64{0.50, 0.25, 0.57, 0.42}},
+		{"iron", 9, []float64{2.64, 3.33, 2.97}},
+		{"iron", 10, []float64{5.63, 6.42, 5.40}},
+		{"copper", 8, []float64{5.12, 2.75, 3.41, 5.61}},
+		{"copper", 9, []float64{0.72, 0.51, 0.98}},
+	}
+	byID := map[uint32]string{}
+	for name, p := range oreIDs() {
+		byID[p[0]], byID[p[1]] = name, name
+	}
+	ground := groundIDs()
+	blocks := map[string]*[128]float64{"coal": {}, "iron": {}, "copper": {}}
+	var volume [128]float64
+	var mu sync.Mutex
+	bedrockSample(8, func(g *Generator, c *chunk.Chunk, _, _ int) {
+		local := map[string]*[128]float64{"coal": {}, "iron": {}, "copper": {}}
+		var vol [128]float64
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				top := groundTop(c, ground, x, z)
+				for y := 64; y <= top && y < 192; y++ {
+					vol[y-64]++
+					if name, ok := byID[c.Block(x, int16(y), z, 0)]; ok && local[name] != nil {
+						local[name][y-64]++
+					}
+				}
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for name, l := range local {
+			for i := range l {
+				blocks[name][i] += l[i]
+			}
+		}
+		for i := range vol {
+			volume[i] += vol[i]
+		}
+	})
+	for _, r := range rows {
+		var weighted, weight, plainOre, plainVol float64
+		for y := oreBands[r.band]; y < oreBands[r.band+1]; y++ {
+			i := y - 64
+			plainOre += blocks[r.ore][i]
+			plainVol += volume[i]
+			if volume[i] > 0 {
+				weighted += blocks[r.ore][i] / volume[i] * bedrockVolume[i]
+				weight += bedrockVolume[i]
+			}
+		}
+		got := weighted / weight * 1000
+		var sum float64
+		for _, v := range r.bySeed {
+			sum += v
+		}
+		want := sum / float64(len(r.bySeed))
+		tol := max(seedTwoSE(r.bySeed), want*0.2)
+		t.Logf("%-6s Y %d to %d: %.2f per 1000 under the ground (%.2f on our own land), Bedrock %.2f, tolerance %.2f", r.ore, oreBands[r.band], oreBands[r.band+1], got, plainOre/plainVol*1000, want, tol)
+		if math.Abs(got-want) > tol {
+			t.Errorf("%s at Y %d to %d: %.2f per 1000, Bedrock %.2f, tolerance %.2f", r.ore, oreBands[r.band], oreBands[r.band+1], got, want, tol)
+		}
+	}
+}
+
+// Dirt under the soil layer, separating patches from soil: blocks at least 4 under the ground top, per
+// 1000 blocks of Y 0 to 160 so deep. Bedrock's figure is from the one raw world kept here, seed 100:
+// 342.7 such dirt a chunk over 21,485 blocks, so 15.95. One seed, so 20%. Soil, the rest, is logged:
+// seed 100 has 516 a chunk over a window 87% land, about 2.3 a land column.
+func TestDirtPatchesMatchBedrock(t *testing.T) {
+	ground := groundIDs()
+	var deep, soil, volume, land float64
+	var mu sync.Mutex
+	bedrockSample(16, func(g *Generator, c *chunk.Chunk, _, _ int) {
+		var d, s, v, l float64
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				top := groundTop(c, ground, x, z)
+				if top >= SeaLevel {
+					l++
+				}
+				v += float64(max(min(top-4, 160), 0))
+				for y := minY; y <= top; y++ {
+					if c.Block(x, int16(y), z, 0) != g.blocks.dirt {
+						continue
+					}
+					if y < top-4 {
+						d++
+					} else {
+						s++
+					}
+				}
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		deep += d
+		soil += s
+		volume += v
+		land += l
+	})
+	got := deep / volume * 1000
+	t.Logf("dirt under the soil layer %.2f per 1000, Bedrock seed 100 15.95; soil %.2f a land column, Bedrock seed 100 about 2.3", got, soil/land)
+	if math.Abs(got-15.95) > 15.95*0.2 {
+		t.Errorf("dirt under the soil layer %.2f per 1000, Bedrock 15.95, tolerance 20%%", got)
+	}
+}
+
+// Infested blocks per chunk of a mountain biome. Bedrock by seed, stone and deepslate together over
+// the share of the emerald biome set in the window: 30.7, 19.1, 18.5 (seed 1 has none); pooled by
+// blocks, 20.6. The tolerance is 30%, for the few mountain chunks those windows hold.
+func TestInfestedMatchesBedrock(t *testing.T) {
+	b := newBlocks()
+	var blocks, chunks float64
+	var mu sync.Mutex
+	for _, seed := range []int64{1, 2, 3} {
+		g := New(seed)
+		pos := biomeChunks(g, 150, "meadow", "cherry_grove", "grove", "snowy_slopes", "jagged_peaks", "frozen_peaks", "stony_peaks", "extreme_hills", "extreme_hills_plus_trees", "extreme_hills_mutated")
+		for _, c := range generateAll(g, pos) {
+			var n float64
+			for x := range uint8(16) {
+				for z := range uint8(16) {
+					for y := int16(minY); y <= maxY; y++ {
+						if r := c.Block(x, y, z, 0); r == b.veins[veinInfested][0] || r == b.veins[veinInfested][1] {
+							n++
+						}
+					}
+				}
+			}
+			mu.Lock()
+			blocks += n
+			chunks++
+			mu.Unlock()
+		}
+	}
+	got := blocks / chunks
+	t.Logf("infested %.1f a mountain chunk over %.0f chunks, Bedrock 20.6", got, chunks)
+	if chunks < 100 {
+		t.Fatalf("only %.0f mountain chunks", chunks)
+	}
+	if math.Abs(got-20.6) > 20.6*0.3 {
+		t.Errorf("infested %.1f a mountain chunk, Bedrock 20.6, tolerance 30%%", got)
+	}
+}

@@ -37,6 +37,11 @@ func topSolid(c *chunk.Chunk, x, z uint8) int {
 	return minY - 1
 }
 
+// isDecorationID is a block only the decoration pass places.
+func isDecorationID(r uint32) bool {
+	return isLogID(r) || isLeavesID(r) || isPlantName(nameOf(r)) || nameOf(r) == "snow_layer"
+}
+
 func TestSameSeedSameChunk(t *testing.T) {
 	a, b := New(42), New(42)
 	for _, p := range [][2]int32{{0, 0}, {-3, 7}, {120, -80}} {
@@ -249,7 +254,11 @@ func TestBlocksFollowFillRules(t *testing.T) {
 		c := generate(g, p[0], p[1])
 		for x := uint8(0); x < 16; x++ {
 			for z := uint8(0); z < 16; z++ {
+				terrainTop := topSolid(c, x, z)
 				for y := int16(minY); y <= maxY; y++ {
+					if r := c.Block(x, y, z, 0); int(y) <= terrainTop && isDecorationID(r) {
+						t.Fatalf("%s at Y %d, in or under the terrain top %d", nameOf(r), y, terrainTop)
+					}
 					switch r := c.Block(x, y, z, 0); {
 					case r == b.water && y > SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						// Under the ground a raised aquifer may hold water: the study measured 0.1%
@@ -257,7 +266,7 @@ func TestBlocksFollowFillRules(t *testing.T) {
 						t.Fatalf("water at Y %d above the terrain", y)
 					case r == b.air && y <= SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						t.Fatalf("air at Y %d, below sea level and not in a cave", y)
-					case r != b.air && r != b.water && !slices.Contains(solids, r) && !isLogID(r) && !isLeavesID(r) && !isPlantName(nameOf(r)) && nameOf(r) != "snow_layer":
+					case r != b.air && r != b.water && !slices.Contains(solids, r) && !isDecorationID(r):
 						t.Fatalf("unexpected block %d at Y %d", r, y)
 					}
 				}

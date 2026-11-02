@@ -88,8 +88,8 @@ type veinFeature struct {
 // the files, because TestDeepslateBlendMatchesBedrock measures the result and GAPS 18 does not fit.
 // The files were not read for dirt; it takes stone only, like the rocks. Our own choice.
 //
-// Ores leave tuff alone. The notes do not read the ores' replacement rules, and Java replaces tuff.
-// This is measured and tuned: with tuff replaced, every ore that lies mostly under Y 0 came out 7 to
+// Ores leave tuff alone. This is our own, tuned to counts, and not a Bedrock rule: the notes do not
+// read the ores' replacement rules, and Java replaces tuff. With tuff replaced, every ore that lies mostly under Y 0 came out 7 to
 // 14% over Bedrock's count, about tuff's share of the rock down there (6.8%).
 var veinFeatures = [...]veinFeature{
 	// Rock patches.
@@ -108,7 +108,7 @@ var veinFeatures = [...]veinFeature{
 	{block: veinCoal, attempts: 30, size: 17, minY: 136, maxY: 320},
 	{block: veinCoal, attempts: 20, size: 17, minY: 0, maxY: 192, dist: distTriangle, exposed: 0.5},
 	{block: veinCoal, attempts: 20, size: 17, minY: 128, maxY: 256, exposed: 0.5, biome: biomeMountainsTag},
-	{block: veinIron, attempts: 90, size: 10, minY: 80, maxY: 384, dist: distTriangle},
+	{block: veinIron, attempts: 90, size: 10, minY: ironUpperBottom, maxY: 384, dist: distTriangle},
 	{block: veinIron, attempts: 10, size: 10, minY: -24, maxY: 56, dist: distTriangle},
 	{block: veinIron, attempts: 10, size: 4, minY: minY, maxY: 72},
 	{block: veinCopper, attempts: 16, size: 10, minY: -16, maxY: 112, dist: distTriangle, biome: biomeNotDripstone},
@@ -125,8 +125,18 @@ var veinFeatures = [...]veinFeature{
 	{block: veinDiamond, attempts: 1.0 / 9, size: 12, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.7},
 	{block: veinDiamond, attempts: 4, size: 8, minY: -144, maxY: 16, dist: distTriangle, exposed: 1},
 	{block: veinEmerald, attempts: 100, size: 3, minY: -16, maxY: 480, dist: distTriangle, biome: biomeMountain},
-	{block: veinInfested, attempts: 14, size: 8, minY: 0, maxY: 64, biome: biomeMountain},
+	{block: veinInfested, attempts: infestedAttempts, size: 8, minY: 0, maxY: 64, biome: biomeMountain},
 }
+
+// ironUpperBottom is measured and tuned, not the rule. The data files read a triangle from Y 80, and
+// that left iron 15 to 30% under Bedrock per block of ground from Y 80 to 128, by a nearly even
+// amount (seed 100's raw world, per 8 blocks), and not above Y 128. Starting it 4 lower takes that up.
+const ironUpperBottom = 76
+
+// infestedAttempts is measured and tuned, not the rule. The data files read 14 attempts (BEDROCK-NOTES
+// section 4), and 14 gave 65.8 blocks a mountain chunk where Bedrock's worlds hold 20.6
+// (TestInfestedMatchesBedrock). Why the worlds hold a third of what the rule says is not known.
+const infestedAttempts = 4.4
 
 // rng is a tiny seeded generator. Every blob has its own, started from the blob's origin
 // chunk, so any chunk that a blob reaches rolls the same numbers.

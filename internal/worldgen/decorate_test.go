@@ -1,6 +1,11 @@
 package worldgen
 
 import (
+	"context"
+	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/player"
+	"github.com/go-gl/mathgl/mgl64"
 	"math"
 	"runtime"
 	"slices"
@@ -8,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
@@ -537,8 +543,8 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 							continue
 						}
 						total++
-						b := g.BiomeAt(wx, maxY, wz)
-						if !coldEnough(b, int(y)) {
+						// The layer rests on the block below, so that is the height the pass asks about.
+						if b := g.surfaceDefAt(wx, wz); !coldAt(b, int(y)) {
 							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, b.String(), b.Temperature())
 						}
 					}
@@ -571,19 +577,23 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 	if float64(covered) < 0.9*float64(columns) {
 		t.Errorf("snowy plains and taiga: only %d of %d land columns have a snow layer", covered, columns)
 	}
-}
-
-// coldEnough allows for the height drop generously: no biome warmer than the coldest non-snowy
-// figure gets snow without being well above the ground of ordinary land.
-func coldEnough(b world.Biome, y int) bool {
-	t := b.Temperature()
-	if b.String() == "deep_frozen_ocean" {
-		t = 0 // Dragonfly reads 0.5 for it; the biome table puts it in the coldest row.
+	// Warm biomes, at whatever height they reach, have none.
+	g := New(11)
+	warm := biomeChunks(g, 120, "plains", "forest", "desert", "savanna", "savanna_plateau", "jungle", "swampland", "beach", "river")
+	if len(warm) < 60 {
+		t.Fatalf("only %d warm chunks", len(warm))
 	}
-	if t < 0.2 {
-		return true
+	for p, c := range generateAll(g, warm) {
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				for y := int16(SeaLevel); y < 300; y++ {
+					if nameOf(c.Block(x, y, z, 0)) == "snow_layer" {
+						t.Fatalf("chunk %v: snow at Y %d in a warm biome", p, y)
+					}
+				}
+			}
+		}
 	}
-	return y > 100 && t < 0.2+float64(y-100)*0.01
 }
 
 // Trees per chunk against Bedrock, measured the same way (BEDROCK-NOTES section 9): trees by the
@@ -782,5 +792,97 @@ func BenchmarkGenerateTreeChunk(b *testing.B) {
 				i++
 			}
 		})
+	}
+}
+
+// Every block the generator places can be mined in survival. Bedrock can't, as in the game, and the
+// fluids and air are not blocks to mine. A survey over biomes, by world grid.
+func TestPlacedBlocksAreBreakable(t *testing.T) {
+	seen := map[uint32]bool{}
+	var mu sync.Mutex
+	bedrockSample(24, func(g *Generator, c *chunk.Chunk, _, _ int) {
+		local := map[uint32]bool{}
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				for y := int16(minY); y <= maxY; y++ {
+					local[c.Block(x, y, z, 0)] = true
+				}
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for id := range local {
+			seen[id] = true
+		}
+	})
+	for id := range seen {
+		b, ok := world.DefaultBlockRegistry.BlockByRuntimeID(id)
+		if !ok {
+			t.Fatalf("no block for id %d", id)
+		}
+		switch nameOf(id) {
+		case "air", "water", "flowing_water", "lava", "flowing_lava", "bedrock":
+			continue
+		}
+		if _, ok := b.(block.Breakable); !ok {
+			t.Errorf("%s cannot be mined", nameOf(id))
+		}
+	}
+	for _, n := range []string{"snow_layer", "seagrass"} {
+		found := false
+		for id := range seen {
+			found = found || nameOf(id) == n
+		}
+		if !found {
+			t.Errorf("the survey holds no %s", n)
+		}
+	}
+	t.Logf("%d kinds of block surveyed", len(seen))
+}
+
+// In a real server world, with a survival player: a block goes into snow and into seagrass, and
+// both can be mined.
+func TestSnowAndSeagrassInARealWorld(t *testing.T) {
+	w := world.Config{}.New()
+	defer w.Close()
+	_, err := world.Call(context.Background(), w, func(tx *world.Tx) (struct{}, error) {
+		tx.SetBlock(cube.Pos{0, 70, 0}, block.Stone{}, nil)
+		h := world.EntitySpawnOpts{Position: mgl64.Vec3{0.5, 71, 2.5}}.New(player.Type, player.Config{Name: "t", Position: mgl64.Vec3{0.5, 71, 2.5}})
+		p := tx.AddEntity(h).(*player.Player)
+		p.SetGameMode(world.GameModeSurvival)
+		for _, target := range []struct {
+			name string
+			b    world.Block
+		}{{"snow_layer", SnowLayer{}}, {"seagrass", Seagrass{}}} {
+			pos := cube.Pos{0, 71, 0}
+			tx.SetBlock(pos, target.b, nil)
+			if tx.Block(pos) != target.b {
+				t.Fatalf("%s did not stay in the world", target.name)
+			}
+			// Placing on it, clicking its top, replaces it.
+			p.SetHeldItems(item.NewStack(block.Stone{}, 4), item.Stack{})
+			p.UseItemOnBlock(pos, cube.FaceUp, mgl64.Vec3{0.5, 0.1, 0.5})
+			if _, ok := tx.Block(pos).(block.Stone); !ok {
+				t.Errorf("placing on %s left %T", target.name, tx.Block(pos))
+			}
+			tx.SetBlock(pos, target.b, nil)
+			p.BreakBlock(pos)
+			if _, ok := tx.Block(pos).(block.Air); !ok {
+				t.Errorf("mining %s left %T", target.name, tx.Block(pos))
+			}
+		}
+		// Taking the floor away takes the snow with it.
+		tx.SetBlock(cube.Pos{0, 71, 0}, SnowLayer{}, nil)
+		tx.SetBlock(cube.Pos{0, 70, 0}, nil, nil)
+		if _, ok := tx.Block(cube.Pos{0, 71, 0}).(SnowLayer); ok {
+			SnowLayer{}.NeighbourUpdateTick(cube.Pos{0, 71, 0}, cube.Pos{0, 70, 0}, tx)
+			if _, ok := tx.Block(cube.Pos{0, 71, 0}).(SnowLayer); ok {
+				t.Error("snow stayed with nothing under it")
+			}
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

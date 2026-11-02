@@ -121,6 +121,10 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 		(biome.StonyPeaks{}).String():     {b.stone, b.calcite},                  // Calcite strips per the study.
 		(biome.SnowySlopes{}).String():    {b.stone, b.snow},
 	}
+	oreOrRock := map[uint32]bool{}
+	for _, p := range b.veins {
+		oreOrRock[p[0]], oreOrRock[p[1]] = true, true
+	}
 	for name, tops := range want {
 		found := 0
 		for seed := int64(1); seed <= 5 && found < 12; seed++ {
@@ -139,8 +143,13 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 					continue // The block under a trunk is dirt, whatever the biome's surface.
 				}
 				found++
-				if got := c.Block(x, int16(top), z, 0); !slices.Contains(tops, got) {
-					t.Errorf("%s at (%d,%d) Y %d: top block id %d, want one of %v", name, p[0], p[1], top, got, tops)
+				got := c.Block(x, int16(top), z, 0)
+				// Bare stone tops can hold ore or a rock patch like any other stone.
+				if slices.Contains(tops, b.stone) && oreOrRock[got] {
+					continue
+				}
+				if !slices.Contains(tops, got) {
+					t.Errorf("%s at (%d,%d) Y %d: top block %s, want one of %v", name, p[0], p[1], top, nameOf(got), tops)
 				}
 			}
 		}

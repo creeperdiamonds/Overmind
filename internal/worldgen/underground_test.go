@@ -16,6 +16,7 @@ import (
 // The underground tests name their blocks themselves rather than through the generator's
 // own table, so a wrong table entry cannot hide a wrong world.
 func rid(b world.Block) uint32 {
+	registerPlantBlocks()
 	world.DefaultBlockRegistry.Finalize()
 	return world.BlockRuntimeID(b)
 }

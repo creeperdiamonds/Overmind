@@ -31,7 +31,7 @@ type blocks struct {
 	tallGrass, largeFern, sunflower                                          [2]uint32
 	tallFlowers                                                              [][2]uint32
 	commonFlowers, flowers                                                   []uint32
-	// snowLayer and seagrass have block states in Dragonfly's list but no Go type (see stateID).
+	// snowLayer and seagrass are our own types (plant_blocks.go).
 	snowLayer, seagrass uint32
 }
 
@@ -63,22 +63,11 @@ func (b *blocks) holdsWaterPlant(id uint32) bool {
 	return false
 }
 
-// stateID finds a block state in Dragonfly's list by name. Dragonfly lists every vanilla state,
-// also of blocks it has no Go type for. The client shows them properly; the server treats them as
-// a plain block with no behaviour, and cannot place a block into them. Snow layers need this, and
-// seagrass uses it too.
-func stateID(name string, props map[string]any) uint32 {
-	id, ok := world.DefaultBlockRegistry.StateToRuntimeID(name, props)
-	if !ok {
-		panic("worldgen: no block state " + name)
-	}
-	return id
-}
-
 // newBlocks uses Dragonfly's default block registry. A generator can be built before the
 // server config finalizes that registry, and looking up an ID then would panic.
 // Finalize is safe to repeat, but it does stop later RegisterBlock calls.
 func newBlocks() blocks {
+	registerPlantBlocks()
 	world.DefaultBlockRegistry.Finalize()
 	id := func(b world.Block) uint32 { return world.BlockRuntimeID(b) }
 	stained := func(c item.Colour) uint32 { return id(block.StainedTerracotta{Colour: c}) }
@@ -159,8 +148,8 @@ func newBlocks() blocks {
 	b.sugarCane = id(block.SugarCane{})
 	b.lilyPad = id(block.LilyPad{})
 	b.kelp = id(block.Kelp{Age: 25}) // At full age, so it does not grow past what was generated.
-	b.snowLayer = stateID("minecraft:snow_layer", map[string]any{"height": int32(0), "covered_bit": uint8(0)})
-	b.seagrass = stateID("minecraft:seagrass", map[string]any{"sea_grass_type": "default"})
+	b.snowLayer = id(SnowLayer{})
+	b.seagrass = id(Seagrass{})
 	b.veins[veinCoal] = ore(func(t block.OreType) world.Block { return block.CoalOre{Type: t} })
 	b.veins[veinIron] = ore(func(t block.OreType) world.Block { return block.IronOre{Type: t} })
 	b.veins[veinCopper] = ore(func(t block.OreType) world.Block { return block.CopperOre{Type: t} })
