@@ -14,7 +14,7 @@ The owner said on 2026-11-03: "Just do the world." So the Java translation (`202
 
 ## Global Constraints
 
-- No Mojang code or files, no decompiled code, and no Mojang server programs. Terrain settings, ore ranges and surface rules come from public documentation (minecraft.wiki). Each table of values names its source page in a comment. Don't write values from memory.
+- No Mojang code or files in the repo, and the server never needs them to run. Studying decompiled code outside the repo is allowed (owner, 2026-11-03): learn how it works, then write our own code, with no copied code. Each table of values says where it came from. Don't write values from memory.
 - No structures, mobs, Nether or End in this plan.
 - Y range -64 to 319, sea level 63.
 - Same seed and position give the same chunk, in any order, on any number of workers.
