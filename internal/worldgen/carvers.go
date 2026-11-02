@@ -64,7 +64,7 @@ func (m *carveMask) any() bool {
 // carveSink collects what tunnels cut, either for a chunk or for one column.
 type carveSink struct {
 	x0, x1, z0, z1 int // Block bounds, inclusive.
-	chunk          *[16][16]carveMask
+	chunk          *[carvedSize][carvedSize]carveMask
 	column         *carveMask
 }
 
@@ -75,6 +75,10 @@ func (s *carveSink) mark(x, y, z int) {
 	}
 	s.chunk[x-s.x0][z-s.z0].set(y)
 }
+
+// carveAround is the reach of walkCarvers for a chunk: one chunk more than carverReach, because the
+// columns around the chunk that trees ask about (treeMargin of them) may be in the next chunk over.
+const carveAround = carverReach + 1
 
 // sphere cuts an ellipsoid. floor keeps blocks low in the sphere solid, so caves have flat
 // floors; walls, if not zero, seeds a canyon's wall ledges.
@@ -116,9 +120,9 @@ func canyonLedge(walls uint64, y int) float64 {
 }
 
 // walkCarvers cuts every tunnel from chunks within reach of the chunk at cx, cz.
-func (g *Generator) walkCarvers(cx, cz int, s *carveSink) {
-	for sx := cx - carverReach; sx <= cx+carverReach; sx++ {
-		for sz := cz - carverReach; sz <= cz+carverReach; sz++ {
+func (g *Generator) walkCarvers(cx, cz, reach int, s *carveSink) {
+	for sx := cx - reach; sx <= cx+reach; sx++ {
+		for sz := cz - reach; sz <= cz+reach; sz++ {
 			h := posHash(g.carveSeed, sx, 0, sz)
 			// Three separate chances from different bits of one hash.
 			if float64(h&0xFFFFF)/(1<<20) < caveChance {
@@ -305,17 +309,22 @@ func (g *Generator) carveFill(a *aquiferCache, x, y, z int, ground float64) fill
 	return fillSolid
 }
 
+// cutCarvers marks what tunnels cut in a chunk and the treeMargin columns around it.
+func (g *Generator) cutCarvers(s *chunkScratch, originX, originZ int) {
+	s.carved = [carvedSize][carvedSize]carveMask{}
+	sink := carveSink{x0: originX - treeMargin, x1: originX + 15 + treeMargin, z0: originZ - treeMargin, z1: originZ + 15 + treeMargin, chunk: &s.carved}
+	g.walkCarvers(originX>>4, originZ>>4, carveAround, &sink)
+}
+
 // applyCarvers cuts the tunnels into a chunk. noiseTop holds each column's highest noise
 // block: icebergs and hoodoos above it are not carved. Removing grass turns the dirt below
 // into grass, so the floor of an opened cave has a surface.
 func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, originZ int, noiseTop *[16][16]int16) {
-	s.carved = [16][16]carveMask{}
-	sink := carveSink{x0: originX, x1: originX + 15, z0: originZ, z1: originZ + 15, chunk: &s.carved}
-	g.walkCarvers(originX>>4, originZ>>4, &sink)
+	g.cutCarvers(s, originX, originZ)
 	b := &g.blocks
 	for lx := range 16 {
 		for lz := range 16 {
-			m := &s.carved[lx][lz]
+			m := &s.carved[lx+treeMargin][lz+treeMargin]
 			if !m.any() {
 				continue
 			}
@@ -461,14 +470,14 @@ func (g *Generator) applyLakes(c *chunk.Chunk, s *chunkScratch, originX, originZ
 	}
 }
 
-// SurfaceHeight returns the Y of the highest solid block in a column, with caves, carvers
-// and lakes taken into account: the same answer as the generated chunk, without needing the
-// chunk to exist. Where a cave opens the ground this is lower than highestSolid. It walks
+// SurfaceHeight returns the Y of the highest solid block of terrain in a column, with caves,
+// carvers and lakes taken into account: the same answer as the generated chunk, not counting trees,
+// plants and snow, without needing the chunk to exist. Where a cave opens the ground this is lower than highestSolid. It walks
 // every tunnel that could reach the column, so it costs far more than noiseHeight.
 func (g *Generator) SurfaceHeight(x, z int) int {
 	var mask carveMask
 	sink := carveSink{x0: x, x1: x, z0: z, z1: z, column: &mask}
-	g.walkCarvers(x>>4, z>>4, &sink)
+	g.walkCarvers(x>>4, z>>4, carverReach, &sink)
 	var buf [18]lake
 	return g.newColumnWalk(x, z).top(&mask, g.lakesNear(x>>4, z>>4, buf[:0]))
 }

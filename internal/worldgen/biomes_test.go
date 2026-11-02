@@ -135,6 +135,9 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 				if top != g.noiseHeight(p[0], p[1]) {
 					continue // A carver opened this column; carvers leave bare rock, as in the game.
 				}
+				if isLogID(c.Block(x, int16(top+1), z, 0)) {
+					continue // The block under a trunk is dirt, whatever the biome's surface.
+				}
 				found++
 				if got := c.Block(x, int16(top), z, 0); !slices.Contains(tops, got) {
 					t.Errorf("%s at (%d,%d) Y %d: top block id %d, want one of %v", name, p[0], p[1], top, got, tops)

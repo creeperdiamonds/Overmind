@@ -18,13 +18,21 @@ func generate(g *Generator, x, z int32) *chunk.Chunk {
 	return c
 }
 
-// topSolid returns the Y of the highest non-air, non-water block in a column.
+// topSolid returns the Y of the highest block of terrain in a column: not air or water, and not
+// a tree, plant, snow layer or the ice on water, which the decoration pass lays over the terrain.
 func topSolid(c *chunk.Chunk, x, z uint8) int {
 	b := newBlocks()
 	for y := int16(maxY); y >= minY; y-- {
-		if r := c.Block(x, y, z, 0); r != b.air && r != b.water {
-			return int(y)
+		r := c.Block(x, y, z, 0)
+		if r == b.air || r == b.water || isLogID(r) || isLeavesID(r) || isPlantName(nameOf(r)) || nameOf(r) == "snow_layer" {
+			continue
 		}
+		if r == b.ice && y > minY {
+			if under := c.Block(x, y-1, z, 0); under == b.water || isPlantName(nameOf(under)) {
+				continue
+			}
+		}
+		return int(y)
 	}
 	return minY - 1
 }
@@ -249,7 +257,7 @@ func TestBlocksFollowFillRules(t *testing.T) {
 						t.Fatalf("water at Y %d above the terrain", y)
 					case r == b.air && y <= SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						t.Fatalf("air at Y %d, below sea level and not in a cave", y)
-					case r != b.air && r != b.water && !slices.Contains(solids, r):
+					case r != b.air && r != b.water && !slices.Contains(solids, r) && !isLogID(r) && !isLeavesID(r) && !isPlantName(nameOf(r)) && nameOf(r) != "snow_layer":
 						t.Fatalf("unexpected block %d at Y %d", r, y)
 					}
 				}

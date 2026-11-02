@@ -29,7 +29,7 @@ type Generator struct {
 	// bandTable is the world's terracotta band pattern.
 	bandTable [bandTableSize]uint8
 	// Seeds for position-based chances.
-	strataSeed, veinSeed, aquiferSeed, diskSeed, carveSeed, lakeSeed, featureSeed uint64
+	strataSeed, veinSeed, aquiferSeed, diskSeed, carveSeed, lakeSeed, featureSeed, treeSeed uint64
 }
 
 // New returns a Generator for a seed.
@@ -52,6 +52,7 @@ func New(seed int64) *Generator {
 		carveSeed:   sub(24),
 		lakeSeed:    sub(25),
 		featureSeed: sub(26),
+		treeSeed:    sub(27),
 	}
 }
 
@@ -61,7 +62,7 @@ type chunkScratch struct {
 	shapes [cellsAcross + 1][cellsAcross + 1]columnShape
 	nodes  [cellsAcross + 1][cellsAcross + 1][columnNodes]node
 	aq     aquiferCache
-	carved [16][16]carveMask
+	carved [carvedSize][carvedSize]carveMask // The chunk and treeMargin columns around it.
 	lakes  []lake
 }
 
@@ -74,8 +75,8 @@ func (s *chunkScratch) groundAt(i, j int, tx, tz float64) float64 {
 
 var scratchPool = sync.Pool{New: func() any { return new(chunkScratch) }}
 
-// GenerateChunk runs noise (stone, caves, fluids, ore veins), then biomes, surface, carvers
-// and decoration. The game does biomes before noise (notes section 1); ours can do them after,
+// GenerateChunk runs noise (stone, caves, fluids, ore veins), then biomes, surface, carvers,
+// underground features, and trees, snow and plants. The game does biomes before noise (notes section 1); ours can do them after,
 // because density never reads a stored biome. Everything is worked out from the seed
 // and the chunk position, with no look at neighbouring chunks.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
@@ -104,6 +105,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	g.placeVeins(c, pos, highest, true)
 	g.placeVeins(c, pos, highest, false)
 	g.placeSprings(c, int(pos[0]), int(pos[1]))
+	g.decorate(c, s, originX, originZ, &top, &cols)
 }
 
 // fillNoise is the noise pass. It works down each block column so that fluids can see what

@@ -2,6 +2,7 @@ package worldgen
 
 import (
 	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 )
@@ -22,6 +23,56 @@ type blocks struct {
 	veins [numVeinBlocks][2]uint32
 	// terracotta holds the badlands band colours, from the plain block to the stained ones.
 	terracotta []uint32
+	// logs holds each tree's log by axis X, Y, Z, and leaves its leaves, by treeKind.
+	logs   [numTreeKinds][3]uint32
+	leaves [numTreeKinds]uint32
+	// Plants.
+	shortGrass, fern, deadBush, cactus, sugarCane, lilyPad, kelp, blueOrchid uint32
+	tallGrass, largeFern, sunflower                                          [2]uint32
+	tallFlowers                                                              [][2]uint32
+	commonFlowers, flowers                                                   []uint32
+	// snowLayer and seagrass have block states in Dragonfly's list but no Go type (see stateID).
+	snowLayer, seagrass uint32
+}
+
+// isLeaves says whether a block is the leaves of one of our trees.
+func (b *blocks) isLeaves(id uint32) bool {
+	for _, l := range b.leaves {
+		if l == id && id != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *blocks) isTerracotta(id uint32) bool {
+	for _, t := range b.terracotta {
+		if t == id {
+			return true
+		}
+	}
+	return false
+}
+
+// holdsWaterPlant says whether kelp and seagrass can root on a floor block.
+func (b *blocks) holdsWaterPlant(id uint32) bool {
+	switch id {
+	case b.dirt, b.sand, b.gravel, b.clay, b.stone, b.grass, b.mud, b.deepslate, b.granite, b.diorite, b.andesite:
+		return true
+	}
+	return false
+}
+
+// stateID finds a block state in Dragonfly's list by name. Dragonfly lists every vanilla state,
+// also of blocks it has no Go type for. The client shows them properly; the server treats them as
+// a plain block with no behaviour, and cannot place a block into them. Snow layers need this, and
+// seagrass uses it too.
+func stateID(name string, props map[string]any) uint32 {
+	id, ok := world.DefaultBlockRegistry.StateToRuntimeID(name, props)
+	if !ok {
+		panic("worldgen: no block state " + name)
+	}
+	return id
 }
 
 // newBlocks uses Dragonfly's default block registry. A generator can be built before the
@@ -72,6 +123,44 @@ func newBlocks() blocks {
 			stained(item.ColourLightGrey()),
 		},
 	}
+	tree := func(kind treeKind, w block.WoodType, l block.LeavesType) {
+		for i, a := range []cube.Axis{cube.X, cube.Y, cube.Z} {
+			b.logs[kind][i] = id(block.Log{Wood: w, Axis: a})
+		}
+		b.leaves[kind] = id(block.Leaves{Type: l})
+	}
+	tree(treeOak, block.OakWood(), block.OakLeaves())
+	tree(treeBirch, block.BirchWood(), block.BirchLeaves())
+	tree(treeSpruce, block.SpruceWood(), block.SpruceLeaves())
+	tree(treePine, block.SpruceWood(), block.SpruceLeaves())
+	tree(treeDarkOak, block.DarkOakWood(), block.DarkOakLeaves())
+	tree(treeJungle, block.JungleWood(), block.JungleLeaves())
+	tree(treeAcacia, block.AcaciaWood(), block.AcaciaLeaves())
+	tree(treeCherry, block.CherryWood(), block.CherryLeaves())
+	tree(treePaleOak, block.PaleOakWood(), block.PaleOakLeaves())
+	tree(treeMangrove, block.MangroveWood(), block.MangroveLeaves())
+	two := func(lower, upper world.Block) [2]uint32 { return [2]uint32{id(lower), id(upper)} }
+	flower := func(t block.FlowerType) uint32 { return id(block.Flower{Type: t}) }
+	b.shortGrass = id(block.ShortGrass{})
+	b.fern = id(block.Fern{})
+	b.tallGrass = two(block.DoubleTallGrass{Type: block.NormalDoubleTallGrass()}, block.DoubleTallGrass{Type: block.NormalDoubleTallGrass(), UpperPart: true})
+	b.largeFern = two(block.DoubleTallGrass{Type: block.FernDoubleTallGrass()}, block.DoubleTallGrass{Type: block.FernDoubleTallGrass(), UpperPart: true})
+	b.sunflower = two(block.DoubleFlower{Type: block.Sunflower()}, block.DoubleFlower{Type: block.Sunflower(), UpperPart: true})
+	for _, t := range []block.DoubleFlowerType{block.Lilac(), block.RoseBush(), block.Peony()} {
+		b.tallFlowers = append(b.tallFlowers, two(block.DoubleFlower{Type: t}, block.DoubleFlower{Type: t, UpperPart: true}))
+	}
+	b.commonFlowers = []uint32{flower(block.Dandelion()), flower(block.Poppy())}
+	b.flowers = []uint32{flower(block.Dandelion()), flower(block.Poppy()), flower(block.Allium()), flower(block.AzureBluet()),
+		flower(block.RedTulip()), flower(block.OrangeTulip()), flower(block.WhiteTulip()), flower(block.PinkTulip()),
+		flower(block.OxeyeDaisy()), flower(block.Cornflower()), flower(block.LilyOfTheValley())}
+	b.blueOrchid = flower(block.BlueOrchid())
+	b.deadBush = id(block.DeadBush{})
+	b.cactus = id(block.Cactus{})
+	b.sugarCane = id(block.SugarCane{})
+	b.lilyPad = id(block.LilyPad{})
+	b.kelp = id(block.Kelp{Age: 25}) // At full age, so it does not grow past what was generated.
+	b.snowLayer = stateID("minecraft:snow_layer", map[string]any{"height": int32(0), "covered_bit": uint8(0)})
+	b.seagrass = stateID("minecraft:seagrass", map[string]any{"sea_grass_type": "default"})
 	b.veins[veinCoal] = ore(func(t block.OreType) world.Block { return block.CoalOre{Type: t} })
 	b.veins[veinIron] = ore(func(t block.OreType) world.Block { return block.IronOre{Type: t} })
 	b.veins[veinCopper] = ore(func(t block.OreType) world.Block { return block.CopperOre{Type: t} })

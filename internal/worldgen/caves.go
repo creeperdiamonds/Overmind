@@ -379,6 +379,8 @@ type columnWalk struct {
 	nodes        [2][2][columnNodes]node
 	have         [columnNodes]bool
 	aq           aquiferCache
+	// topUnderWater says whether the top found by the last call of top has water directly above.
+	topUnderWater bool
 }
 
 func (g *Generator) newColumnWalk(x, z int) *columnWalk {
@@ -445,6 +447,7 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 	prevWater := false  // The block above is water in the noise pass.
 	aboveWater := false // The block above is water in the final column.
 	// final decides a block's final kind from what the noise pass left there.
+	w.topUnderWater = false
 	final := func(y int, k fillKind) fillKind {
 		if !noiseSolid && y <= w.ext.top && (!w.ext.iceberg || y >= w.ext.bottom) && k != fillSolid {
 			k = fillSolid // An extension block; it is not carved.
@@ -487,12 +490,14 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 			if kind == fillAir && prevWater {
 				// The water above is sealed with stone, as in the chunk pass.
 				if f := final(y+1, fillSolid); f != fillAir && f != fillWater {
+					w.topUnderWater = aboveWater
 					return y + 1
 				}
 			}
 			prevWater = kind == fillWater
 			f := final(y, kind)
 			if f != fillAir && f != fillWater {
+				w.topUnderWater = aboveWater
 				return y
 			}
 			aboveWater = f == fillWater

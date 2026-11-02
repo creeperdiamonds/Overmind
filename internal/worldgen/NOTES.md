@@ -57,7 +57,20 @@ Not added, because the notes give no rule to place them by, only that they occur
 - `surface.go`: surface rules by water depth, badlands bands, hoodoos, icebergs, puddles, sand, clay and gravel disks.
 - `ores.go`: the ore table, rock, dirt, gravel and clay patches, infested stone, geodes and springs. A blob is a spindle rolled from its origin chunk.
 - `strata.go`: deepslate and bedrock chances.
-- `generator.go`: the pass order: noise, biomes, surface, disks, carvers, lakes, geodes, patches, ores, springs. The game does biomes before noise; ours can do them after, because density reads no stored biome.
+- `decorate.go`: trees, ice, snow and plants. It reaches other layers only through `surfaceDefAt` (BiomeAt) and `groundSource`, so it survives a rewrite of noise, climate, terrain and noise caves. `treeSoil` also reads the surface rules.
+- `generator.go`: the pass order: noise, biomes, surface, disks, carvers, lakes, geodes, patches, ores, springs, decoration. The game does biomes before noise; ours can do them after, because density reads no stored biome.
+
+## Decoration
+
+A tree is rolled from its origin chunk and written where it falls in the chunk being made, with no look at a real neighbour. Inside the chunk it reads the chunk's data. For a neighbouring column it uses `chunkGround`: tunnels are cut once for the chunk plus 6 columns around it, so a column costs about 46 microseconds against `SurfaceHeight`'s 220, and equals it exactly (`TestChunkGroundMatchesSurfaceHeight`). Only trees that can reach the chunk are asked about.
+
+**Measured:** tree rates per biome and kelp and seagrass per ocean chunk are tuned to Bedrock's (the kelp and seagrass figures rest on one seed). **Own, labelled:** every tree shape; which tree kinds each biome uses; rates of snowy taiga, windswept forest and hills, windswept savanna, bamboo jungle, swamp, mangrove and snowy plains (no Bedrock figure); all land plant rates; the cold threshold 0.125 and height drop (Y 90, 1/500 a block), because the notes give the idea and no numbers; deep frozen ocean counting as cold though Dragonfly reads 0.5.
+
+**Blocks with no Go type in Dragonfly, placed by their block state:** `snow_layer` and `seagrass`. The client shows them properly. The server treats them as plain solid blocks: a player cannot place a block into them, and snow does not melt or break.
+
+**Plants seen in Bedrock worlds with no Go type in Dragonfly, not placed:** bush, firefly bush, wildflowers, short and tall dry grass, cactus flower, azalea and flowering azalea, red and brown mushroom, sweet berry bush, cave vines, pale hanging moss, pale moss carpet, plus moss block, pale moss block, powder snow and glow lichen. Also lacking: leaf litter, mangrove propagule.
+
+**Known gaps:** no 2 x 2 giant spruce or giant jungle trees, no vines, bamboo, mushrooms, melons, pumpkins, azaleas or moss, though Dragonfly has some of them. No trees in rivers (Bedrock 0.11 a chunk). A column's snow and biome follow the 4-block grid. Cane and cactus keep off the outermost columns, so none grows on chunk edges.
 
 ## Rivers
 
@@ -78,7 +91,7 @@ There is no river noise any more; this reverses the earlier choice of a separate
 - Columns under Y 63 are 45.9% over 12 seeds, measured 45%. Our first 3 seeds alone give 48.8%: groups of 3 seeds range from 42% to 50%, so the test row uses 12 seeds. Feeding the game's climate values from the probe grid into our spline gives 45.7%, so the spline itself matches.
 - **Open gap:** inland columns under Y 63 (continentalness -0.11 or more, not river or swamp) are 15.05% (15.2% before the spread change), against 14% in the brief and 12.8% in a recount of the probe grid. The test passes at 14 give or take 2, but the figure is not met. With no noise our figure is 13.2%, so the extra comes from 3D noise and cave mouths near sea level.
 - Stepping over a grid cell edge gives more large height steps than stepping inside a cell, from blending. Chunk edges are cell edges too, so `TestNoSeamAtChunkEdges` compares them with the other cell edges in the same chunks (columns 3/4, 7/8, 11/12), by per-chunk difference with a margin of 3 standard errors. Over 504 chunks of 3 seeds, the excess is under one standard error at both spreads tried; a 3-block ground shift between chunks fails it on every seed.
-- Monster rooms are left out, because they need spawners and this stage has no mobs. Snow layers, ice and plants are a later task.
+- Monster rooms are left out, because they need spawners and this stage has no mobs.
 - Dragonfly has no powder snow or budding amethyst block; plain snow and plain amethyst stand in. Dragonfly has `DeepWarmOcean`, but Java has none, so the hottest deep ocean is `WarmOcean`.
 - Springs stay single source blocks until something next to them changes.
 - A vein's air-exposure rule only sees air inside the chunk.
