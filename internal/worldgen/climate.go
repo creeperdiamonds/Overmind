@@ -26,8 +26,8 @@ func newClimateNoises(seed int64) climateNoises {
 		continentalness: newLayered(sub(3), -9, []float64{1, 1, 2, 2, 2, 1, 1, 1, 1}, 0.373),
 		erosion:         newLayered(sub(4), -9, []float64{1, 1, 0, 1, 1}, 0.309),
 		weirdness:       newLayered(sub(5), -7, []float64{1, 2, 1}, 0.353),
-		shiftX:          newGameLayered(sub(9), -3, []float64{1, 1, 1}),
-		shiftZ:          newGameLayered(sub(10), -3, []float64{1, 1, 1}),
+		shiftX:          newLayered(sub(9), -3, []float64{1, 1, 1}, warpSpread),
+		shiftZ:          newLayered(sub(10), -3, []float64{1, 1, 1}, warpSpread),
 	}
 }
 
@@ -66,3 +66,8 @@ func (g *Generator) Climate(x, z int) Climate {
 func peaksAndValleys(weirdness float64) float64 {
 	return 1 - math.Abs(3*math.Abs(weirdness)-2)
 }
+
+// warpSpread is the spread of the domain-warp noises. The study gives none. 0.312 is tuned by us:
+// the spread the ratios in gameSpread give would be 0.284, and with that the chunk edge test
+// (TestNoSeamAtChunkEdges) sits on its limit, edge steps p99 4 against 3 inside, with equal means.
+const warpSpread = 0.312

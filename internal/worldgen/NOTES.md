@@ -11,19 +11,22 @@ The owner had the Java 26.1 generator studied (decompiled and measured with a pr
 **Measured and tuned by us, against the study's figures:**
 
 - `blobWidths`, `blobWiden`, `blobTip`: the blob shape, fitted to the block counts (section 10, A5).
-- `tunnelNoiseScale`: the spread of the tunnel noises, tuned to the air shares (section 7). The study gives no spread for them.
+- `tunnelNoiseScale` (1.16): the spread of the tunnel noises on top of `gameSpread`, tuned to the air shares (section 7). The study gives no spread for them.
+- `warpSpread` (0.312): the domain-warp noises' spread. The ratios would give 0.284, with which the chunk edge test sits on its limit; 0.312 is tuned to that test and has no measurement behind it.
+- `spreadRatios`: the share of its natural spread that a noise keeps, by its number of octaves. The points for 2, 3, 5 and 9 octaves are sampled from our own noises against the five measured climate spreads (`TestSpreadRatios`); the point for one octave (0.83) has no measurement and is tuned to the air shares.
+- `startScale` (2.2): the number of starts in a cave system, an exponential draw capped at the notes' 15, tuned to the air the carvers add. Tried 1.4 (adds 0.5 to 0.9 points), 2.2 (0.7 to 1.2), 3.2 (0.9 to 1.5, at the edge of the bound).
 - `wallThreshold`, `wallRoughness`, `wallFade`, `wallFullGap`: the aquifer wall, against the water and air shares.
 - `baseSpread`: set so the 3D ground noise measures std 0.22.
 - `densityEase`: of the curves tried, the one that passed the chunk edge test nearest the inland figure.
-- `tunnelRadius`, tunnel length rolls, `canyonCore`, `canyonMiddleWidth`, and how deep the start count nests (the notes say only "nested"): the carvers. Carver outputs could not be measured (A6), so these are tuned to an own target: carvers add 0.3 to 1.5 points of air per band up to Y 100 (`TestCarversAddLittleAir`).
+- `tunnelRadius`, tunnel length rolls, `canyonCore`, `canyonMiddleWidth`: the carvers. Carver outputs could not be measured (A6), so these are tuned to an own target: carvers add 0.3 to 1.5 points of air per band up to Y 100 (`TestCarversAddLittleAir`).
 
 **Our own design or choice, with no figure behind it:**
+- Canyon thickness: even over the notes' 0 to 6 (the notes say a trapezoid with a plateau of 2).
 
 - The carver layout: a tunnel is a formula, a line bent by sine waves, cut as a chain of ellipsoids around it, running both ways from its start. It replaces an earlier step-by-step walk.
 - `wallStrength`: when a border between two aquifers becomes stone. The notes describe what it depends on, in words. It replaces an earlier pressure formula.
 - The blob's spindle shape. The line's length and tilt and the swelling are from the notes; the rest replaces an earlier sphere chain.
 - `finishDensity`'s tanh. The notes name a squeeze with no formula.
-- `gameSpread`: the spread of each noise other than the five climate ones is a formula fitted to the five measured spreads.
 - Octave limits, since finer ones fall inside a grid cell: limit noises 6 of 16, selector 4 of 8, jagged 6 of 16. The selector's sharpness of 5 (`base3D`).
 - Clamps on climate values (`shapeClimate`).
 - Ores are clipped to their feature's height range and rock patches are not (`placeVein`).
@@ -62,9 +65,10 @@ There is no river noise any more; this reverses the earlier choice of a separate
 
 - Water reaches Y 63 inclusive; Java's top water block is Y 62.
 - Biome borders follow the 4-block storage grid. The game adds a jittered lookup at block level; the warp already roughens the edges, and `BiomeAt` must match what is stored.
-- Air at Y 100 to 160 is about 4.8% against 7.8% in the notes. That 7.8% rests on only 1,359 blocks. Recounting the study's larger probe output (`mojang-cols2.csv`, 60,000 columns, 65,497 blocks in that band) gives 4.41%, so the test asserts 4.41, and we are close to it. The same recount moves other bands a little too (for example Y 63 to 100 is 5.10, not 4.2).
-- Columns under Y 63 are 46.0% over 12 seeds, measured 45%. Our first 3 seeds alone give 48.8%: groups of 3 seeds range from 42% to 50%, so the test row uses 12 seeds. Feeding the game's climate values from the probe grid into our spline gives 45.7%, so the spline itself matches.
-- Inland columns under Y 63 (continentalness -0.11 or more, not river or swamp) are 15.2%. The target was about 14%, and a recount of the probe grid gives 12.8%. With no noise our figure is 13.2%, so the extra comes from 3D noise and cave mouths near sea level.
+- Cave-share figures: every band in `TestCaveSharesMatchMeasuredFigures` is the recount of the study's `mojang-cols2.csv` (60,000 columns, all biomes, blocks from the band's bottom to 8 under the column's top solid block, which is the test's own filter), not the notes' section 7 table. The notes' Y 100 to 160 figure of 7.8% rested on 1,359 blocks; the recount has 65,497 there (4.41%). Ours there is about 5.0. Worst band against the recount: Y 0 to 20, air 7.1 against 5.76 (1.3 over, tolerance 1.5); Y -54 to -40 and Y -20 to 0 are about 0.9 over.
+- Caves open to the sky (noise caves only): 3.88% pooled over 12 seeds against 4.7 (limit 1 point, so 3.7); the seeds range from 1.8% to 6.5%.
+- Columns under Y 63 are 45.9% over 12 seeds, measured 45%. Our first 3 seeds alone give 48.8%: groups of 3 seeds range from 42% to 50%, so the test row uses 12 seeds. Feeding the game's climate values from the probe grid into our spline gives 45.7%, so the spline itself matches.
+- **Open gap:** inland columns under Y 63 (continentalness -0.11 or more, not river or swamp) are 15.05% (15.2% before the spread change), against 14% in the brief and 12.8% in a recount of the probe grid. The test passes at 14 give or take 2, but the figure is not met. With no noise our figure is 13.2%, so the extra comes from 3D noise and cave mouths near sea level.
 - Stepping over a grid cell edge gives more large height steps than stepping inside a cell (over 4 blocks: about 0.9% at cell edges, 0.6% inside, from blending). Chunk edges are cell edges too, so they read about the same as other cell edges and sit close to the limit in `TestNoSeamAtChunkEdges`.
 - Monster rooms are left out, because they need spawners and this stage has no mobs. Snow layers, ice and plants are a later task.
 - Dragonfly has no powder snow or budding amethyst block; plain snow and plain amethyst stand in. Dragonfly has `DeepWarmOcean`, but Java has none, so the hottest deep ocean is `WarmOcean`.

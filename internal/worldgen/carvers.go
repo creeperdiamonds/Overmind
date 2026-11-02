@@ -134,13 +134,13 @@ func (g *Generator) walkCarvers(cx, cz int, s *carveSink) {
 	}
 }
 
-// caveStart rolls one cave system. From the notes: a nested random count of starts, up to 15;
-// one in four with a room of thickness 1 to 7 and up to 3 extra tunnels; the ranges of the
-// radius, vertical, floor and y scales. How deep the count nests (three draws, tuned to the
-// air added) and the room's height are ours.
+// caveStart rolls one cave system. From the notes: a count of starts with a cap of 15; one in
+// four with a room of thickness 1 to 7 and up to 3 extra tunnels; the ranges of the radius,
+// vertical, floor and y scales. The count's distribution (startScale), and the room's height,
+// are our own.
 func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 	r := rng(seed)
-	starts := r.intn(r.intn(r.intn(15)+1) + 1)
+	starts := min(int(-math.Log(1-r.float())*startScale), maxStarts)
 	for range starts {
 		x := float64(sx*16 + r.intn(16))
 		y := float64(caveBottom + r.intn(top-caveBottom+1))
@@ -162,6 +162,14 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 		}
 	}
 }
+
+// Our own start count: the floor of an exponential draw, so most systems have one or two starts
+// and a few have many, capped at the notes' 15. startScale is measured and tuned by us to the air
+// the carvers add (TestCarversAddLittleAir).
+const (
+	maxStarts  = 15
+	startScale = 2.2
+)
 
 // Own numbers: how far a cave tunnel tilts, its lowest ceiling, and its radius at the middle.
 const (
@@ -260,15 +268,15 @@ func (p *tunnelPath) cut(s *carveSink, radius, height, floor float64, walls uint
 	}
 }
 
-// canyonStart rolls one canyon. From the notes: y scale 3, thickness a trapezoid of 0 to 6 with
-// a plateau of 2, distance factor 0.75 to 1, vertical rotation within 0.125. How thickness
-// becomes a radius is ours.
+// canyonStart rolls one canyon. From the notes: y scale 3, thickness 0 to 6
+// (the notes say a trapezoid with a plateau of 2; ours is even), distance factor 0.75 to 1,
+// vertical rotation within 0.125. How thickness becomes a radius is ours.
 func canyonStart(sx, sz int, seed uint64, s *carveSink) {
 	r := rng(seed)
 	x := float64(sx*16 + r.intn(16))
 	y := float64(canyonBottom + r.intn(canyonTop-canyonBottom+1))
 	z := float64(sz*16 + r.intn(16))
-	thick := trapezoid(&r, 0, 6, 2)
+	thick := 6 * r.float() // Own: even over the notes' range of 0 to 6.
 	halfMax := tunnelHalfMax * (0.75 + 0.25*r.float())
 	p := newTunnelPath(r.next(), x, y, z, halfMax, canyonBendMax, 0.125)
 	p.half = halfMax // The notes' factor alone sets a canyon's length.
@@ -282,13 +290,6 @@ const (
 	canyonCore        = 0.8
 	canyonMiddleWidth = 0.85
 )
-
-// trapezoid draws from low to high with a flat middle of the given width.
-func trapezoid(r *rng, low, high, plateau float64) float64 {
-	span := high - low
-	slope := (span - plateau) / 2
-	return low + r.float()*(span-slope) + r.float()*slope
-}
 
 // carveFill says what a carved block becomes. Tunnels avoid water by asking the aquifer (notes
 // section 8): where it says water, or a wall, the block stays as it is.

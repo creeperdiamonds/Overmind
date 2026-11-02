@@ -70,8 +70,8 @@ const (
 )
 
 // tunnelNoiseScale widens the spread of the tunnel noises, which narrows tunnels. The study
-// gives their octaves and thickness but no spread, and gameSpread is our own fit, so this is
-// measured and tuned by us against the air shares in the notes, section 7.
+// gives their octaves and thickness but no spread, so this is measured and tuned by us against
+// the air shares (TestCaveSharesMatchMeasuredFigures), on top of gameSpread.
 const tunnelNoiseScale = 1.16
 
 // noodleGate: noodle and vein parts are worked out only where the density is above this, to

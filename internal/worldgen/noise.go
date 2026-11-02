@@ -181,20 +181,48 @@ func newLayered(seed uint64, first int, amps []float64, target float64) *layered
 	return l
 }
 
-// gameSpread is the standard deviation an octave list has in the game. The study gives
-// measured spreads for the five climate noises only; this formula is our own fit to those
-// (it reproduces them within about 0.01). The first octave weighs 2^(n-1)/(2^n-1) over n
-// listed octaves, and the sum is scaled by (5/3)*m/(m+1), m being the span from the first
-// to the last non-zero amplitude.
-func gameSpread(amps []float64) float64 {
-	n := float64(len(amps))
-	f := math.Pow(2, n-1) / (math.Pow(2, n) - 1)
+// spreadRatios gives the share of its natural spread (that of the plain sum of its octaves,
+// weights amplitude * 2^-i) that a noise keeps in the game, by the number of octaves from its
+// first to its last non-zero amplitude. Measured: the study measured the five climate spreads
+// (notes section 2) and TestSpreadRatios samples our noises to get their natural spreads; the
+// ratios are 0.59 at 2 octaves, 0.65 at 3, 0.72 at 5, 0.775 at 9. A single octave has no
+// measured point; 0.83 there is tuned by us to the air shares (TestCaveSharesMatchMeasuredFigures).
+var spreadRatios = [...]struct {
+	span  int
+	ratio float64
+}{{1, 0.83}, {2, 0.59}, {3, 0.65}, {5, 0.72}, {9, 0.775}}
+
+// spreadRatio reads spreadRatios, interpolating between points and holding the last one beyond.
+func spreadRatio(span int) float64 {
+	r := spreadRatios[:]
+	if span >= r[len(r)-1].span {
+		return r[len(r)-1].ratio
+	}
+	for i := 1; i < len(r); i++ {
+		if span <= r[i].span {
+			t := float64(span-r[i-1].span) / float64(r[i].span-r[i-1].span)
+			return lerp(r[i-1].ratio, r[i].ratio, t)
+		}
+	}
+	return r[0].ratio
+}
+
+// naturalSpread is the standard deviation of the plain sum of an octave list in our gradient noise.
+func naturalSpread(amps []float64) float64 {
 	var power float64
-	first, last := -1, -1
-	strength := f
-	for i, a := range amps {
+	strength := 1.0
+	for _, a := range amps {
 		power += a * strength * a * strength
 		strength /= 2
+	}
+	return noiseSpread * math.Sqrt(2*power)
+}
+
+// gameSpread is the standard deviation of a noise other than the five climate ones: its natural
+// spread times the ratio for its span. Measured by us, see spreadRatios.
+func gameSpread(amps []float64) float64 {
+	first, last := -1, -1
+	for i, a := range amps {
 		if a != 0 {
 			if first < 0 {
 				first = i
@@ -202,11 +230,10 @@ func gameSpread(amps []float64) float64 {
 			last = i
 		}
 	}
-	m := float64(last - first + 1)
-	return noiseSpread * math.Sqrt(2*power) * (5.0 / 3) * m / (m + 1)
+	return naturalSpread(amps) * spreadRatio(last-first+1)
 }
 
-// newGameLayered builds a layered noise with the spread its octave list has in the game.
+// newGameLayered builds a layered noise with the spread gameSpread gives its octave list.
 func newGameLayered(seed uint64, first int, amps []float64) *layered {
 	return newLayered(seed, first, amps, gameSpread(amps))
 }

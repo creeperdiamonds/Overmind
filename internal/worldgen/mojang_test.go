@@ -299,26 +299,29 @@ func measureBelowSea() (below, inland float64) {
 }
 
 // TestCaveSharesMatchMeasuredFigures measures blocks at least 8 under the column top, with
-// noise caves and fluids only (no carvers), on the study's bands, 3 seeds over 8192 blocks. Air
-// must be within 1.5 points and each fluid within 1. Figures are the table in the notes,
-// section 7, except Y 100 to 160: the notes' 7.8% rests on 1,359 blocks, and a recount of the
-// study's larger probe output (mojang-cols2.csv, 60,000 columns, 65,497 blocks in that band)
-// gives 4.41%, so that is the figure asserted. NOTES.md records this.
+// noise caves and fluids only (no carvers), on the study's bands, statSeeds seeds over 8192
+// blocks. Air must be within 1.5 points and each fluid within 1. Every figure is one recount of
+// the study's probe output probe-out/mojang-cols2.csv (60,000 columns of 384 blocks, all biomes,
+// ocean included): per column, blocks from the band's bottom up to 8 under that column's top
+// solid block, the same filter as below. It replaces the notes' section 7 table, whose
+// Y 100 to 160 row (7.8%) rested on 1,359 blocks; the recount has 65,497 there. Applied to all
+// bands alike: the notes' figures differ by up to 1 point (for example 7.7 against 8.72 at
+// Y -20 to 0).
 func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 	const airTol, fluidTol = 1.5, 1.0
 	bands := []struct {
 		lo, hi           int
 		air, water, lava float64
 	}{
-		{-64, -54, 0.0, 0.0, 0.4},
-		{-54, -40, 3.9, 0.0, 0.0},
-		{-40, -20, 6.6, 0.3, 0.2},
-		{-20, 0, 7.7, 0.6, 0.0},
-		{0, 20, 6.1, 2.8, 0.0},
-		{20, 40, 4.4, 1.6, 0.0},
-		{40, 63, 3.1, 1.4, 0.0},
-		{63, 100, 4.2, 0.1, 0.0},
-		{100, 160, 4.41, 0.0, 0.0},
+		{-64, -54, 0.00, 0.00, 0.39},
+		{-54, -40, 3.88, 0.02, 0.01},
+		{-40, -20, 7.22, 0.39, 0.21},
+		{-20, 0, 8.72, 0.44, 0.01},
+		{0, 20, 5.76, 3.05, 0.00},
+		{20, 40, 5.11, 1.81, 0.00},
+		{40, 63, 3.43, 1.63, 0.00},
+		{63, 100, 5.10, 0.06, 0.00},
+		{100, 160, 4.41, 0.02, 0.00},
 	}
 	var air, water, lava, total [9]float64
 	var mu sync.Mutex
@@ -468,20 +471,22 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 	return land, open
 }
 
-// TestNoiseCavesOpenToSky asserts the measured figure: 4.7% of land columns over 3 seeds, 3.5 to
-// 6.6 per seed (addendum A4). Carvers are left out, as they were there.
+// TestNoiseCavesOpenToSky asserts the measured figure: 4.7% of land columns (addendum A4), which
+// the game itself spread over 3.5 to 6.6 per seed. Because seeds vary that much, ours is pooled over
+// 12 seeds and must be within 1 point of 4.7. Carvers are left out, as they were there.
 func TestNoiseCavesOpenToSky(t *testing.T) {
+	const seeds = 12
 	var land, open int
-	for seed := int64(1); seed <= statSeeds; seed++ {
+	for seed := int64(1); seed <= seeds; seed++ {
 		l, o := openNoiseCaves(New(seed), seed, 60)
 		t.Logf("seed %d: %d land columns, %.2f%% open to the sky", seed, l, float64(o)/float64(l)*100)
 		land += l
 		open += o
 	}
 	share := float64(open) / float64(land) * 100
-	t.Logf("all seeds: %d land columns, %.2f%% open; measured from the game 4.7%%", land, share)
-	if share < 3.5 || share > 6.6 {
-		t.Errorf("%.2f%% of land columns open to the sky, the game's seeds measured 3.5 to 6.6", share)
+	t.Logf("%d seeds: %d land columns, %.2f%% open; measured from the game 4.7%%", seeds, land, share)
+	if math.Abs(share-4.7) > 1 {
+		t.Errorf("%.2f%% of land columns open to the sky over %d seeds, measured 4.7%% give or take 1", share, seeds)
 	}
 }
 
@@ -619,7 +624,53 @@ func TestSteepStoneIgnoresChunkEdges(t *testing.T) {
 	if chunks < 30 {
 		t.Fatalf("only %d steep biome chunks found", chunks)
 	}
-	if math.Abs(e-i) > 0.04 {
+	if math.Abs(e-i) > 0.01 {
 		t.Errorf("stone tops %.3f at chunk edges against %.3f inside", e, i)
+	}
+}
+
+// A column's steep flag is a function of the world alone. The columns on either side of a chunk
+// edge are read from two grids, each anchored at its own chunk; the grid of the neighbour,
+// asked about a column just outside it, must give the same answer as the chunk's own. A
+// version that clamped neighbours to the chunk would read a flatter slope at its own edge and
+// disagree, which the stone-top share above could hide in noise. Checked exactly, on every edge
+// column of many chunks in steep country.
+func TestSteepFlagAgreesAcrossChunkEdges(t *testing.T) {
+	g := New(4)
+	var checked, steepCols, wrong int
+	for x := -8192; x < 8192 && checked < 4000; x += 160 {
+		for z := -8192; z < 8192 && checked < 4000; z += 160 {
+			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "snowy_slopes" && name != "jagged_peaks" {
+				continue
+			}
+			x0, z0 := x&^15, z&^15
+			a := g.newSlopeGrid(x0, z0)
+			east := g.newSlopeGrid(x0+16, z0)
+			south := g.newSlopeGrid(x0, z0+16)
+			for i := range 16 {
+				// Own last column against the grid east of it, and own last row against the one south.
+				for _, p := range [][2]bool{{a.steep(15, i), east.steep(-1, i)}, {a.steep(i, 15), south.steep(i, -1)}} {
+					checked++
+					if p[0] {
+						steepCols++
+					}
+					if p[0] != p[1] {
+						wrong++
+					}
+				}
+				// The neighbour's first column against our grid asked past its edge.
+				checked++
+				if east.steep(0, i) != a.steep(16, i) {
+					wrong++
+				}
+			}
+		}
+	}
+	t.Logf("%d edge columns compared, %d steep, %d disagree", checked, steepCols, wrong)
+	if steepCols < 100 {
+		t.Fatalf("only %d steep edge columns; the test would prove nothing", steepCols)
+	}
+	if wrong > 0 {
+		t.Errorf("%d edge columns read a different steep flag from the two sides of a chunk edge", wrong)
 	}
 }
