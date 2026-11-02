@@ -92,7 +92,8 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 			highest = max(highest, int(top[x][z]))
 		}
 	}
-	_ = noiseTop
+	g.applyCarvers(c, s, originX, originZ, &noiseTop, &cols)
+	g.applyLakes(c, s, originX, originZ, highest)
 	g.placeVeins(c, pos, highest, true)
 	g.placeVeins(c, pos, highest, false)
 }

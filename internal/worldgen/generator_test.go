@@ -155,7 +155,7 @@ func TestTerrainStatistics(t *testing.T) {
 		low = maxY
 		for x := -span / 2; x < span/2; x += step {
 			for z := -span / 2; z < span/2; z += step {
-				h := g.SurfaceHeight(x, z)
+				h := g.noiseHeight(x, z)
 				total++
 				if h < SeaLevel {
 					ocean++

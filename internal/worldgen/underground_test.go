@@ -173,8 +173,9 @@ func TestSomeCavesReachSurface(t *testing.T) {
 	g := New(14)
 	var land, open int
 	var found [2]int
-	for x := 0; x < 1024; x += 2 {
-		for z := 0; z < 1024; z += 2 {
+	// Every 8th column: SurfaceHeight walks tunnel paths, which is slow per column.
+	for x := 0; x < 1024; x += 8 {
+		for z := 0; z < 1024; z += 8 {
 			top := g.terrainHeight(x, z)
 			if top <= SeaLevel {
 				continue

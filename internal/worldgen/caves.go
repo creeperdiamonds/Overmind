@@ -71,6 +71,10 @@ const (
 // spaghettiTrim is our own tuning against the measured air shares; see spaghetti3d.
 const spaghettiTrim = 0.012
 
+// entranceTrim is our own tuning: added to the study's 0.37 so land keeps under 5% of its
+// columns open to the sky with this noise.
+const entranceTrim = 0.07
+
 // mapUnit maps a noise value from -1..1 onto low..high, clamped.
 func mapUnit(n, low, high float64) float64 {
 	return lerp(low, high, clamp((n+1)/2, 0, 1))
@@ -127,7 +131,7 @@ func (g *Generator) spaghetti2d(x, y, z float64) float64 {
 func (g *Generator) entrances(x, y, z, roughness float64) float64 {
 	n := g.caves.entrance.at(x*0.75, y*0.5, z*0.75)
 	gradient := 0.3 * clamp((30-y)/40, 0, 1)
-	return math.Min(n+0.37+gradient, roughness+g.spaghetti3d(x, y, z))
+	return math.Min(n+0.37+entranceTrim+gradient, roughness+g.spaghetti3d(x, y, z))
 }
 
 // pillarsAt gives the thin columns inside large caverns, kept only above 0.03.
@@ -444,7 +448,7 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 				return fillWater
 			}
 			if carved != nil && carved.has(y) && y > minY {
-				f := g.fillAt(&w.aq, w.x, y, w.z, w.ground, false)
+				f := g.carveFill(&w.aq, w.x, y, w.z, w.ground)
 				if f != fillSolid && !(f == fillAir && aboveWater) {
 					return f
 				}
@@ -506,17 +510,3 @@ func (m *carveMask) has(y int) bool {
 	i := y - minY
 	return m[i>>6]&(1<<(i&63)) != 0
 }
-
-// SurfaceHeight returns the Y of the highest solid block in a column.
-func (g *Generator) SurfaceHeight(x, z int) int { return g.noiseHeight(x, z) }
-
-// lake is a lava lake.
-type lake struct{}
-
-const (
-	lakeNone = iota
-	lakeAir
-	lakeLava
-)
-
-func lakeAt([]lake, int, int, int) int { return lakeNone }
