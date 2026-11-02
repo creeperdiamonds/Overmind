@@ -349,8 +349,8 @@ func (g *Generator) slopedDensity(s *columnShape, x, y, z float64) float64 {
 	return sloped + g.base3D(x, y, z)
 }
 
-// slopedKeepNoise: above this, caves no longer read the sloped value (see caves.go), so
-// the noise can be left out without changing anything but its value deep underground.
+// slopedKeepNoise: above this sum, caves no longer read the sloped value (their bias term
+// is zero from a sloped value of 2.34), so the noise can be left out deep underground.
 const slopedKeepNoise = 2.4
 
 // slide fades density at the top and bottom of the world: to -0.078 between Y 240 and 256,

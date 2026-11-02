@@ -51,16 +51,16 @@ type surfaceNoises struct {
 func newSurfaceNoises(seed int64) surfaceNoises {
 	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
 	return surfaceNoises{
-		depth:     newLayered(sub(40), -6, []float64{1, 1, 1}, 1.0/3),
-		bands:     newLayered(sub(41), -8, []float64{1}, 1.0/3),
-		gravel:    newLayered(sub(42), -8, []float64{1, 1}, 1.0/3),
-		calcite:   newLayered(sub(43), -9, []float64{1, 1}, 1.0/3),
-		ice:       newLayered(sub(44), -7, []float64{1, 1}, 1.0/3),
-		puddle:    newLayered(sub(45), -4, []float64{1, 1}, 1.0/3),
-		hoodoo:    newLayered(sub(46), -4, []float64{1, 1}, 1.0/3),
-		hoodooCap: newLayered(sub(47), -7, []float64{1}, 1.0/3),
-		berg:      newLayered(sub(48), -6, []float64{1, 1, 1}, 1.0/3),
-		bergCap:   newLayered(sub(49), -9, []float64{1, 1}, 1.0/3),
+		depth:     newGameLayered(sub(40), -6, []float64{1, 1, 1}),
+		bands:     newGameLayered(sub(41), -8, []float64{1}),
+		gravel:    newGameLayered(sub(42), -8, []float64{1, 1}),
+		calcite:   newGameLayered(sub(43), -9, []float64{1, 1}),
+		ice:       newGameLayered(sub(44), -7, []float64{1, 1}),
+		puddle:    newGameLayered(sub(45), -4, []float64{1, 1}),
+		hoodoo:    newGameLayered(sub(46), -4, []float64{1, 1}),
+		hoodooCap: newGameLayered(sub(47), -7, []float64{1}),
+		berg:      newGameLayered(sub(48), -6, []float64{1, 1, 1}),
+		bergCap:   newGameLayered(sub(49), -9, []float64{1, 1}),
 	}
 }
 
@@ -210,7 +210,7 @@ func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16]
 			n := g.surface.depth.at(fx, 0, fz)
 			s := surfaceColumn{g: g, c: c, x: uint8(x), z: uint8(z), wx: fx, wz: fz, noise: n}
 			// Surface depth, from the study: about 1 to 6 blocks.
-			s.depth = int(n*2.75*3/3 + 3 + unit(posHash(g.strataSeed^0x7f, wx, 0, wz))*0.25)
+			s.depth = max(int(n*2.75+3+unit(posHash(g.strataSeed^0x7f, wx, 0, wz))*0.25), 1)
 			// Neighbours inside the chunk only, as there may be none beyond it yet.
 			dx := abs16(top[min(x+1, 15)][z] - top[max(x-1, 0)][z])
 			dz := abs16(top[x][min(z+1, 15)] - top[x][max(z-1, 0)])

@@ -52,13 +52,23 @@ func TestHeightSplineFollowsWikiDirections(t *testing.T) {
 	}
 }
 
-// A column with open air under solid ground can only come from the 3D density. The
-// patch is the mountain range visible on seed 1's map.
+// A column with open air under solid ground can only come from the 3D density. The patch
+// is found by searching for high ground, since the map of a seed changes with the generator.
 func TestMountainsHaveOverhangs(t *testing.T) {
 	g, b := New(1), newBlocks()
 	var overhung, total, deepest int
-	for cx := int32(40); cx < 70; cx++ {
-		for cz := int32(-80); cz < -50; cz++ {
+	var fromX, fromZ int32
+search:
+	for x := -4096; x < 4096; x += 64 {
+		for z := -4096; z < 4096; z += 64 {
+			if g.terrainHeight(x, z) > 150 {
+				fromX, fromZ = int32(x>>4)-15, int32(z>>4)-15
+				break search
+			}
+		}
+	}
+	for cx := fromX; cx < fromX+30; cx++ {
+		for cz := fromZ; cz < fromZ+30; cz++ {
 			c := generate(g, cx, cz)
 			for x := uint8(0); x < 16; x++ {
 				for z := uint8(0); z < 16; z++ {

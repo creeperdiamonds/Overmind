@@ -2,14 +2,11 @@ package worldgen
 
 // Layers of rock at the bottom of the world.
 const (
-	// deepslateTop: minecraft.wiki "Deepslate" says stone is gradually replaced from Y 8
-	// down to Y 0, and below that it is deepslate. The chance rises evenly across the band
-	// (own tuning: the page does not describe the blend).
+	// deepslateTop: deepslate is certain at Y 0, falling evenly to none at Y 8, from the study.
 	deepslateTop = 8
-	// bedrockTop: minecraft.wiki "Bedrock" says bedrock fills the bottom five layers of the
-	// Overworld, Y -64 to -60, the lowest layer solid and the next four mostly flat with rare
-	// gaps. Here the chance falls evenly from certain at Y -64 to none at Y -60 (own tuning).
-	bedrockTop = -60
+	// bedrockTop: certain at Y -64, falling evenly to none at Y -59 (1.0, 0.8, 0.6, 0.4, 0.2
+	// at Y -60), from the study.
+	bedrockTop = -59
 )
 
 // stoneAt gives the rock of a solid block that is not bedrock: stone, or deepslate below

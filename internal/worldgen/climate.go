@@ -26,8 +26,8 @@ func newClimateNoises(seed int64) climateNoises {
 		continentalness: newLayered(sub(3), -9, []float64{1, 1, 2, 2, 2, 1, 1, 1, 1}, 0.373),
 		erosion:         newLayered(sub(4), -9, []float64{1, 1, 0, 1, 1}, 0.309),
 		weirdness:       newLayered(sub(5), -7, []float64{1, 2, 1}, 0.353),
-		shiftX:          newLayered(sub(9), -3, []float64{1, 1, 1}, 1.0/3),
-		shiftZ:          newLayered(sub(10), -3, []float64{1, 1, 1}, 1.0/3),
+		shiftX:          newGameLayered(sub(9), -3, []float64{1, 1, 1}),
+		shiftZ:          newGameLayered(sub(10), -3, []float64{1, 1, 1}),
 	}
 }
 

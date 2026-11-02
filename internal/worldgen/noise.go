@@ -183,6 +183,36 @@ func newLayered(seed uint64, first int, amps []float64, target float64) *layered
 	return l
 }
 
+// gameSpread is the standard deviation an octave list has in the game. The study gives
+// measured spreads for the five climate noises only; this formula is our own fit to those
+// (it reproduces them within about 0.01). The first octave weighs 2^(n-1)/(2^n-1) over n
+// listed octaves, and the sum is scaled by (5/3)*m/(m+1), m being the span from the first
+// to the last non-zero amplitude.
+func gameSpread(amps []float64) float64 {
+	n := float64(len(amps))
+	f := math.Pow(2, n-1) / (math.Pow(2, n) - 1)
+	var power float64
+	first, last := -1, -1
+	strength := f
+	for i, a := range amps {
+		power += a * strength * a * strength
+		strength /= 2
+		if a != 0 {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	m := float64(last - first + 1)
+	return noiseSpread * math.Sqrt(2*power) * (5.0 / 3) * m / (m + 1)
+}
+
+// newGameLayered builds a layered noise with the spread its octave list has in the game.
+func newGameLayered(seed uint64, first int, amps []float64) *layered {
+	return newLayered(seed, first, amps, gameSpread(amps))
+}
+
 // at samples the noise at a point in noise units.
 func (l *layered) at(x, y, z float64) float64 {
 	var sum float64

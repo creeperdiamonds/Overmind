@@ -46,7 +46,7 @@ func draw(g *worldgen.Generator, size, scale int, byBiome bool) *image.RGBA {
 			for py := range rows {
 				for px := range size {
 					x, z := (px-size/2)*scale, (py-size/2)*scale
-					h := g.SurfaceHeight(x, z)
+					h := g.NoiseHeight(x, z)
 					if byBiome {
 						img.SetRGBA(px, py, biomeColour(g.BiomeAt(x, 319, z).String(), h))
 					} else {

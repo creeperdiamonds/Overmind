@@ -117,7 +117,9 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 		for cx := range across {
 			for cz := range down {
 				for i := range 16 {
-					for j := range 15 {
+					// A chunk edge is also a grid cell edge, where blended density has a kink, so
+					// compare it with the cell edges inside a chunk.
+					for j := 3; j < 15; j += 4 {
 						inner = append(inner,
 							abs(h[cx][cz][j][i]-h[cx][cz][j+1][i]),
 							abs(h[cx][cz][i][j]-h[cx][cz][i][j+1]))
@@ -199,7 +201,8 @@ func TestBlocksFollowFillRules(t *testing.T) {
 	// Surface blocks replace stone near the top of a column, and the underground adds
 	// deepslate, bedrock, rock patches, ores and (below Y -54) lava.
 	solids := append([]uint32{b.stone, b.grass, b.dirt, b.podzol, b.mycelium, b.sand, b.redSand,
-		b.sandstone, b.redSandstone, b.gravel, b.clay, b.snow, b.deepslate, b.bedrock, b.lava}, b.terracotta...)
+		b.sandstone, b.redSandstone, b.gravel, b.clay, b.snow, b.deepslate, b.bedrock, b.lava,
+		b.coarseDirt, b.packedIce, b.ice, b.calcite, b.mud, b.rawIron, b.rawCopper}, b.terracotta...)
 	for _, pair := range b.veins {
 		solids = append(solids, pair[0], pair[1])
 	}
@@ -209,8 +212,10 @@ func TestBlocksFollowFillRules(t *testing.T) {
 			for z := uint8(0); z < 16; z++ {
 				for y := int16(minY); y <= maxY; y++ {
 					switch r := c.Block(x, y, z, 0); {
-					case r == b.water && y > SeaLevel:
-						t.Fatalf("water at Y %d", y)
+					case r == b.water && y > SeaLevel && g.terrainHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
+						// Under the ground a raised aquifer may hold water: the study measured 0.1%
+						// of blocks at Y 63 to 100.
+						t.Fatalf("water at Y %d above the terrain", y)
 					case r == b.air && y <= SeaLevel && g.terrainHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						t.Fatalf("air at Y %d, below sea level and not in a cave", y)
 					case r != b.air && r != b.water && !slices.Contains(solids, r):

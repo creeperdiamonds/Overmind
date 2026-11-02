@@ -118,7 +118,7 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 		(biome.StonyShore{}).String():     {b.stone, b.gravel},
 		(biome.JaggedPeaks{}).String():    {b.stone, b.snow},
 		(biome.FrozenPeaks{}).String():    {b.stone, b.snow, b.packedIce, b.ice}, // Packed ice and ice per the study.
-		(biome.StonyPeaks{}).String():     {b.stone, b.calcite}, // Calcite strips per the study.
+		(biome.StonyPeaks{}).String():     {b.stone, b.calcite},                  // Calcite strips per the study.
 		(biome.SnowySlopes{}).String():    {b.stone, b.snow},
 	}
 	for name, tops := range want {
@@ -160,8 +160,8 @@ func TestOceanFloors(t *testing.T) {
 				}
 				found++
 				if got := c.Block(x, int16(top), z, 0); got != b.sand && got != b.gravel && got != b.clay && got != b.dirt {
-						// Dirt: per the study, floors within 6 blocks of the water use the filler, with
-						// disks of the others.
+					// Dirt: per the study, floors within 6 blocks of the water use the filler, with
+					// disks of the others.
 					t.Errorf("%s floor at (%d,%d): block id %d, want sand, gravel, clay or dirt", name, p[0], p[1], got)
 				}
 			}

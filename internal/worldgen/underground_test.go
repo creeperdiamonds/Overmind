@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"math"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
@@ -75,10 +76,13 @@ func TestBedrockFloor(t *testing.T) {
 			}
 		}
 	}
-	if share[4] != 0 {
-		t.Fatalf("%d bedrock blocks at Y -60, want none", share[4])
+	// The study measured 1.0, 0.8, 0.6, 0.4, 0.2 from Y -64 to Y -60, and none at Y -59.
+	for i, want := range []float64{1, 0.8, 0.6, 0.4, 0.2} {
+		if got := float64(share[i]) / float64(total); math.Abs(got-want) > 0.05 {
+			t.Fatalf("bedrock at Y %d: %.2f, measured %.1f", -64+i, got, want)
+		}
 	}
-	for i := 1; i < 4; i++ {
+	for i := 1; i < 5; i++ {
 		if share[i] == 0 || share[i] >= share[i-1] {
 			t.Fatalf("bedrock should thin going up, got %v of %d", share, total)
 		}
@@ -233,26 +237,34 @@ func TestSurfaceHeightMatchesChunkWithCaves(t *testing.T) {
 	}
 }
 
+// The study measured lava aquifers at levels of -10 and under, and 0.0%% of carved space
+// from Y -20 upward, so lava is allowed down low and only a trace of it higher up (springs
+// and lakes). The old rule of no lava above Y -54 was a guess.
 func TestLavaOnlyDeep(t *testing.T) {
 	g := New(16)
-	var lava int
-	for pos, c := range chunkGrid(g, 0, 0, 8) {
+	var deep, high, volume int
+	for _, c := range chunkGrid(g, 0, 0, 8) {
 		for x := range uint8(16) {
 			for z := range uint8(16) {
 				for y := int16(minY); y <= maxY; y++ {
 					if c.Block(x, y, z, 0) == ridLava {
-						lava++
-						if y >= -54 {
-							t.Fatalf("lava at Y %d in chunk %v", y, pos)
+						if y < 0 {
+							deep++
+						} else {
+							high++
 						}
 					}
+					volume++
 				}
 			}
 		}
 	}
-	t.Logf("lava blocks in 64 chunks: %d", lava)
-	if lava == 0 {
-		t.Error("no lava below Y -54")
+	t.Logf("lava blocks in 64 chunks: %d under Y 0, %d from Y 0 up, of %d", deep, high, volume)
+	if deep == 0 {
+		t.Error("no lava under Y 0")
+	}
+	if float64(high)/float64(volume) > 0.001 {
+		t.Errorf("%d lava blocks from Y 0 up, want only a trace", high)
 	}
 }
 
