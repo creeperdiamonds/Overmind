@@ -56,6 +56,7 @@ const (
 	biomeDripstone              // Dripstone caves only.
 	biomeBadlands               // Any badlands surface biome.
 	biomeMountain               // The mountain biomes listed in the study.
+	biomeMountainsTag           // Bedrock's mountains tag: the same biomes without the windswept ones.
 	biomeLush                   // Lush caves only.
 )
 
@@ -73,28 +74,42 @@ type veinFeature struct {
 	exposed    float64
 	biome      biomeRule
 	rock       bool // Patches of rock, dirt and gravel; placed before the ores, and may spill past the range.
+	// replaces limits what a rock patch replaces. Zero is any kind of stone.
+	replaces uint8
 }
 
-// veinFeatures is the table from the study of Java 26.1: attempts, size, air discard and
-// height of each batch.
+// veinFeatures is the table from the study of Java 26.1: attempts, size, air discard and height of
+// each batch, with Bedrock's rules where the data files differ (BEDROCK-NOTES section 5): iron size
+// 10, medium diamond size 4, the extra coal batch, infested stone size 8 at Y 0 to 64.
+//
+// What rock patches replace: section 5 row 8 reads the files as stone only for granite, diorite and
+// andesite, and stone and deepslate for tuff and gravel (medium confidence, stone variants may match
+// in a way the files do not show), against GAPS 18's "any stone kind and tuff" from Java. We follow
+// the files, because TestDeepslateBlendMatchesBedrock measures the result and GAPS 18 does not fit.
+// The files were not read for dirt; it takes stone only, like the rocks. Our own choice.
+//
+// Ores leave tuff alone. The notes do not read the ores' replacement rules, and Java replaces tuff.
+// This is measured and tuned: with tuff replaced, every ore that lies mostly under Y 0 came out 7 to
+// 14% over Bedrock's count, about tuff's share of the rock down there (6.8%).
 var veinFeatures = [...]veinFeature{
 	// Rock patches.
-	{block: veinDirt, attempts: 7, size: 33, minY: 0, maxY: 160, rock: true},
-	{block: veinGravel, attempts: 14, size: 33, minY: minY, maxY: maxY, rock: true},
-	{block: veinGranite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
-	{block: veinGranite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
-	{block: veinDiorite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
-	{block: veinDiorite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
-	{block: veinAndesite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true},
-	{block: veinAndesite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true},
-	{block: veinTuff, attempts: 2, size: 64, minY: minY, maxY: 0, rock: true},
+	{block: veinDirt, attempts: 7, size: 33, minY: 0, maxY: 160, rock: true, replaces: repStone},
+	{block: veinGravel, attempts: 14, size: 33, minY: minY, maxY: maxY, rock: true, replaces: repStone | repDeepslate},
+	{block: veinGranite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true, replaces: repStone},
+	{block: veinGranite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true, replaces: repStone},
+	{block: veinDiorite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true, replaces: repStone},
+	{block: veinDiorite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true, replaces: repStone},
+	{block: veinAndesite, attempts: 2, size: 64, minY: 0, maxY: 60, rock: true, replaces: repStone},
+	{block: veinAndesite, attempts: 1.0 / 6, size: 64, minY: 64, maxY: 128, rock: true, replaces: repStone},
+	{block: veinTuff, attempts: 2, size: 64, minY: minY, maxY: 0, rock: true, replaces: repStone | repDeepslate},
 	{block: veinClay, attempts: 46, size: 33, minY: minY, maxY: 256, biome: biomeLush, rock: true},
 
 	// Ores.
 	{block: veinCoal, attempts: 30, size: 17, minY: 136, maxY: 320},
 	{block: veinCoal, attempts: 20, size: 17, minY: 0, maxY: 192, dist: distTriangle, exposed: 0.5},
-	{block: veinIron, attempts: 90, size: 9, minY: 80, maxY: 384, dist: distTriangle},
-	{block: veinIron, attempts: 10, size: 9, minY: -24, maxY: 56, dist: distTriangle},
+	{block: veinCoal, attempts: 20, size: 17, minY: 128, maxY: 256, exposed: 0.5, biome: biomeMountainsTag},
+	{block: veinIron, attempts: 90, size: 10, minY: 80, maxY: 384, dist: distTriangle},
+	{block: veinIron, attempts: 10, size: 10, minY: -24, maxY: 56, dist: distTriangle},
 	{block: veinIron, attempts: 10, size: 4, minY: minY, maxY: 72},
 	{block: veinCopper, attempts: 16, size: 10, minY: -16, maxY: 112, dist: distTriangle, biome: biomeNotDripstone},
 	{block: veinCopper, attempts: 16, size: 20, minY: -16, maxY: 112, dist: distTriangle, biome: biomeDripstone},
@@ -106,11 +121,11 @@ var veinFeatures = [...]veinFeature{
 	{block: veinLapis, attempts: 2, size: 7, minY: -32, maxY: 32, dist: distTriangle},
 	{block: veinLapis, attempts: 4, size: 7, minY: minY, maxY: 64, exposed: 1},
 	{block: veinDiamond, attempts: 7, size: 4, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.5},
-	{block: veinDiamond, attempts: 2, size: 8, minY: -64, maxY: -4, exposed: 0.5},
+	{block: veinDiamond, attempts: 2, size: 4, minY: -64, maxY: -4, exposed: 0.5},
 	{block: veinDiamond, attempts: 1.0 / 9, size: 12, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.7},
 	{block: veinDiamond, attempts: 4, size: 8, minY: -144, maxY: 16, dist: distTriangle, exposed: 1},
 	{block: veinEmerald, attempts: 100, size: 3, minY: -16, maxY: 480, dist: distTriangle, biome: biomeMountain},
-	{block: veinInfested, attempts: 14, size: 9, minY: minY, maxY: 63, biome: biomeMountain},
+	{block: veinInfested, attempts: 14, size: 8, minY: 0, maxY: 64, biome: biomeMountain},
 }
 
 // rng is a tiny seeded generator. Every blob has its own, started from the blob's origin
@@ -310,15 +325,15 @@ func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blo
 				}
 				lx, lz := uint8(x-originX), uint8(z-originZ)
 				kind := g.veinKindOf(c.Block(lx, int16(y), lz, 0))
-				if kind == 0 {
+				if kind == 0 || (f.replaces != 0 && kind&f.replaces == 0) || (!f.rock && kind == repTuff) {
 					continue
 				}
 				if f.exposed > 0 && g.touchesAir(c, lx, int16(y), lz) && unit(posHash(g.veinSeed, x, y, z)) < f.exposed {
 					continue
 				}
-				// Deepslate and tuff take the deepslate variant of an ore.
+				// Deepslate takes the deepslate variant of an ore.
 				variant := 0
-				if kind&(repDeepslate|repTuff) != 0 {
+				if kind == repDeepslate {
 					variant = 1
 				}
 				c.SetBlock(lx, int16(y), lz, 0, b.veins[f.block][variant])
@@ -354,6 +369,13 @@ func veinBiome(rule biomeRule, src *biomeSource, y int) bool {
 	case biomeMountain:
 		switch col.surface {
 		case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks, windsweptHills, windsweptForest, gravellyHills:
+			return true
+		}
+	case biomeMountainsTag:
+		// The notes say the tag excludes the windswept biomes and do not list the rest, so this
+		// is the emerald set less those. Our inference.
+		switch col.surface {
+		case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks:
 			return true
 		}
 	}

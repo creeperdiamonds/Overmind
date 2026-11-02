@@ -80,15 +80,14 @@ func TestBedrockFloor(t *testing.T) {
 			}
 		}
 	}
-	// The study measured 1.0, 0.8, 0.6, 0.4, 0.2 from Y -64 to Y -60, and none at Y -59.
-	for i, want := range []float64{1, 0.8, 0.6, 0.4, 0.2} {
-		if got := float64(share[i]) / float64(total); math.Abs(got-want) > 0.05 {
-			t.Fatalf("bedrock at Y %d: %.2f, measured %.1f", -64+i, got, want)
+	// Measured on Bedrock: 1, 1, .75, .5, .25 from Y -64 to Y -60, and none at Y -59.
+	for i, want := range []float64{1, 1, 0.75, 0.5, 0.25} {
+		got := float64(share[i]) / float64(total)
+		if math.Abs(got-want) > 0.02 {
+			t.Errorf("bedrock at Y %d: %.3f, measured on Bedrock %.2f", -64+i, got, want)
 		}
-	}
-	for i := 1; i < 5; i++ {
-		if share[i] == 0 || share[i] >= share[i-1] {
-			t.Fatalf("bedrock should thin going up, got %v of %d", share, total)
+		if want == 1 && got != 1 {
+			t.Errorf("bedrock at Y %d: %.3f, measured solid", -64+i, got)
 		}
 	}
 }

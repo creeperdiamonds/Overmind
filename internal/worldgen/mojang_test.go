@@ -490,66 +490,6 @@ func TestNoiseCavesOpenToSky(t *testing.T) {
 	}
 }
 
-// Carver outputs were not measurable in the study (addendum A6), so this is our own bound: the
-// air carvers add on top of noise caves must stay between 0.3 and 1.5 points in each band up to
-// Y 100, so caves overall stay near the shares in the notes. Lakes and geodes count here too.
-func TestCarversAddLittleAir(t *testing.T) {
-	bands := [][2]int{{-54, -40}, {-40, -20}, {-20, 0}, {0, 20}, {20, 40}, {40, 63}, {63, 100}}
-	added, total := make([]float64, len(bands)), make([]float64, len(bands))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-	for seed := int64(1); seed <= statSeeds; seed++ {
-		g := New(seed)
-		for cx := -statSpan / 32; cx < statSpan/32; cx += 16 {
-			for cz := -statSpan / 32; cz < statSpan/32; cz += 16 {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func() {
-					defer wg.Done()
-					defer func() { <-sem }()
-					full := generate(g, int32(cx), int32(cz))
-					noise := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-					s := new(chunkScratch)
-					s.aq.reset(cx*16, cz*16)
-					var top [16][16]int16
-					g.fillNoise(noise, s, cx*16, cz*16, &top)
-					a, n := make([]float64, len(bands)), make([]float64, len(bands))
-					for x := uint8(0); x < 16; x += 3 {
-						for z := uint8(0); z < 16; z += 3 {
-							for i, b := range bands {
-								for y := b[0]; y < min(b[1], int(top[x][z])-8); y++ {
-									n[i]++
-									if full.Block(x, int16(y), z, 0) == g.blocks.air {
-										a[i]++
-									}
-									if noise.Block(x, int16(y), z, 0) == g.blocks.air {
-										a[i]--
-									}
-								}
-							}
-						}
-					}
-					mu.Lock()
-					for i := range a {
-						added[i] += a[i]
-						total[i] += n[i]
-					}
-					mu.Unlock()
-				}()
-			}
-		}
-	}
-	wg.Wait()
-	for i, b := range bands {
-		p := added[i] / total[i] * 100
-		t.Logf("Y %d to %d: carvers and lakes add %.2f points of air", b[0], b[1], p)
-		if p < 0.3 || p > 1.5 {
-			t.Errorf("Y %d to %d: carvers add %.2f points of air, own bound 0.3 to 1.5", b[0], b[1], p)
-		}
-	}
-}
-
 // A cut can never be further from its start than the constants say, for any roll, so a chunk's
 // carverReach covers every tunnel that can touch it. Rolled with the longest length and the
 // widest radius, every point of a path plus its radius must stay within the limit on each axis.

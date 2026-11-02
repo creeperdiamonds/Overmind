@@ -10,8 +10,8 @@ import (
 // ranges, reach, the ranges of the shape numbers, rooms, and the behaviour around water, lava
 // and grass. The way a tunnel is laid out is our own design, tuned by us: a tunnel is a curve
 // written as a formula (see tunnelPath), not a walk, and it has no step-by-step state. The
-// notes give no measured output for carvers (addendum A6); its own numbers are set so the air
-// they add stays near the cave shares in the notes, as TestCarversAddLittleAir checks.
+// notes give no measured output for carvers (addendum A6). The air in full chunks is tuned to
+// Bedrock's, measured with carvers on 4 seeds (TestCaveAirMatchesBedrock).
 const (
 	carverReach  = 8    // Source chunks this far away can reach a chunk (notes).
 	caveChance   = 0.15 // Per chunk (notes).
@@ -143,7 +143,7 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 	starts := min(int(-math.Log(1-r.float())*startScale), maxStarts)
 	for range starts {
 		x := float64(sx*16 + r.intn(16))
-		y := float64(caveBottom + r.intn(top-caveBottom+1))
+		y := float64(caveBottom) + math.Floor(math.Pow(r.float(), caveHeightBias)*float64(top-caveBottom+1))
 		z := float64(sz*16 + r.intn(16))
 		hScale := 0.7 + 0.7*r.float()
 		vScale := 0.8 + 0.5*r.float()
@@ -164,11 +164,13 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 }
 
 // Our own start count: the floor of an exponential draw, so most systems have one or two starts
-// and a few have many, capped at the notes' 15. startScale is measured and tuned by us to the air
-// the carvers add (TestCarversAddLittleAir).
+// and a few have many, capped at the notes' 15. Start heights fill the notes' range but lean high: a
+// power of an even draw. Bedrock has more air than noise caves alone at Y 40 to 100 and not much
+// more at Y -20 to 0. Both numbers are measured and tuned by us (TestCaveAirMatchesBedrock).
 const (
-	maxStarts  = 15
-	startScale = 2.2
+	maxStarts      = 15
+	startScale     = 3.6
+	caveHeightBias = 0.5
 )
 
 // Own numbers: how far a cave tunnel tilts, its lowest ceiling, and its radius at the middle.
@@ -179,7 +181,7 @@ const (
 
 // tunnelRadius turns an even draw into a tunnel's radius before the notes' scales apply. Most
 // tunnels are narrow and few are wide. At most 5.4, so at most 7.56 after the largest scale of
-// 1.4, and at most 7.94 with the lumps in cut, under tunnelWidthMax. Own, tuned to the air added.
+// 1.4, and at most 7.94 with the lumps in cut, under tunnelWidthMax. Own.
 func tunnelRadius(u float64) float64 { return 1 + 4.4*u*u*u*u }
 
 // tunnelPath is a curve through a start point, written as a formula of t from -1 to 1: a
@@ -285,7 +287,7 @@ func canyonStart(sx, sz int, seed uint64, s *carveSink) {
 }
 
 // A canyon's radius at the middle, from the notes' thickness. At thickness 6 and with the lumps
-// in cut that is at most 6.1, under canyonWidthMax. Own, tuned to the air added.
+// in cut that is at most 6.1, under canyonWidthMax. Own.
 const (
 	canyonCore        = 0.8
 	canyonMiddleWidth = 0.85

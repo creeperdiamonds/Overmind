@@ -14,11 +14,11 @@ The owner had the Java 26.1 generator studied (decompiled and measured with a pr
 - `tunnelNoiseScale` (1.16): the spread of the tunnel noises on top of `gameSpread`, tuned to the air shares (section 7). The study gives no spread for them.
 - `warpSpread` (0.284): the domain-warp noises' spread, from `gameSpread`: their natural spread times the ratio for three octaves. Temperature and weirdness, the two three-octave climate noises, measure 0.652 and 0.648 against the table's 0.65. An earlier tuned 0.312 was only there to pass a chunk edge test that compared unlike things.
 - `spreadRatios`: the share of its natural spread that a noise keeps, by its number of octaves. The points for 2, 3, 5 and 9 octaves are sampled from our own noises against the five measured climate spreads (`TestSpreadRatios`); the point for one octave (0.83) has no measurement and is tuned to the air shares.
-- `startScale` (2.2): the number of starts in a cave system, an exponential draw capped at the notes' 15, tuned to the air the carvers add. Tried 1.4 (adds 0.5 to 0.9 points), 2.2 (0.7 to 1.2), 3.2 (0.9 to 1.5, at the edge of the bound).
+- `startScale` (3.6), `caveHeightBias` (0.5): the number of starts in a cave system (an exponential draw capped at the notes' 15), and how far their heights lean to the top of the notes' range. Tuned to Bedrock's air by band with carvers. Tried at bias and scale: 1 and 2.2 (Y 40 to 63 too low), 0.75 and 2.9, 0.6 and 3.6 (Y -20 to 0 too high), 0.5 and 4.4 (Y -20 to 0 too high).
 - `wallThreshold`, `wallRoughness`, `wallFade`, `wallFullGap`: the aquifer wall, against the water and air shares.
 - `baseSpread`: set so the 3D ground noise measures std 0.22.
 - `densityEase`: of the curves tried, the one that passed the chunk edge test nearest the inland figure.
-- `tunnelRadius`, tunnel length rolls, `canyonCore`, `canyonMiddleWidth`: the carvers. Carver outputs could not be measured (A6), so these are tuned to an own target: carvers add 0.3 to 1.5 points of air per band up to Y 100 (`TestCarversAddLittleAir`).
+- `tunnelRadius`, tunnel length rolls, `canyonCore`, `canyonMiddleWidth`: the carvers' shape. Tuned earlier to an own bound, when no carver figure existed, and left as they were; the Bedrock air figures are now met by `startScale` and `caveHeightBias`.
 
 **Our own design or choice, with no figure behind it:**
 - Canyon thickness: even over the notes' 0 to 6 (the notes say a trapezoid with a plateau of 2).
@@ -28,14 +28,22 @@ The owner had the Java 26.1 generator studied (decompiled and measured with a pr
 - The blob's spindle shape. The line's length and tilt and the swelling are from the notes; the rest replaces an earlier sphere chain.
 - `finishDensity`'s tanh. The notes name a squeeze with no formula.
 - Octave limits, since finer ones fall inside a grid cell: limit noises 6 of 16, selector 4 of 8, jagged 6 of 16. The selector's sharpness of 5 (`base3D`).
-- Clamps on temperature, humidity, continentalness and erosion (`Climate`, `shapeClimate`): past them nothing reads a different value. Weirdness has none, because the game's passes 1 on 0.25 to 0.42% of columns and reaches 1.33.
+- Clamps on temperature, humidity, continentalness and erosion (`Climate`, `shapeClimate`): past them nothing reads a different value. Weirdness has none, because the game's passes 1 on 0.25 to 0.42% of columns and reaches 1.33 (ours reaches 1.49).
 - Ores are clipped to their feature's height range and rock patches are not (`placeVein`).
 - Tunnel bends, tilt (`caveTilt`), `minTunnelHeight`, room height and `canyonLedge`'s step size.
 - Surface band thresholds, band table run lengths, iceberg and hoodoo height curves, disk radii, geode shape, lake sizes.
 - Aquifer: the 13 surface sample offsets, `surfaceFluidMargin`, `openSkyFluidDepth`, and the "near the sea" and "far above ground" margins in `computeStatus`.
 - Hanging water: water with air straight under it in the noise pass gets stone instead, and tunnels never open under water. The game lets such water flow later; here it would hang until something updated it. This covers straight down only. **Water can still sit beside air sideways, for example at the edge of an aquifer, and it stays until a block update, when it will flow.**
 
-The study reads Java only. Bedrock may differ on any of this, and that is unmeasured.
+**Bedrock.** The server follows Bedrock where the editions differ. BDS 1.26.60.6 was measured on 4 seeds of 1120 square (`BEDROCK-NOTES.md` section 9, `aggregate.json`). Terrain, biomes and noise caves match Java on the same seed, so the Java figures still stand for shape. What Bedrock changes:
+
+- **Measured:** the bedrock floor, 1, 1, .75, .5, .25, then none from Y -59.
+- **From its data files (section 5):** medium diamond size 4, iron upper and middle size 10, infested stone size 8 at Y 0 to 64, an extra coal batch in the mountains tag (20 attempts, Y 128 to 256; the notes say the tag leaves out the windswept biomes, the rest is our inference from the emerald set). Its temperatures for savanna, savanna plateau, meadow and cherry grove are already what Dragonfly's biomes return.
+- **Rock patches, decided by measurement.** Section 5 reads granite, diorite and andesite as replacing stone only, and tuff and gravel as stone and deepslate, medium confidence, against GAPS 18's "any stone kind and tuff". We follow section 5. With it, deepslate's share at Y 1 to 7 comes to within 0.01 of Bedrock at every height (0.896 against 0.902 at Y 1, 0.439 against 0.446 at Y 5); with GAPS 18 it was up to 0.07 under. Dirt was not read; stone only is our choice.
+- **Ores leave tuff alone: measured and tuned, not from any rule.** The notes did not read the ores' replacement rules, and Java does replace tuff. With tuff replaced, ores lying mostly under Y 0 came out 7 to 14% over Bedrock's counts, about tuff's share of the rock there. Without it they are within 6% (redstone 34.1 against 34.4). If a later reading of the rules disagrees, the rule wins and blob sizes need another look.
+- **Carvers now have real references.** `caveHeightBias` (0.5) and `startScale` (3.6) are tuned to Bedrock's air by band (`TestCaveAirMatchesBedrock`).
+
+Not added, because the notes give no rule to place them by, only that they occur: dappled forest (one patch on one of 4 seeds, 0.32% of the pooled windows, in place of plains) and sulfur caves (seen, share not measured). Dragonfly has both biomes. Bedrock's steep-slope rule (section 5 row 7) is also not followed: the notes say to check it against a world first.
 
 ## Files
 
@@ -77,7 +85,7 @@ There is no river noise any more; this reverses the earlier choice of a separate
 
 ## How one seed compares
 
-The same seed gives a different world from the game's by design, and single seeds differ a lot. Pooled over 60 of our seeds against the 4 Java seeds the probes cover (8192 square, 32-block grid): land 47.3% against 47.4%, land p99 149 against 148, p99.9 184 against 181, Y 150 or more 0.47% against 0.45%. Each Java figure sits inside the 5 to 95% range of our groups of 4 seeds. Our seed 100 has the second lowest temperature spread of the 61 (0.23; range 0.23 to 0.48), so it lacks hot and cold regions, and its height tail is also on the high side of ours.
+The same seed gives a different world from the game's by design, and single seeds differ a lot. Climate-zone differences are not distinguishable from noise with 4 Java seeds, with one open weak signal (coldest-band region size 8.1% vs 14.7). Pooled over 60 of our seeds against the 4 Java seeds the probes cover (8192 square, 32-block grid): land 47.3% against 47.4%, land p99 149 against 148, p99.9 184 against 181, Y 150 or more 0.47% against 0.45%. Each Java figure sits inside the 5 to 95% range of our groups of 4 seeds. Our seed 100 has the second lowest temperature spread of the 61 (0.23; range 0.23 to 0.48), so it lacks hot and cold regions, and its height tail is also on the high side of ours.
 
 - **Open:** cold regions may be a little less coherent than the game's. The area-weighted size of the coldest band's regions is 8.1% of the map against 14.7, which only 0.6% of our groups of 4 reach; pooling cold and hot it is 6.6 against 9.4 (7%). This is one of about 20 figures compared and rests on 4 Java seeds, so nothing is changed for it. More Java seeds would settle it.
 - Rings around climate extremes are in the game too. Nested band rings around weirdness extremes: 403 per seed against 389 (560 while weirdness was clamped at 1, where plateaus counted as extremes); around humidity extremes 16.5 against 13.8.
