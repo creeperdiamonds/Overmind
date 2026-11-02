@@ -7,7 +7,7 @@ import "github.com/df-mc/dragonfly/server/world/chunk"
 // Snowy Plains, Ice Spikes, Desert, Badlands, Windswept Hills, Stony Shore, Mushroom
 // Fields, Grove, Snowy Slopes, Jagged Peaks, Frozen Peaks, Stony Peaks, Beach, Snowy
 // Beach, River, Ocean, Warm Ocean, Cold Ocean, Frozen Ocean, Lukewarm Ocean, Deep Ocean,
-// Jungle, Swamp, Meadow and Savanna. What the pages say:
+// Deep Frozen Ocean, Jungle, Swamp, Meadow and Savanna. What the pages say:
 //   - grass block on top: Taiga, Snowy Taiga, Snowy Plains (snow layers on top, which we
 //     do not place), Jungle, Swamp, Meadow, Savanna;
 //   - snow blocks: Ice Spikes and Grove (over dirt), Snowy Slopes and Jagged Peaks (over
@@ -18,13 +18,19 @@ import "github.com/df-mc/dragonfly/server/world/chunk"
 //     of gravel; Stony Peaks: exposed stone (calcite strips and gravel not placed);
 //   - Mushroom Fields: mycelium; River: patches of dirt, clay, sand and gravel (we place
 //     no dirt); Ocean, Cold Ocean and Deep Ocean: mostly gravel floor (Ocean adds clay, dirt
-//     and sand patches in shallows); Warm Ocean: one layer of sand over stone; Lukewarm
+//     and sand patches in shallows); Frozen Ocean: gravel floor in Java Edition (Bedrock
+//     exposes stone, and the page lists sand, clay and dirt features without saying where);
+//     Deep Frozen Ocean: one layer of gravel over stone in Java Edition; Warm Ocean: one layer of sand over stone; Lukewarm
 //     Ocean: sand with patches of dirt, gravel and clay in shallows.
 //
-// Our own tuning, not stated by the wiki: podzol patches in Taiga (the page names none),
-// dirt under mycelium, the Frozen River and Frozen Ocean floors (pages silent or mixed),
-// the floors of Deep Lukewarm and Deep Warm Ocean (pages silent), patch sizes and proportions, where the
-// badlands bands show and where Windswept Hills turn to stone, and every layer depth.
+// Not checked against a wiki page, so our own tuning: plain grass over dirt in Plains,
+// Sunflower Plains, Forest, Flower Forest, Birch Forest and Dark Forest (those pages were
+// not read). Also our own tuning, where the pages are silent or do not say: podzol
+// patches in Taiga (the page names none), dirt under mycelium, the Frozen River floor, the
+// sand and clay patches on Frozen Ocean and Deep Frozen Ocean floors (the wiki says gravel
+// only), the floors of Deep Lukewarm and Deep Warm Ocean, patch sizes and proportions,
+// where the badlands bands show and where Windswept Hills turn to stone, and every layer
+// depth.
 type surfaceKind uint8
 
 const (
