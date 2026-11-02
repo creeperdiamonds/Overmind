@@ -1,12 +1,13 @@
 package worldgen
 
 import (
-	"github.com/df-mc/dragonfly/server/world/biome"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/biome"
 )
 
 // surfaceName names the surface biome of a column. Y above every possible ground makes
@@ -106,15 +107,15 @@ func TestSurfaceMatchesBiome(t *testing.T) {
 	want := map[string][]uint32{
 		(biome.Desert{}).String():         {b.sand},
 		(biome.Badlands{}).String():       append([]uint32{b.redSand}, b.terracotta...),
-		(biome.SnowyPlains{}).String():    {b.snow},
+		(biome.SnowyPlains{}).String():    {b.grass},
 		(biome.IceSpikes{}).String():      {b.snow},
-		(biome.SnowyTaiga{}).String():     {b.snow},
+		(biome.SnowyTaiga{}).String():     {b.grass},
 		(biome.Plains{}).String():         {b.grass},
 		(biome.Forest{}).String():         {b.grass},
 		(biome.Taiga{}).String():          {b.grass, b.podzol},
 		(biome.MushroomFields{}).String(): {b.mycelium},
 		(biome.Beach{}).String():          {b.sand},
-		(biome.StonyShore{}).String():     {b.gravel},
+		(biome.StonyShore{}).String():     {b.stone, b.gravel},
 		(biome.JaggedPeaks{}).String():    {b.stone, b.snow},
 		(biome.FrozenPeaks{}).String():    {b.stone, b.snow},
 		(biome.StonyPeaks{}).String():     {b.stone},
@@ -221,7 +222,12 @@ func TestBiomesStoredInChunk(t *testing.T) {
 func TestBiomeSizeIsVanillaLike(t *testing.T) {
 	const span, step = 4096, 16
 	const n = span / step
-	for seed := int64(1); seed <= 3; seed++ {
+	thin := map[string]bool{ // Rivers, beaches and shores are thin by nature.
+		(biome.River{}).String(): true, (biome.FrozenRiver{}).String(): true,
+		(biome.Beach{}).String(): true, (biome.SnowyBeach{}).String(): true, (biome.StonyShore{}).String(): true,
+	}
+	rivers := map[string]bool{(biome.River{}).String(): true, (biome.FrozenRiver{}).String(): true}
+	for seed := int64(1); seed <= 5; seed++ {
 		g := New(seed)
 		var grid [n][n]world.Biome
 		for i := range n {
@@ -230,9 +236,17 @@ func TestBiomeSizeIsVanillaLike(t *testing.T) {
 			}
 		}
 		var seen [n][n]bool
-		var sizes, areas []int
+		var sizes, landSizes, areas []int
+		var land, riverCells int
 		for i := range n {
 			for j := range n {
+				name := grid[i][j].String()
+				if !strings.Contains(name, "ocean") && name != (biome.MushroomFields{}).String() {
+					land++
+					if rivers[name] {
+						riverCells++
+					}
+				}
 				if seen[i][j] {
 					continue
 				}
@@ -252,13 +266,15 @@ func TestBiomeSizeIsVanillaLike(t *testing.T) {
 						stack = append(stack, [2]int{a, b})
 					}
 				}
-				sizes = append(sizes, int(math.Sqrt(float64(area))*step))
+				size := int(math.Sqrt(float64(area)) * step)
+				sizes = append(sizes, size)
 				areas = append(areas, area)
+				if !thin[name] && !strings.Contains(name, "ocean") && name != (biome.MushroomFields{}).String() {
+					landSizes = append(landSizes, size)
+				}
 			}
 		}
-		// The brief asks for the median region by count. Beaches, rivers and shores are
-		// thin by nature and noise leaves small slivers, so the count median is far
-		// below 150 (logged). The size a random block's region has is checked instead.
+		// Weighted by area: the size of the region a random block is in.
 		slices.Sort(areas)
 		var total, acc int
 		for _, a := range areas {
@@ -271,10 +287,18 @@ func TestBiomeSizeIsVanillaLike(t *testing.T) {
 				break
 			}
 		}
-		t.Logf("seed %d: %d regions; by count median %d blocks across (p10 %d, p90 %d); by area median %d",
-			seed, len(areas), percentile(sizes, 0.5), percentile(sizes, 0.1), percentile(sizes, 0.9), weighted)
+		riverShare := float64(riverCells) / float64(land)
+		landMedian := percentile(landSizes, 0.5)
+		t.Logf("seed %d: %d regions; by count median %d (all), %d (land without river, beach, shore); by area median %d; rivers %.1f%% of land",
+			seed, len(areas), percentile(sizes, 0.5), landMedian, weighted, riverShare*100)
 		if weighted < 150 || weighted > 1000 {
 			t.Errorf("seed %d: area-weighted median biome region %d blocks across, want 150-1000", seed, weighted)
+		}
+		if riverShare >= 0.08 {
+			t.Errorf("seed %d: rivers cover %.1f%% of land, want under 8%%", seed, riverShare*100)
+		}
+		if landMedian < 150 {
+			t.Errorf("seed %d: by-count median of land regions without river, beach and shore is %d blocks across, want at least 150", seed, landMedian)
 		}
 	}
 }

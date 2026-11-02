@@ -128,7 +128,7 @@ func (g *Generator) fillColumn(x, z int, column *[columnNodes]float64) {
 	in := [3]float64{
 		inputContinentalness: g.continentalness(fx, fz),
 		inputErosion:         g.erosion(fx, fz),
-		inputPV:              peaksAndValleys(g.weirdness(fx, fz)),
+		inputPV:              g.terrainPV(fx, fz),
 	}
 	roughness := roughnessSpline.eval(in)
 	// Cap the ground so that the noise and one cell of blending stay under the build limit.

@@ -22,8 +22,8 @@ var (
 	birchForest    = def{biome.BirchForest{}, surfGrass}
 	darkForest     = def{biome.DarkForest{}, surfGrass}
 	taiga          = def{biome.Taiga{}, surfPodzol}
-	snowyTaiga     = def{biome.SnowyTaiga{}, surfSnow}
-	snowyPlains    = def{biome.SnowyPlains{}, surfSnow}
+	snowyTaiga     = def{biome.SnowyTaiga{}, surfGrass}
+	snowyPlains    = def{biome.SnowyPlains{}, surfGrass}
 	iceSpikes      = def{biome.IceSpikes{}, surfSnow}
 	desert         = def{biome.Desert{}, surfSand}
 	savanna        = def{biome.Savanna{}, surfGrass}
@@ -39,7 +39,7 @@ var (
 	windsweptHills = def{biome.WindsweptHills{}, surfWindswept}
 	beach          = def{biome.Beach{}, surfSand}
 	snowyBeach     = def{biome.SnowyBeach{}, surfSand}
-	stonyShore     = def{biome.StonyShore{}, surfGravel}
+	stonyShore     = def{biome.StonyShore{}, surfShore}
 	river          = def{biome.River{}, surfSeabed}
 	frozenRiver    = def{biome.FrozenRiver{}, surfColdSeabed}
 	mushroom       = def{biome.MushroomFields{}, surfMycelium}
@@ -50,11 +50,11 @@ var (
 	// Oceans by temperature level 0 to 4. Level 2 is the plain ocean.
 	oceans = [5]def{
 		{biome.FrozenOcean{}, surfColdSeabed}, {biome.ColdOcean{}, surfColdSeabed},
-		{biome.Ocean{}, surfSeabed}, {biome.LukewarmOcean{}, surfSeabed}, {biome.WarmOcean{}, surfSeabed},
+		{biome.Ocean{}, surfColdSeabed}, {biome.LukewarmOcean{}, surfSeabed}, {biome.WarmOcean{}, surfSandSeabed},
 	}
 	deepOceans = [5]def{
 		{biome.DeepFrozenOcean{}, surfColdSeabed}, {biome.DeepColdOcean{}, surfColdSeabed},
-		{biome.DeepOcean{}, surfColdSeabed}, {biome.DeepLukewarmOcean{}, surfSeabed}, {biome.DeepWarmOcean{}, surfSeabed},
+		{biome.DeepOcean{}, surfColdSeabed}, {biome.DeepLukewarmOcean{}, surfSeabed}, {biome.DeepWarmOcean{}, surfSandSeabed},
 	}
 )
 
@@ -71,6 +71,10 @@ var (
 // Continentalness bands, from the same wiki page: mushroom fields below -1.05, deep
 // ocean to -0.455, ocean to -0.19, coast to -0.11, near-inland to 0.03, mid-inland to
 // 0.3, far-inland above.
+// beachNarrowing is how far, in continentalness, the beach edge can lie below the
+// coast edge. Own tuning.
+const beachNarrowing = 0.045
+
 const (
 	mushroomBelow = -1.05
 	deepBelow     = -0.455
@@ -241,9 +245,13 @@ func surfaceBiome(cl Climate) def {
 	pv := level(peaksAndValleys(cl.Weirdness), pvEdges)
 	weird := cl.Weirdness > 0
 
-	if c < coastBelow {
+	river := math.Abs(cl.River) < riverHalfWidth
+	// The beach reaches inland by a varying amount, so its width is not the same
+	// everywhere. Own tuning.
+	coastEdge := coastBelow - beachNarrowing*(1-clamp((cl.Weirdness+1)/2, 0, 1))
+	if c < coastEdge {
 		switch {
-		case pv == pvValley:
+		case river:
 			return riverFor(t)
 		case e <= 2:
 			return stonyShore
@@ -251,7 +259,7 @@ func surfaceBiome(cl Climate) def {
 		return beachFor(t)
 	}
 	switch {
-	case pv == pvValley && c < midInlandTo:
+	case river && c < midInlandTo:
 		return riverFor(t)
 	case e == 6 && (pv == pvLow || pv == pvMid) && c < midInlandTo && h >= 2 && t >= 1 && t <= 3:
 		return swamp

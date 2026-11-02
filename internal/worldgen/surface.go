@@ -2,9 +2,29 @@ package worldgen
 
 import "github.com/df-mc/dragonfly/server/world/chunk"
 
-// surfaceKind says which blocks cover the ground of a biome. The materials per biome
-// follow the biome pages on minecraft.wiki; depths of each layer are our own tuning,
-// since the wiki gives no fixed numbers for them.
+// surfaceKind says which blocks cover the ground of a biome. Materials were checked
+// against the biome pages on minecraft.wiki, fetched 2026-11-03: Taiga, Snowy Taiga,
+// Snowy Plains, Ice Spikes, Desert, Badlands, Windswept Hills, Stony Shore, Mushroom
+// Fields, Grove, Snowy Slopes, Jagged Peaks, Frozen Peaks, Stony Peaks, Beach, Snowy
+// Beach, River, Ocean, Warm Ocean, Cold Ocean, Frozen Ocean, Lukewarm Ocean, Deep Ocean,
+// Jungle, Swamp, Meadow and Savanna. What the pages say:
+//   - grass block on top: Taiga, Snowy Taiga, Snowy Plains (snow layers on top, which we
+//     do not place), Jungle, Swamp, Meadow, Savanna;
+//   - snow blocks: Ice Spikes and Grove (over dirt), Snowy Slopes and Jagged Peaks (over
+//     stone), Frozen Peaks (snow and snow blocks; packed ice glaciers not placed);
+//   - sand over sandstone: Desert, Beach; Snowy Beach is sand under snow (layer not placed);
+//   - Badlands: one layer of red sand at low altitude, terracotta bands higher up;
+//   - Windswept Hills: exposed stone with patches of grass; Stony Shore: stone with strips
+//     of gravel; Stony Peaks: exposed stone (calcite strips and gravel not placed);
+//   - Mushroom Fields: mycelium; River: patches of dirt, clay, sand and gravel (we place
+//     no dirt); Ocean, Cold Ocean and Deep Ocean: mostly gravel floor (Ocean adds clay, dirt
+//     and sand patches in shallows); Warm Ocean: one layer of sand over stone; Lukewarm
+//     Ocean: sand with patches of dirt, gravel and clay in shallows.
+//
+// Our own tuning, not stated by the wiki: podzol patches in Taiga (the page names none),
+// dirt under mycelium, the Frozen River and Frozen Ocean floors (pages silent or mixed),
+// the floors of Deep Lukewarm and Deep Warm Ocean (pages silent), patch sizes and proportions, where the
+// badlands bands show and where Windswept Hills turn to stone, and every layer depth.
 type surfaceKind uint8
 
 const (
@@ -16,11 +36,12 @@ const (
 	surfStone                   // Bare stone.
 	surfSand                    // Sand over sandstone.
 	surfBadlands                // Red sand over terracotta bands.
-	surfGravel                  // Gravel over stone.
 	surfMycelium                // Mycelium over dirt.
 	surfWindswept               // Grass low down, bare stone high up.
 	surfSeabed                  // Sand, with gravel and clay patches.
 	surfColdSeabed              // Gravel, with sand and clay patches.
+	surfSandSeabed              // Sand only.
+	surfShore                   // Stone, with strips of gravel.
 )
 
 // Layer depths in blocks, our own tuning.
@@ -31,6 +52,9 @@ const (
 	seabedDepth     = 4   // Sand, gravel or clay before stone.
 	badlandsDepth   = 24  // Terracotta bands run this deep.
 	windsweptStoneY = 110 // Windswept hills turn to bare stone above this.
+	bandsShowY      = 100 // Badlands show terracotta bands, not red sand, above this.
+	windsweptGrass  = 0.0 // Windswept hills have grass where the patch noise is above this.
+	shoreGravel     = 0.25
 	podzolThreshold = 0.3
 	gravelThreshold = 0.35
 	clayThreshold   = -0.4
@@ -41,6 +65,7 @@ const (
 	patchPlaneSeabed = 0
 	patchPlanePodzol = 1000
 	patchPlaneBands  = 2000
+	patchPlaneShore  = 3000
 )
 
 // badlandsBands is the order of terracotta colours going down, as indexes into
@@ -89,6 +114,9 @@ func (s *surfaceInfo) apply(kind surfaceKind) {
 	switch {
 	case kind == surfNone || kind == surfStone:
 		return
+	case kind == surfSandSeabed:
+		s.layer(y, seabedDepth, b.sand)
+		return
 	case kind == surfSeabed || kind == surfColdSeabed || y < SeaLevel:
 		s.seabed(kind == surfColdSeabed)
 		return
@@ -113,7 +141,9 @@ func (s *surfaceInfo) apply(kind surfaceKind) {
 		y = s.layer(y, sandDepth, b.sand)
 		s.layer(y, sandstoneDepth, b.sandstone)
 	case surfBadlands:
-		y = s.layer(y, 1, b.redSand)
+		if y <= bandsShowY {
+			y = s.layer(y, 1, b.redSand)
+		}
 		shift := int(s.g.patch.at(s.wx, patchPlaneBands, s.wz) * 6)
 		for d := 0; d < badlandsDepth && y >= minY; d, y = d+1, y-1 {
 			band := badlandsBands[((y+shift)%len(badlandsBands)+len(badlandsBands))%len(badlandsBands)]
@@ -121,13 +151,15 @@ func (s *surfaceInfo) apply(kind surfaceKind) {
 				break
 			}
 		}
-	case surfGravel:
-		s.layer(y, 3, b.gravel)
+	case surfShore:
+		if s.g.patch.at(s.wx, patchPlaneShore, s.wz) > shoreGravel {
+			s.layer(y, 3, b.gravel)
+		}
 	case surfMycelium:
 		y = s.layer(y, 1, b.mycelium)
 		s.layer(y, soilDepth-1, b.dirt)
 	case surfWindswept:
-		if y <= windsweptStoneY {
+		if y <= windsweptStoneY && s.g.patch.at(s.wx, patchPlaneShore, s.wz) > windsweptGrass {
 			y = s.layer(y, 1, b.grass)
 			s.layer(y, soilDepth-1, b.dirt)
 		}
