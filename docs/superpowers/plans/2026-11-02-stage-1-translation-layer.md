@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Design change, 2026-11-03 (owner):** Java players talk to the game directly, not through a fake Bedrock connection. The Architecture line and the "pinned dependency" constraint below are replaced by this note. Tasks 2-4 stand, except that block and item tables no longer need Bedrock runtime IDs as the main key: use world.Block and item names. **Tasks 5-9 get rewritten before they start**, opening with a small proof: fork Dragonfly into third_party/dragonfly, put a small interface in front of the 111 p.session() calls in player.go so Bedrock behaviour stays identical, then one Java bot joins, walks and breaks a block by calling player methods and implementing world.Viewer. If that fork proves unmanageable, fall back to this plan as written and tell the owner.
+
 **Goal:** Bedrock and Java players log in to one Dragonfly-based server and move, build, chat and manage their inventory together, through our own translator, with memory measured against Quarry.ts.
 
 **Architecture:** Dragonfly already lets a program add its own source of players: `server.Config.Listeners` takes a `server.Listener`, whose `Accept()` returns a `session.Conn`. A `session.Conn` is simply something that reads and writes Bedrock packets. So the Java side is one listener on TCP that hands Dragonfly a fake Bedrock connection for each Java player, translating every packet in both directions. Bedrock players use Dragonfly's normal RakNet listener with no translation.
