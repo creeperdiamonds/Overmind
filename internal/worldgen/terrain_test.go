@@ -102,13 +102,48 @@ func TestClimateValuesInRanges(t *testing.T) {
 	g := New(8)
 	for x := -20000; x < 20000; x += 97 {
 		c := g.Climate(x, x*3-1000)
-		for name, v := range map[string]float64{"temperature": c.Temperature, "humidity": c.Humidity, "erosion": c.Erosion, "weirdness": c.Weirdness} {
+		for name, v := range map[string]float64{"temperature": c.Temperature, "humidity": c.Humidity, "erosion": c.Erosion} {
 			if v < -1 || v > 1 {
 				t.Fatalf("%s %v outside -1..1", name, v)
 			}
 		}
+		// Weirdness is not clamped; the game's measured largest is 1.33.
+		if math.Abs(c.Weirdness) > 1.6 {
+			t.Fatalf("weirdness %v far outside the measured range", c.Weirdness)
+		}
 		if c.Continentalness < -1.2 || c.Continentalness > 1 {
 			t.Fatalf("continentalness %v outside -1.2..1", c.Continentalness)
 		}
+	}
+}
+
+// The game's weirdness passes 1 on 0.25 to 0.42% of columns (4 seeds, 8192 square, 32-block grid),
+// and PV goes on falling there. A clamp at 1 flattens those humps into plateaus.
+func TestWeirdnessIsNotClamped(t *testing.T) {
+	var over, total int
+	var largest float64
+	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
+		g := New(seed)
+		for x := -4096; x <= 4096; x += 32 {
+			for z := -4096; z <= 4096; z += 32 {
+				w := math.Abs(g.Climate(x, z).Weirdness)
+				largest = max(largest, w)
+				total++
+				if w > 1 {
+					over++
+				}
+			}
+		}
+	}
+	share := float64(over) / float64(total) * 100
+	t.Logf("|weirdness| over 1 on %.3f%% of columns, largest %.3f", share, largest)
+	if share < 0.15 || share > 0.6 {
+		t.Errorf("|weirdness| over 1 on %.3f%% of columns, measured 0.25 to 0.42%%", share)
+	}
+	if largest > 1.6 {
+		t.Errorf("largest |weirdness| %.3f, measured 1.33", largest)
+	}
+	if got := peaksAndValleys(1.2); got > -0.59 {
+		t.Errorf("PV at weirdness 1.2 is %.2f, want -0.6", got)
 	}
 }

@@ -28,7 +28,7 @@ The owner had the Java 26.1 generator studied (decompiled and measured with a pr
 - The blob's spindle shape. The line's length and tilt and the swelling are from the notes; the rest replaces an earlier sphere chain.
 - `finishDensity`'s tanh. The notes name a squeeze with no formula.
 - Octave limits, since finer ones fall inside a grid cell: limit noises 6 of 16, selector 4 of 8, jagged 6 of 16. The selector's sharpness of 5 (`base3D`).
-- Clamps on climate values (`shapeClimate`).
+- Clamps on temperature, humidity, continentalness and erosion (`Climate`, `shapeClimate`): past them nothing reads a different value. Weirdness has none, because the game's passes 1 on 0.25 to 0.42% of columns and reaches 1.33.
 - Ores are clipped to their feature's height range and rock patches are not (`placeVein`).
 - Tunnel bends, tilt (`caveTilt`), `minTunnelHeight`, room height and `canyonLedge`'s step size.
 - Surface band thresholds, band table run lengths, iceberg and hoodoo height curves, disk radii, geode shape, lake sizes.
@@ -74,5 +74,12 @@ There is no river noise any more; this reverses the earlier choice of a separate
 - Dragonfly has no powder snow or budding amethyst block; plain snow and plain amethyst stand in. Dragonfly has `DeepWarmOcean`, but Java has none, so the hottest deep ocean is `WarmOcean`.
 - Springs stay single source blocks until something next to them changes.
 - A vein's air-exposure rule only sees air inside the chunk.
+
+## How one seed compares
+
+The same seed gives a different world from the game's by design, and single seeds differ a lot. Pooled over 60 of our seeds against the 4 Java seeds the probes cover (8192 square, 32-block grid): land 47.3% against 47.4%, land p99 149 against 148, p99.9 184 against 181, Y 150 or more 0.47% against 0.45%. Each Java figure sits inside the 5 to 95% range of our groups of 4 seeds. Our seed 100 has the second lowest temperature spread of the 61 (0.23; range 0.23 to 0.48), so it lacks hot and cold regions, and its height tail is also on the high side of ours.
+
+- **Open:** cold regions may be a little less coherent than the game's. The area-weighted size of the coldest band's regions is 8.1% of the map against 14.7, which only 0.6% of our groups of 4 reach; pooling cold and hot it is 6.6 against 9.4 (7%). This is one of about 20 figures compared and rests on 4 Java seeds, so nothing is changed for it. More Java seeds would settle it.
+- Rings around climate extremes are in the game too. Nested band rings around weirdness extremes: 403 per seed against 389 (560 while weirdness was clamped at 1, where plateaus counted as extremes); around humidity extremes 16.5 against 13.8.
 
 Worlds match across machines of the same CPU type. Go may round floating-point sums differently on ARM, so a seed could differ slightly there.

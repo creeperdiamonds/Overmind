@@ -41,11 +41,13 @@ func (g *Generator) warped(x, z int) (qx, qz float64) {
 }
 
 // shapeClimate returns the three climate values terrain shape reads, at warped coordinates.
-// The clamps are our own bounds, wide enough that the measured spreads rarely reach them.
+// The clamps on continentalness and erosion are our own bounds; past them the splines hold
+// their last knot anyway. Weirdness has no clamp: the game's reaches 1.33 (0.25 to 0.42% of
+// columns are beyond 1 on the 4 seeds probed), and PV keeps falling there.
 func (g *Generator) shapeClimate(qx, qz float64) (continentalness, erosion, weirdness float64) {
 	return clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
 		clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
-		clamp(g.climate.weirdness.at(qx, 0, qz), -1, 1)
+		g.climate.weirdness.at(qx, 0, qz)
 }
 
 // Climate returns the climate values at a column.
