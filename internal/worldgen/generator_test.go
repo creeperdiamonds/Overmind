@@ -296,6 +296,34 @@ func TestDefaultSpawnIsAboveTerrain(t *testing.T) {
 	}
 }
 
+// TestDefaultSpawnFallbackHasRoom checks the spawn used when the search finds no land: in the finished
+// chunk a player there stands on a block (ground, water or leaves) with air for feet and head, not
+// inside a tree, snow layer or plant, and nothing over their head.
+func TestDefaultSpawnFallbackHasRoom(t *testing.T) {
+	for _, seed := range []int64{0, 1, 5, 7, 100, 12345, -2147483648} {
+		g := New(seed)
+		for _, xz := range [][2]int{{0, 0}, {8, 8}, {100, -40}, {-333, 517}} {
+			p := g.fallbackSpawn(xz[0], xz[1])
+			c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+			g.GenerateChunk(world.ChunkPos{int32(p.X() >> 4), int32(p.Z() >> 4)}, c)
+			lx, lz := uint8(p.X()&15), uint8(p.Z()&15)
+			at := func(y int) uint32 { return c.Block(lx, int16(y), lz, 0) }
+			if at(p.Y()-1) == g.blocks.air {
+				t.Errorf("seed %d at %v: nothing to stand on", seed, p)
+			}
+			if at(p.Y()) != g.blocks.air || at(p.Y()+1) != g.blocks.air {
+				t.Errorf("seed %d at %v: no room to stand (%v, %v)", seed, p, nameOf(at(p.Y())), nameOf(at(p.Y()+1)))
+			}
+			for y := p.Y() + 2; y < world.Overworld.Range().Max(); y++ {
+				if b := at(y); b != g.blocks.air {
+					t.Errorf("seed %d at %v: %v above at Y %d", seed, p, nameOf(b), y)
+					break
+				}
+			}
+		}
+	}
+}
+
 func BenchmarkGenerateChunk(b *testing.B) {
 	g := New(1)
 	var i int32

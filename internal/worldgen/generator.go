@@ -580,7 +580,23 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 			}
 		}
 	}
-	return cube.Pos{0, max(g.SurfaceHeight(0, 0), SeaLevel) + 1, 0}
+	return g.fallbackSpawn(0, 0)
+}
+
+// fallbackSpawn is the spawn used when the search finds no land: just above the highest block of the
+// finished column at x, z, which may be water or leaves, so a player there has room and nothing
+// over their head.
+func (g *Generator) fallbackSpawn(x, z int) cube.Pos {
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	g.GenerateChunk(world.ChunkPos{int32(x >> 4), int32(z >> 4)}, c)
+	lx, lz := uint8(x&15), uint8(z&15)
+	r := world.Overworld.Range()
+	for y := r.Max() - 2; y > r.Min(); y-- {
+		if c.Block(lx, int16(y), lz, 0) != g.blocks.air {
+			return cube.Pos{x, y + 1, z}
+		}
+	}
+	return cube.Pos{x, max(g.SurfaceHeight(x, z), SeaLevel) + 1, z}
 }
 
 // takeBuffer gives the worker a full base buffer from its spares.
