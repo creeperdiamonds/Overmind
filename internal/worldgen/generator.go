@@ -59,8 +59,9 @@ func New(seed int64) *Generator {
 	}
 }
 
-// chunkScratch holds working space for one GenerateChunk call. It goes back in a pool, and
-// nothing in it is read before it is written, so no per-chunk data carries over.
+// chunkScratch holds working space for one GenerateChunk call. It goes back in a pool. What can be
+// read again later, preliminary levels and walk corners, is a pure function of the generator and a
+// position and is checked against both, so it changes speed and never a result.
 type chunkScratch struct {
 	shapes      [cellsAcross + 1][cellsAcross + 1]columnShape
 	nodes       [cellsAcross + 1][cellsAcross + 1][columnNodes]node

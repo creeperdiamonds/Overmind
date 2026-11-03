@@ -1,6 +1,6 @@
 # worldgen
 
-Overmind's Overworld generator. A chunk depends only on the seed and its position, so chunks can be built in any order on any number of workers. GenerateChunk keeps nothing about a chunk afterwards; pooled scratch memory holds only values rewritten before they are read, and a cache of preliminary surface levels, which are pure functions of the seed and a position.
+Overmind's Overworld generator. A chunk depends only on the seed and its position, so chunks can be built in any order on any number of workers. GenerateChunk keeps nothing about a chunk afterwards; pooled scratch memory holds only values rewritten before they are read, and caches of preliminary surface levels and walk corner columns, which are pure functions of the seed and a position.
 
 ## Whose algorithms these are
 
