@@ -309,7 +309,19 @@ const (
 	spawnMinWeirdness       = 0.16
 )
 
-// DefaultSpawn searches outward from the origin for such ground.
+// spawnClear says whether a player can stand at (x, y, z): the block under the feet is ground, and
+// the feet and head are air in the finished chunk, so not inside a tree, plant or snow layer.
+func (g *Generator) spawnClear(x, y, z int) bool {
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	g.GenerateChunk(world.ChunkPos{int32(x >> 4), int32(z >> 4)}, c)
+	lx, lz := uint8(x&15), uint8(z&15)
+	ground := c.Block(lx, int16(y-1), lz, 0)
+	return ground != g.blocks.air && ground != g.blocks.water && ground != g.blocks.lava &&
+		c.Block(lx, int16(y), lz, 0) == g.blocks.air && c.Block(lx, int16(y+1), lz, 0) == g.blocks.air
+}
+
+// DefaultSpawn searches outward from the origin for such ground, with room to stand on it. A
+// candidate costs one chunk, and only those that pass the cheap tests get that far.
 func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	const step, reach = 32, 2048
 	for r := 0; r <= reach; r += step {
@@ -319,7 +331,7 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 				if cl.Continentalness < spawnMinContinentalness || cl.Weirdness > -spawnMinWeirdness && cl.Weirdness < spawnMinWeirdness {
 					continue
 				}
-				if h := g.SurfaceHeight(p[0], p[1]); h >= SeaLevel {
+				if h := g.SurfaceHeight(p[0], p[1]); h >= SeaLevel && g.spawnClear(p[0], h+1, p[1]) {
 					return cube.Pos{p[0], h + 1, p[1]}
 				}
 			}

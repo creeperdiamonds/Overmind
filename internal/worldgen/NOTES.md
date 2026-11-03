@@ -26,7 +26,7 @@ Explicit `float64()` and `float32()` conversions around products stop a platform
 - **Decoration** (`decorate.go`): tree shapes, plant rates and the cold threshold are our own; tree rates per biome and kelp and seagrass are tuned to Bedrock's. It reaches other layers only through `groundSource`, `surfaceDefAt` and `treeSoil`.
 - **Bedrock floor:** measured on Bedrock, 1, 1, .75, .5, .25, none from Y -59.
 - **Hanging water:** water with air straight under it in the noise pass gets stone instead (`setFluid`), and tunnels and geodes never open under water. The game lets such water flow later; here it would hang until a block update. This is the one way our noise pass differs from the game's, so golden tests read the raw stage (`rawKind`, `rawTops`). Water can still sit beside air sideways.
-- **DefaultSpawn:** our own search, with the aims the study names.
+- **DefaultSpawn:** our own search, with the aims the study names. A candidate must also pass `spawnClear` on the finished chunk: ground under the feet and air at feet and head, so never inside a tree, flower or snow layer (a heights-only search put seed 100's spawn in an oak trunk). Only candidates that pass the cheap tests cost a chunk.
 
 ## Bedrock rules
 
