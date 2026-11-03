@@ -210,7 +210,7 @@ func countTrees(c *chunk.Chunk, visit func(x, z uint8)) int {
 // tree cut off at an edge shows up as orphan leaves.
 func TestTreesWholeAcrossEdges(t *testing.T) {
 	g := New(41)
-	var crossings, tops, edgeTops, leaves int
+	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops int
 	seeds := biomeChunks(g, 8, "forest", "roofed_forest", "jungle", "savanna", "taiga", "birch_forest")
 	seeds = append(seeds, biomeChunks(g, 3, "roofed_forest")...)
 	seeds = append(seeds, biomeChunks(g, 3, "savanna")...)
@@ -232,8 +232,11 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 							switch {
 							case isLeavesID(id):
 								leaves++
-								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) && !cutOnlyByNeighbours(g, x, y, z) {
-									t.Fatalf("chunk %v: leaves at %d %d %d reach no log within 6 steps", p, x, y, z)
+								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) {
+									if !cutOnlyByNeighbours(g, x, y, z) {
+										t.Fatalf("chunk %v: leaves at %d %d %d reach no log within 6 steps", p, x, y, z)
+									}
+									cutLeaves++ // Allowed: cut only by a neighbour level the finished world lacks.
 								}
 							case isLogID(id):
 								below, _ := w.at(x, y-1, z)
@@ -263,6 +266,7 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 									if edge {
 										edgeTops++
 									}
+									bare := false
 									for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 										covered := false
 										for dy := -1; dy <= 1; dy++ {
@@ -270,9 +274,15 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 												covered = true
 											}
 										}
-										if !covered && !neighbourStoodBeside(g, pos{x, y, z}, d) {
-											t.Fatalf("chunk %v: trunk top at %d %d %d has nothing beside it towards %v", p, x, y, z, d)
+										if !covered {
+											if !neighbourStoodBeside(g, pos{x, y, z}, d) {
+												t.Fatalf("chunk %v: trunk top at %d %d %d has nothing beside it towards %v", p, x, y, z, d)
+											}
+											bare = true // Allowed: what stood there belongs to a neighbour level the world lacks.
 										}
+									}
+									if bare {
+										bareTops++
 									}
 								}
 							}
@@ -282,7 +292,12 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge", leaves, tops, edgeTops, crossings)
+	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge; allowed: %d leaves cut only by a missing neighbour level, %d trunk tops bare only beside one", leaves, tops, edgeTops, crossings, cutLeaves, bareTops)
+	// Bounds from fix round 2's measure, 63 of 52,987 leaves and 2 of 964 tops, with a small margin:
+	// the allowance covers what two levels of neighbours leave out, and must stay that rare.
+	if cutLeaves > 80 || bareTops > 4 {
+		t.Errorf("%d leaves cut and %d bare trunk tops allowed; at most 80 and 4", cutLeaves, bareTops)
+	}
 	if edgeTops < 30 || crossings < 100 {
 		t.Fatalf("only %d trunk tops on edges and %d crossings; the test would prove little", edgeTops, crossings)
 	}
