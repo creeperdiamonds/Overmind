@@ -237,19 +237,7 @@ func defineSteps(t *tableBuilder) {
 
 	// Mangroves: an upwards branching trunk on roots, unverified against a Java run (no traced chunk
 	// holds a mangrove swamp).
-	propagule := randomizedProp(simpleState("mangrove_propagule[age=0,hanging=true,stage=0,waterlogged=false]"), "age", uniInt(0, 4))
-	mangrove := func(base, a, b int, steps intProvider, limit int) *treeCfg {
-		through := blockSet("mud muddy_mangrove_roots mangrove_roots mangrove_leaves mangrove_log mangrove_propagule moss_carpet vine")
-		c := treeOf("mangrove_log", "mangrove_leaves", branchingTrunk{h(base, a, b), steps, uniInt(0, 1), 0.5},
-			spreadFoliage{foliageBase{constInt(3), constInt(0)}, constInt(2), 70}, limit, 0, 2, true,
-			leaveVine(0.125), attachedToLeaves(0.14, 1, 0, propagule, 2, []dir{dDown}), beehive(0.01))
-		c.validExtra = through
-		c.roots = &mangroveRoots{offset: uniInt(1, 3), root: stateOf("mangrove_roots[waterlogged=false]"), above: stateOf("moss_carpet"), aboveChance: 0.5,
-			through: blockSet("mud muddy_mangrove_roots mangrove_roots moss_carpet vine mangrove_propagule snow"), muddyIn: blockSet("mud muddy_mangrove_roots"),
-			muddy: stateOf("muddy_mangrove_roots[axis=y]"), width: 8, length: 15, skew: 0.2}
-		return c
-	}
-	mangroveShort, mangroveTall := checked(mangrove(2, 1, 4, uniInt(1, 4), 2), "mangrove_propagule"), checked(mangrove(4, 1, 9, uniInt(1, 6), 3), "mangrove_propagule")
+	mangroveShort, mangroveTall := checked(mangroveTree(false), "mangrove_propagule"), checked(mangroveTree(true), "mangrove_propagule")
 	t.def("trees_mangrove", treeSel(mangroveShort, selEntry{0.85, mangroveTall}),
 		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{}, filterMod{wouldSurvive("mangrove_propagule")})...)
 
@@ -361,6 +349,25 @@ func defineSteps(t *tableBuilder) {
 	t.def("flower_forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-3, 1), 0, 1)}, biomeMod{})...)
 	lushGrass := newNestedPlacement(simpleBlock(jungleMix), patch(32, 7, 3, airOnly)...)
 	t.def("bamboo_vegetation", treeSel(lushGrass, selEntry{0.05, checkedFancy()}, selEntry{0.15, checked(jungleBush(), "jungle_sapling")}, selEntry{0.7, checked(megaJungle(), "jungle_sapling")}), treeBase(countExtra(30, 10, 1), 0)...)
+}
+
+// mangroveTree is the mangrove or the tall mangrove. The two differ in trunk height, branch steps,
+// the size limit and how far up the trunk starts over its roots (Java 26.1's configured features
+// mangrove and tall_mangrove).
+func mangroveTree(tall bool) *treeCfg {
+	base, a, b, steps, limit, offset := 2, 1, 4, uniInt(1, 4), 2, uniInt(1, 3)
+	if tall {
+		base, a, b, steps, limit, offset = 4, 1, 9, uniInt(1, 6), 3, uniInt(3, 7)
+	}
+	propagule := randomizedProp(simpleState("mangrove_propagule[age=0,hanging=true,stage=0,waterlogged=false]"), "age", uniInt(0, 4))
+	c := treeOf("mangrove_log", "mangrove_leaves", branchingTrunk{h(base, a, b), steps, uniInt(0, 1), 0.5},
+		spreadFoliage{foliageBase{constInt(3), constInt(0)}, constInt(2), 70}, limit, 0, 2, true,
+		leaveVine(0.125), attachedToLeaves(0.14, 1, 0, propagule, 2, []dir{dDown}), beehive(0.01))
+	c.validExtra = blockSet("mud muddy_mangrove_roots mangrove_roots mangrove_leaves mangrove_log mangrove_propagule moss_carpet vine")
+	c.roots = &mangroveRoots{offset: offset, root: stateOf("mangrove_roots[waterlogged=false]"), above: stateOf("moss_carpet"), aboveChance: 0.5,
+		through: blockSet("mud muddy_mangrove_roots mangrove_roots moss_carpet vine mangrove_propagule snow"), muddyIn: blockSet("mud muddy_mangrove_roots"),
+		muddy: stateOf("muddy_mangrove_roots[axis=y]"), width: 8, length: 15, skew: 0.2}
+	return c
 }
 
 // newNestedOnly turns a nested placed feature into a plain feature.
