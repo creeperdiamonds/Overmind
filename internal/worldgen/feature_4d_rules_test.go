@@ -30,6 +30,8 @@ var java4dPlacements = map[string]string{
 	"flower_cherry":                       "noise_threshold_count:-0.8:5:10 in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-6..6/shaped:-2..2/shaped filter",
 	"flower_meadow":                       "in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-6..6/shaped:-2..2/shaped filter",
 	"patch_leaf_litter":                   "count:2 in_square heightmap:WORLD_SURFACE_WG biome count:32 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_dry_grass_desert":              "rarity_filter:3 in_square heightmap:MOTION_BLOCKING biome count:64 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_dry_grass_badlands":            "rarity_filter:6 in_square heightmap:MOTION_BLOCKING biome count:64 random_offset:-7..7/shaped:-3..3/shaped filter",
 	"patch_firefly_bush_swamp":            "rarity_filter:8 in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:-3..3/shaped filter",
 	"patch_firefly_bush_near_water_swamp": "count:3 in_square heightmap:MOTION_BLOCKING biome filter count:20 random_offset:-4..4/shaped:-3..3/shaped filter",
 	"patch_firefly_bush_near_water":       "count:2 in_square heightmap:MOTION_BLOCKING_NO_LEAVES biome filter count:20 random_offset:-4..4/shaped:-3..3/shaped filter",

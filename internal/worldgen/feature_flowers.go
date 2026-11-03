@@ -90,8 +90,8 @@ func defineFlowers(t *tableBuilder) {
 
 	// Dry grass in deserts and badlands.
 	dry := simpleBlock(weightedStates(weightedState{1, stateOf("short_dry_grass")}, weightedState{1, stateOf("tall_dry_grass")}))
-	t.def("patch_dry_grass_desert", dry, chain(mods(rarityMod{3}, inSquareMod{}, ws, biomeMod{}), patch(64, 7, 3, airOnly))...)
-	t.def("patch_dry_grass_badlands", dry, chain(mods(rarityMod{6}, inSquareMod{}, ws, biomeMod{}), patch(64, 7, 3, airOnly))...)
+	t.def("patch_dry_grass_desert", dry, chain(mods(rarityMod{3}, inSquareMod{}, mb, biomeMod{}), patch(64, 7, 3, airOnly))...)
+	t.def("patch_dry_grass_badlands", dry, chain(mods(rarityMod{6}, inSquareMod{}, mb, biomeMod{}), patch(64, 7, 3, airOnly))...)
 
 	// Firefly bushes: in swamps, and beside water anywhere.
 	firefly := simpleBlock(simpleState("firefly_bush"))
