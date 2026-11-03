@@ -672,9 +672,19 @@ func (c *ruleContext) surfaceAtBlock() bs {
 func (g *Generator) applySurfaceRules(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int) {
 	c := &s.rule
 	c.g, c.b, c.s = g, b, s
-	ox, oz := b.cx*16, b.cz*16
 	for lx := x0; lx <= x1; lx++ {
 		for lz := z0; lz <= z1; lz++ {
+			g.surfaceRulesColumn(b, s, lx, lz)
+		}
+	}
+}
+
+// surfaceRulesColumn runs the rule tree down one column. s.rule must be readied for the chunk.
+func (g *Generator) surfaceRulesColumn(b *baseChunk, s *chunkScratch, lx, lz int) {
+	c := &s.rule
+	ox, oz := b.cx*16, b.cz*16
+	{
+		{
 			wx, wz := ox+lx, oz+lz
 			start := int(b.wgTop[lz<<4|lx])
 			sb := s.blockBiome(g, wx, start, wz)

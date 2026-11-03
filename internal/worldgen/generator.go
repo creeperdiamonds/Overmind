@@ -36,6 +36,7 @@ type Generator struct {
 	// regionFac seeds each source chunk's level random, Java's WorldGenRegion random (feature.go).
 	regionFac seedFactory
 	profile   *Profile
+	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
 	geodeOnce sync.Once
 	geode     *normalNoise
 }
@@ -50,7 +51,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
 	region := w.named("minecraft:worldgen_region_random")
-	return &Generator{
+	g := &Generator{
 		cache:      newSharedCache(DefaultCacheBytes),
 		seed:       seed,
 		sf:         newSurfaceFactories(w, profile.deepslateName),
@@ -64,6 +65,10 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 		surface:    newSurfaceNoises(w),
 		blocks:     newBlocks(),
 	}
+	if profile.surfaceBedrock {
+		g.bsurf = newBedrockSurface(seed, w)
+	}
+	return g
 }
 
 // chunkScratch holds working space for one GenerateChunk call. It goes back in a pool. What can be

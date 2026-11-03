@@ -17,6 +17,9 @@ type Profile struct {
 	// deepslateFirst puts the gradient before the surface materials: Bedrock lays deepslate in the noise
 	// fill, and its surface builder replaces only stone-like blocks (R2, phase 5 surface builder).
 	deepslateFirst bool
+	// surfaceBedrock builds the surface with Bedrock's default surface builder (bedrock_surface.go)
+	// where a biome uses it.
+	surfaceBedrock bool
 
 	// Where the Bedrock data files differ from Java's ore table (BEDROCK-NOTES section 5).
 	ironSize, diamondMediumSize                int
@@ -37,7 +40,7 @@ type Profile struct {
 
 var (
 	// ProfileBedrock is the default: Java's algorithms with Bedrock's data where it differs.
-	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true,
+	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true, surfaceBedrock: true,
 		ironSize: 10, diamondMediumSize: 4, dirtReplaces: "stone", gravelReplaces: "stone deepslate", rockReplaces: "stone",
 		oresSkipTuff: true, infestedBedrock: true, extraMountainCoal: true, climate: &bedrockClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30}})
