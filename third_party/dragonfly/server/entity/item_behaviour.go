@@ -176,7 +176,7 @@ func (i *ItemBehaviour) collect(e *Ent, collector Collector, tx *world.Tx) {
 		return
 	}
 	for _, viewer := range tx.Viewers(pos) {
-		viewer.ViewEntityAction(e, PickedUpAction{Collector: collector})
+		viewer.ViewEntityAction(e, PickedUpAction{Collector: collector, Count: n}) // Overmind fork: Count
 	}
 
 	if n == i.i.Count() {

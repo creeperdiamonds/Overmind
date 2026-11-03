@@ -49,6 +49,8 @@ type ArrowShakeAction struct {
 type PickedUpAction struct {
 	// Collector is the entity that collected the item.
 	Collector world.Entity
+	// Count is how many items were picked up. Overmind fork: Java shows it.
+	Count int
 
 	action
 }

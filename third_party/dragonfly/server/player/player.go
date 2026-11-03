@@ -50,7 +50,7 @@ type playerData struct {
 
 	gameMode world.GameMode
 	skin     skin.Skin
-	s        *session.Session
+	s        Reporter
 	h        Handler
 
 	inv, offHand, enderChest, ui *inventory.Inventory
@@ -1904,7 +1904,8 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 		if durable, ok := i.Item().(item.Durable); ok {
 			p.SetHeldItems(p.damageItem(i, durable.DurabilityInfo().AttackDurability), left)
 		}
-		n, vulnerable, _ := entity.HurtEntity(e, i.AttackDamage(), entity.AttackDamageSource{Attacker: p})
+		dmg, _ := p.attackDamage(i, i.AttackDamage(), false) // Overmind fork: AttackRules
+		n, vulnerable, _ := entity.HurtEntity(e, dmg, entity.AttackDamageSource{Attacker: p})
 		p.tx.PlaySound(entity.EyePosition(e), sound.Attack{Damage: !mgl64.FloatEqual(n, 0)})
 		if vulnerable {
 			p.Exhaust(0.1)
@@ -1925,6 +1926,7 @@ func (p *Player) AttackEntity(e world.Entity) bool {
 			v.ViewEntityAction(living, entity.EnchantedHitAction{})
 		}
 	}
+	dmg, critical = p.attackDamage(i, dmg, critical) // Overmind fork: AttackRules
 	if critical {
 		dmg *= 1.5
 	}
@@ -2010,6 +2012,11 @@ func (p *Player) StartBreaking(pos cube.Pos, face cube.Face) {
 		viewer.ViewBlockAction(pos, block.StartCrackAction{BreakTime: p.lastBreakDuration})
 	}
 }
+
+// BreakDuration is how long the player needs to break the block at pos, with
+// its held item, effects and surroundings. Overmind fork: the Java front end
+// uses it to tell a break the client finishes at once.
+func (p *Player) BreakDuration(pos cube.Pos) time.Duration { return p.breakTime(pos) }
 
 // breakTime returns the time needed to break a block at the position passed, taking into account the item
 // held, if the player is on the ground/underwater and if the player has any effects.
@@ -2325,6 +2332,11 @@ func (p *Player) teleport(pos mgl64.Vec3) {
 	p.ResetFallDistance()
 }
 
+// maxMoveDelta is the longest single move Move accepts, in blocks. Nothing a
+// client can legitimately do comes close in one tick; teleports do not use Move.
+// Overmind fork, see third_party/dragonfly/NOTES.md.
+const maxMoveDelta = 32.0
+
 // Move moves the player from one position to another in the world, by adding the delta passed to the current
 // position of the player.
 // Move also rotates the player, adding deltaYaw and deltaPitch to the respective values.
@@ -2332,6 +2344,12 @@ func (p *Player) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 	if p.Dead() || (deltaPos.ApproxEqual(mgl64.Vec3{}) && mgl64.FloatEqual(deltaYaw, 0) && mgl64.FloatEqual(deltaPitch, 0)) {
 		p.onGround = true
 		p.updateFallState(deltaPos.Y())
+		return
+	}
+	if deltaPos.Len() > maxMoveDelta {
+		// Overmind fork: a client cannot make the world load every chunk under a
+		// long move. See third_party/dragonfly/NOTES.md.
+		p.teleport(p.Position())
 		return
 	}
 	if p.immobile {
@@ -3440,7 +3458,7 @@ func (p *Player) Data() Config {
 
 // session returns the network session of the player. If it has one, it is returned. If not, a no-op session
 // is returned.
-func (p *Player) session() *session.Session {
+func (p *Player) session() Reporter {
 	if s := p.s; s != nil {
 		return s
 	}

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/df-mc/dragonfly/server"
+	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 
@@ -19,20 +19,28 @@ import (
 
 // Server is a running test server.
 type Server struct {
-	*server.Server
+	*app.Server
 	// BedrockAddr is the address Bedrock bots dial.
 	BedrockAddr string
-	// JavaAddr is a reserved spare TCP port for the Java side.
+	// JavaAddr is the address Java bots dial.
 	JavaAddr string
 	// Config is what the server was started with.
 	Config config.Config
+	// PlayersFolder holds the saved players, a folder per edition.
+	PlayersFolder string
 }
 
-// Start runs a server with Xbox login off, spare ports and a temporary
+// Start runs a server with Xbox and Mojang login off, spare ports and a temporary
 // world folder. It is closed when the test ends.
 func Start(t *testing.T) *Server {
 	t.Helper()
 	return StartIn(t, t.TempDir(), nil)
+}
+
+// StartWith is Start with changes to the settings.
+func StartWith(t *testing.T, change func(*config.Config)) *Server {
+	t.Helper()
+	return StartIn(t, t.TempDir(), change)
 }
 
 // StartIn is Start with the world kept under dir, so a second call with the
@@ -51,9 +59,11 @@ func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, 
 	t.Helper()
 	cfg := config.Default()
 	cfg.AuthEnabled = false
+	cfg.JavaOffline = true
 	cfg.BedrockAddr = spareUDP(t)
 	cfg.JavaAddr = spareTCP(t)
 	cfg.WorldFolder = filepath.Join(dir, "world")
+	cfg.PlayersFolder = filepath.Join(dir, "players")
 	cfg.ResourcesFolder = filepath.Join(dir, "resources")
 
 	if tweak != nil {
@@ -68,7 +78,7 @@ func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, 
 		return nil, err
 	}
 	t.Cleanup(func() { _ = srv.Close() })
-	return &Server{Server: srv, BedrockAddr: cfg.BedrockAddr, JavaAddr: cfg.JavaAddr, Config: cfg}, nil
+	return &Server{Server: srv, BedrockAddr: cfg.BedrockAddr, JavaAddr: cfg.JavaAddr, Config: cfg, PlayersFolder: cfg.PlayersFolder}, nil
 }
 
 // PlayerByName reports whether a player with that name is online.
@@ -96,6 +106,35 @@ func (s *Server) PlayerPosition(name string) (pos mgl64.Vec3, ok bool) {
 	}
 }
 
+// JavaOnline reports whether a Java player with that name is online.
+func (s *Server) JavaOnline(name string) bool {
+	_, ok := s.Java.Player(name)
+	return ok
+}
+
+// JavaPosition returns where the server thinks the named Java player is, and
+// whether it is on the ground.
+func (s *Server) JavaPosition(name string) (pos mgl64.Vec3, onGround, ok bool) {
+	h, found := s.Java.Player(name)
+	if !found {
+		return pos, false, false
+	}
+	type result struct {
+		pos      mgl64.Vec3
+		onGround bool
+	}
+	done := make(chan result, 1)
+	player.Do(h, func(_ *world.Tx, p *player.Player) {
+		done <- result{p.Position(), p.OnGround()}
+	})
+	select {
+	case r := <-done:
+		return r.pos, r.onGround, true
+	case <-time.After(2 * time.Second):
+		return pos, false, false
+	}
+}
+
 func spareUDP(t *testing.T) string {
 	t.Helper()
 	c, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -116,10 +155,12 @@ func spareTCP(t *testing.T) string {
 	return l.Addr().String()
 }
 
-// serverCap is how many servers one test process may make. Dragonfly adds its creative items and
-// recipes to global lists on every server it makes, and after about 20 a joining bot's session is
-// dropped after a second (docs/stage-2-known-gaps.md). internal/app's tests make 19, which all pass.
-var serverCap int64 = 19
+// serverCap is how many servers one test process may make. Upstream Dragonfly added its creative
+// items and recipes to global lists on every server it made, and after about 20 a joining bot's
+// session was dropped after a second (docs/stage-2-known-gaps.md), so the cap was 19. The fork now
+// registers them once per process (third_party/dragonfly/NOTES.md, vanillaOnce) and internal/javafront
+// makes about 90, so the cap is only a guard against a runaway test.
+var serverCap int64 = 500
 
 // made counts the servers this process has made.
 var made atomic.Int64

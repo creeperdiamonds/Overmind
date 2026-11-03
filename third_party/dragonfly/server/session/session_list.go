@@ -31,6 +31,9 @@ func (l *sessionList) Add(s *Session) {
 	}
 	// Show the new session to itself.
 	l.sendSessionTo(s, s)
+	for h, lp := range listed { // Overmind fork: players without a session
+		sendListedTo(h, lp, s)
+	}
 	l.s = append(l.s, s)
 }
 

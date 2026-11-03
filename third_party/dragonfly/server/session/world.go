@@ -80,6 +80,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 	switch v := e.(type) {
 	case Controllable:
 		_, actualPlayer := sessions.Lookup(v.UUID())
+		actualPlayer = actualPlayer || isListed(e.H()) // Overmind fork
 		if !actualPlayer {
 			s.writePacket(&packet.PlayerList{Entries: []protocol.PlayerListEntry{{
 				ActionType:     protocol.PlayerListActionAdd,

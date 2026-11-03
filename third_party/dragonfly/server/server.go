@@ -276,6 +276,8 @@ func (srv *Server) Player(uuid uuid.UUID) (*world.EntityHandle, bool) {
 // found, the entity handle is returned and the bool returned holds a true
 // value. If not, the bool is false and the handle is nil
 func (srv *Server) PlayerByName(name string) (*world.EntityHandle, bool) {
+	srv.pmu.RLock() // Overmind fork: lock as the other lookups do.
+	defer srv.pmu.RUnlock()
 	if p, ok := sliceutil.SearchValue(slices.Collect(maps.Values(srv.p)), func(p *onlinePlayer) bool {
 		return p.name == name
 	}); ok {
@@ -288,6 +290,8 @@ func (srv *Server) PlayerByName(name string) (*world.EntityHandle, bool) {
 // found, the entity handle is returned and the bool returned is true. If no
 // player with the XUID was found, nil and false are returned.
 func (srv *Server) PlayerByXUID(xuid string) (*world.EntityHandle, bool) {
+	srv.pmu.RLock() // Overmind fork: lock as the other lookups do.
+	defer srv.pmu.RUnlock()
 	if p, ok := sliceutil.SearchValue(slices.Collect(maps.Values(srv.p)), func(p *onlinePlayer) bool {
 		return p.xuid == xuid
 	}); ok {
@@ -589,6 +593,9 @@ func (srv *Server) createPlayer(id uuid.UUID, conn session.Conn, conf player.Con
 	conf.UUID = id
 	conf.Locale, _ = language.Parse(strings.Replace(conn.ClientData().LanguageCode, "_", "-", 1))
 	conf.Skin = srv.parseSkin(conn.ClientData())
+	if srv.conf.JoinSkin != nil { // Overmind fork
+		conf.Skin = srv.conf.JoinSkin(conf.Skin)
+	}
 	conf.Session = s
 
 	handle := world.EntitySpawnOpts{Position: conf.Position, ID: id}.New(player.Type, conf)

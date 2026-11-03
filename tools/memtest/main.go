@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +18,11 @@ import (
 
 func main() {
 	pid := flag.Int("pid", 0, "process id of the server to measure")
-	bots := flag.Int("bots", 0, "number of Bedrock bots to walk")
+	bots := flag.Int("bots", 0, "number of Bedrock bots")
+	javaBots := flag.Int("java", 0, "number of Java bots (bots/java/player.js, needs node)")
+	javaAddr := flag.String("javaaddr", "127.0.0.1:25565", "Java address of the server")
+	script := flag.String("script", "bots/java/player.js", "path of the Java bot")
+	walk := flag.Bool("walk", true, "walk outward; false stands still")
 	seconds := flag.Int("seconds", 60, "how long to measure")
 	addr := flag.String("addr", "127.0.0.1:19132", "Bedrock address of the server")
 	flag.Parse()
@@ -66,9 +73,13 @@ func main() {
 			failed++
 			continue
 		}
-		b.Walk(2 * math.Pi * float64(i) / float64(*bots))
+		if *walk {
+			b.Walk(2 * math.Pi * float64(i) / float64(*bots))
+		}
 		joined = append(joined, b)
 	}
+	java, javaFailed := startJava(*script, *javaAddr, *javaBots, *walk)
+	failed += javaFailed
 
 	// The measured period starts now that every bot has had its turn.
 	time.Sleep(time.Duration(*seconds) * time.Second)
@@ -76,6 +87,10 @@ func main() {
 	<-sampled
 	for _, b := range joined {
 		_ = b.Close()
+	}
+	for _, c := range java {
+		_ = c.Process.Kill()
+		_, _ = c.Process.Wait()
 	}
 	if sampleErr != nil {
 		fmt.Fprintf(os.Stderr, "memtest: read memory: %v\n", sampleErr)
@@ -85,10 +100,61 @@ func main() {
 	const mb = 1024 * 1024
 	fmt.Println("| Players | At end of phase | Peak | Ticks per second |")
 	fmt.Println("|---|---|---|---|")
-	fmt.Printf("| %d walking, %d s (%d joined) | %d MB | %d MB | not measured |\n",
-		*bots, *seconds, len(joined), last/mb, peak/mb)
+	verb := "walking"
+	if !*walk {
+		verb = "standing"
+	}
+	fmt.Printf("| %d Bedrock and %d Java %s, %d s (%d joined) | %d MB | %d MB | not measured |\n",
+		*bots, *javaBots, verb, *seconds, len(joined)+len(java), last/mb, peak/mb)
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "memtest: %d of %d bots failed to join\n", failed, *bots)
 		os.Exit(1)
 	}
+}
+
+// startJava starts n Java bots one at a time, each waiting until it is in play.
+// BOT_QUIET spares the machine from decoding chunks; the server sends the same.
+func startJava(script, addr string, n int, walk bool) (bots []*exec.Cmd, failed int) {
+	host, port, _ := strings.Cut(addr, ":")
+	for i := 0; i < n; i++ {
+		c := exec.Command("node", script, host, port, fmt.Sprintf("JBot%d", i))
+		c.Env = append(os.Environ(), "BOT_QUIET=1")
+		in, err := c.StdinPipe()
+		if err == nil {
+			var out interface {
+				Read([]byte) (int, error)
+			}
+			out, err = c.StdoutPipe()
+			if err == nil {
+				err = c.Start()
+			}
+			if err == nil {
+				s := bufio.NewScanner(out)
+				played := false
+				for s.Scan() {
+					if strings.Contains(s.Text(), `"ev":"play"`) {
+						played = true
+						break
+					}
+				}
+				if !played {
+					err = fmt.Errorf("never reached play")
+				}
+				go func() {
+					for s.Scan() {
+					}
+				}()
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "java bot %d: %v\n", i, err)
+			failed++
+			continue
+		}
+		if walk {
+			fmt.Fprintf(in, "{\"id\":1,\"cmd\":\"walk\",\"angle\":%f}\n", 2*math.Pi*float64(i)/float64(n))
+		}
+		bots = append(bots, c)
+	}
+	return bots, failed
 }

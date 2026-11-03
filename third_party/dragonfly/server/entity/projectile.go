@@ -262,7 +262,7 @@ func (lt *ProjectileBehaviour) tryPickup(e *Ent, tx *world.Tx) {
 		// A collector was within range and able to pick up the entity.
 		lt.close = true
 		for _, viewer := range tx.Viewers(e.Position()) {
-			viewer.ViewEntityAction(e, PickedUpAction{Collector: collector})
+			viewer.ViewEntityAction(e, PickedUpAction{Collector: collector, Count: lt.conf.PickupItem.Count()}) // Overmind fork: Count
 		}
 		// Only one collector may pick the projectile up: every further one would receive a copy of it.
 		return

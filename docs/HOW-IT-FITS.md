@@ -10,4 +10,4 @@ Overmind is a Minecraft server where Bedrock and Java players share one world.
 - `tools/memtest` measures the server's whole-process memory while bots walk outward.
 - `docs/memory-log.md` holds the memory numbers compared with Quarry.ts.
 
-The Java side (not built yet) will sit beside the Bedrock side and translate to the same world.
+The Java side, `internal/javafront`, sits beside the Bedrock side as a second front end to the same world. A Java player is an ordinary Dragonfly player that reports through `player.Reporter` (our one change to the Dragonfly fork in `third_party/dragonfly`) and sees the world as a `world.Viewer`, in Java packets. Nothing is translated through Bedrock.

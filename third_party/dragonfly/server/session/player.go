@@ -289,6 +289,28 @@ type smelter interface {
 	ResetExperience() int
 }
 
+// Overmind fork: openedInventory returns the open window's inventory only while
+// it is still the inventory of the block at the opened position (or the ender
+// chest's, for an ender chest). A chest that paired, lost its pair or was
+// broken, or a block replaced by another, leaves the window on an inventory the
+// world no longer uses, and taking from it duplicated items; the container is
+// closed and the request refused.
+func (s *Session) openedInventory(tx *world.Tx) (*inventory.Inventory, bool) {
+	pos, w := *s.openedPos.Load(), s.openedWindow.Load()
+	switch b := tx.Block(pos).(type) {
+	case block.Container:
+		if b.Inventory(tx, pos) == w {
+			return w, true
+		}
+	case block.EnderChest:
+		if w == s.enderChest {
+			return w, true
+		}
+	}
+	s.closeCurrentContainer(tx, false)
+	return nil, false
+}
+
 // invByID attempts to return an inventory by the ID passed. If found, the inventory is returned and the bool
 // returned is true.
 func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
@@ -310,14 +332,14 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 		}
 		switch id {
 		case protocol.ContainerLevelEntity:
-			return s.openedWindow.Load(), true
+			return s.openedInventory(tx) // Overmind fork: was the stored window, unchecked.
 		case protocol.ContainerShulkerBox:
 			if _, shulkerbox := tx.Block(*s.openedPos.Load()).(block.ShulkerBox); shulkerbox {
-				return s.openedWindow.Load(), true
+				return s.openedInventory(tx) // Overmind fork
 			}
 		case protocol.ContainerBarrel:
 			if _, barrel := tx.Block(*s.openedPos.Load()).(block.Barrel); barrel {
-				return s.openedWindow.Load(), true
+				return s.openedInventory(tx) // Overmind fork
 			}
 		case protocol.ContainerBeaconPayment:
 			if _, beacon := tx.Block(*s.openedPos.Load()).(block.Beacon); beacon {
@@ -325,7 +347,7 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 			}
 		case protocol.ContainerBrewingStandInput, protocol.ContainerBrewingStandResult, protocol.ContainerBrewingStandFuel:
 			if _, brewingStand := tx.Block(*s.openedPos.Load()).(block.BrewingStand); brewingStand {
-				return s.openedWindow.Load(), true
+				return s.openedInventory(tx) // Overmind fork
 			}
 		case protocol.ContainerAnvilInput, protocol.ContainerAnvilMaterial:
 			if _, anvil := tx.Block(*s.openedPos.Load()).(block.Anvil); anvil {
@@ -354,7 +376,7 @@ func (s *Session) invByID(id int32, tx *world.Tx) (*inventory.Inventory, bool) {
 		case protocol.ContainerFurnaceIngredient, protocol.ContainerFurnaceFuel, protocol.ContainerFurnaceResult,
 			protocol.ContainerBlastFurnaceIngredient, protocol.ContainerSmokerIngredient:
 			if _, ok := tx.Block(*s.openedPos.Load()).(smelter); ok {
-				return s.openedWindow.Load(), true
+				return s.openedInventory(tx) // Overmind fork
 			}
 		}
 	}

@@ -108,6 +108,9 @@ func (s *Session) subChunkEntry(offset protocol.SubChunkOffset, ind int16, col *
 	for pos, b := range col.BlockEntities {
 		if n, ok := b.(world.NBTer); ok && col.SubIndex(int16(pos.Y())) == ind {
 			d := n.EncodeNBT()
+			if d == nil {
+				continue // Overmind fork: no data to send (it was a nil map write)
+			}
 			d["x"], d["y"], d["z"] = int32(pos[0]), int32(pos[1]), int32(pos[2])
 			_ = enc.Encode(d)
 		}

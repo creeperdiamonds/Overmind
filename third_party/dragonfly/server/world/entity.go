@@ -58,6 +58,9 @@ type EntityHandle struct {
 	// worldVersion increments on every change to w, letting weak transactions
 	// detect that the entity moved while they were queued.
 	worldVersion atomic.Uint64
+	// current mirrors w for World, which reads it without e.cond.L: nil while
+	// the entity is in no world or the handle is closed. Overmind fork.
+	current atomic.Pointer[World]
 	// closed closes once the handle is closed. worldChanged, created lazily
 	// for delayed schedulers, is closed and dropped on every change to w.
 	closed       chan struct{}
@@ -155,6 +158,14 @@ func (e *EntityHandle) mustEntity(tx *Tx) Entity {
 		return ent
 	}
 	panic("can't load entity with Tx of different world")
+}
+
+// World returns the World the entity is in, or nil while it is in none (on
+// its way to another world, or removed) and once the handle is closed. It
+// takes no lock, so a Viewer may call it from a world's goroutine to tell
+// whether the entity is still in that world. Overmind fork.
+func (e *EntityHandle) World() *World {
+	return e.current.Load()
 }
 
 // UUID returns the identifier of the EntityHandle.
@@ -337,6 +348,7 @@ func (e *EntityHandle) unsetAndLockWorld() {
 
 	e.worldless.Store(true)
 	e.w = nil
+	e.current.Store(nil) // Overmind fork
 	e.worldReady = false
 	e.worldVersion.Add(1)
 	e.notifyWorldChangedLocked()
@@ -352,6 +364,9 @@ func (e *EntityHandle) setAndUnlockWorld(w *World) {
 		panic("cannot add entity to new world before removing from old world")
 	}
 	e.w = w
+	if w != closeWorld {
+		e.current.Store(w) // Overmind fork
+	}
 	e.worldReady = false
 	e.worldVersion.Add(1)
 	e.notifyWorldChangedLocked()
@@ -387,6 +402,7 @@ func (e *EntityHandle) setAndUnlockWorldAt(w *World, pos mgl64.Vec3) {
 	}
 	e.data.Pos = pos
 	e.w = w
+	e.current.Store(w) // Overmind fork
 	e.cond.Broadcast()
 }
 

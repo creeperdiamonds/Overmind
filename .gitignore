@@ -6,3 +6,7 @@ node_modules/
 overmind.toml
 /resources/
 /players/
+
+# The Dragonfly fork has a source folder called world (kept tracked: the
+# ignores above are rooted, and this negation guards it if one is not).
+!third_party/dragonfly/server/world/

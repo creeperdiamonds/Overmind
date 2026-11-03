@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	_ "unsafe"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/player/chat"
 	"github.com/df-mc/dragonfly/server/player/playerdb"
+	"github.com/df-mc/dragonfly/server/player/skin"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/biome"
 	"github.com/df-mc/dragonfly/server/world/generator"
@@ -56,6 +58,9 @@ type Config struct {
 	// players cannot. By returning false in the Allow method, for example if
 	// the player has been banned, will prevent the player from joining.
 	Allower Allower
+	// JoinSkin, if not nil, may replace the skin a Bedrock player joins with,
+	// before anyone is shown it. Overmind fork.
+	JoinSkin func(skin.Skin) skin.Skin
 	// AuthDisabled specifies if XBOX Live authentication should be disabled.
 	// Note that this should generally only be done for testing purposes or for
 	// local games. Allowing players to join without authentication is generally
@@ -204,8 +209,11 @@ func (conf Config) New() *Server {
 		conf.Log.Error("no listeners could be created; the server is unreachable")
 	}
 
-	creative_registerCreativeItems()
-	recipe_registerVanilla()
+	// Overmind fork: once per process, not once per server.
+	vanillaOnce.Do(func() {
+		creative_registerCreativeItems()
+		recipe_registerVanilla()
+	})
 
 	srv.world = srv.createWorld(world.Overworld, &srv.nether, &srv.end)
 	srv.nether = srv.createWorld(world.Nether, &srv.world, &srv.end)
@@ -427,6 +435,10 @@ func DefaultConfig() UserConfig {
 	c.Resources.Required = false
 	return c
 }
+
+// vanillaOnce guards the registrations below, which append every time they run.
+// Overmind fork, see third_party/dragonfly/NOTES.md.
+var vanillaOnce sync.Once
 
 // noinspection ALL
 //

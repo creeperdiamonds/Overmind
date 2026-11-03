@@ -1,0 +1,9 @@
+{
+  "name": "overmind-java-bot",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "minecraft-protocol": "1.68.0",
+    "prismarine-chunk": "1.41.0"
+  }
+}

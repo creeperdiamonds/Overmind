@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/overmind/overmind/internal/skins"
 )
 
 // Config holds every setting Overmind reads at startup.
@@ -16,12 +18,25 @@ type Config struct {
 	BedrockAddr string
 	// JavaAddr is the TCP address Java players connect to.
 	JavaAddr string
+	// JavaOffline skips the Mojang account check, so anyone can join on Java
+	// under any name. Login stays on unless this is set; it is for test bots.
+	JavaOffline bool
 	// AuthEnabled requires an Xbox login. Turn it off only for test bots.
 	AuthEnabled bool
+	// GameMode is what new players get: survival, creative, adventure or
+	// spectator.
+	GameMode string
 	// ViewDistance is the largest view distance in chunks.
 	ViewDistance int
 	// WorldFolder is where the world is saved.
 	WorldFolder string
+	// PlayersFolder is where player data is saved: one database per edition,
+	// bedrock and java, each keyed by account ID.
+	PlayersFolder string
+	// SaveSeconds is how often online players are saved, besides when they leave
+	// and when the server stops. A crash loses at most this much play. 0 turns
+	// the periodic save off.
+	SaveSeconds int
 	// MaxPlayers is how many players may be online at once.
 	MaxPlayers int
 	// ResourcesFolder is where resource packs are read from.
@@ -43,6 +58,28 @@ type Config struct {
 	// algorithms with Bedrock's data, or "overjava", Java's throughout. A world
 	// keeps the profile it was made with only if this is left unchanged.
 	Profile string
+	// Skins is how skins cross between the editions ([skins] in the file).
+	Skins Skins `toml:"skins"`
+}
+
+// Skins is the [skins] table.
+type Skins struct {
+	// BlockOddShapes replaces, for every viewer of both editions, a Bedrock skin
+	// whose shape goes beyond the standard player model (bigger, much smaller,
+	// hidden or floating parts) with a default skin. Off by default.
+	BlockOddShapes bool `toml:"blockOddShapes"`
+	// UploadAccount is the account file (made by "overmind skin-account") of a
+	// Java account whose skin is set to Bedrock players' skins so that Mojang
+	// signs them for Java viewers. Empty, the default, uploads nothing. See
+	// internal/javafront/NOTES.md before using an account: it can be suspended.
+	UploadAccount string `toml:"uploadAccount"`
+	// UploadCache keeps what Mojang signed, a file per skin, for good.
+	UploadCache string `toml:"uploadCache"`
+	// UploadGapSeconds is the least time between two uploads.
+	UploadGapSeconds int `toml:"uploadGapSeconds"`
+	// Uploader, set by tests (never read from the file), is used in place of an
+	// upload account.
+	Uploader *skins.Uploader `toml:"-"`
 }
 
 // Default returns the settings used when a file leaves something out.
@@ -51,11 +88,15 @@ func Default() Config {
 		BedrockAddr:     ":19132",
 		JavaAddr:        ":25565",
 		AuthEnabled:     true,
+		GameMode:        "survival",
 		ViewDistance:    6,
 		WorldFolder:     "world",
+		PlayersFolder:   "players",
+		SaveSeconds:     5,
 		MaxPlayers:      50,
 		ResourcesFolder: "resources",
 		Profile:         "bedrock",
+		Skins:           Skins{UploadCache: "skins", UploadGapSeconds: 30},
 	}
 }
 

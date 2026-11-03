@@ -1,8 +1,24 @@
 # app
 
-Builds and starts the server from the settings.
+Builds and starts the server from the settings. Starts the game, then the Java front end in `internal/javafront`. `Server.Close` stops the autosave, disconnects Java players (saving them), closes the Java store (writing what is pending), then closes the game, which saves Bedrock players and closes theirs. The name check between editions is wired here. Mojang login is on unless the settings say `JavaOffline`.
 
-- **World:** the Overworld uses `worldgen.New(seed)`. The Nether and End are flat floors (Dragonfly builds all three worlds). A player-built Nether portal reaches the Nether; nothing generates an End portal yet. Player data stays off until stage 3.
+`hub.go` is the one place players of both editions join and leave through. Bedrock reaches it from the `Accept` loop and the player's `HandleQuit`; Java from the front end's `Joined` and `Left` hooks. Members are keyed by edition and account. It:
+
+- announces joins and leaves in `chat.Global` (Dragonfly's own messages are turned off), so each client gets them in its own format;
+- shows player chat to each member in its edition's format; Bedrock text going to Java loses section signs and control characters, as Java players may not send them;
+- lists every player in both editions' player lists (`javafront.Front.List`, and `session.List` for Java players in Bedrock's list);
+- counts players for `Server.Online`, the Java server list and the Bedrock server list (`statusProvider`);
+- saves every player online each `SaveSeconds` (a snapshot on its world goroutine; the store writes it).
+
+One account UUID is one player across editions, since Dragonfly, the player lists and the stores key by UUID: `Allow` refuses a Bedrock join whose UUID is a Java player's, and the Java front end asks `OtherPlayerUUID` (a Bedrock reservation or a Bedrock player online). Each side writes its claim before it reads the other's, so two joins at once never both get in.
+
+Player data is saved per edition by account ID under `PlayersFolder` (`bedrock`, `java`) through `internal/playerstore`, which replaces Dragonfly's LevelDB provider.
+
+Skins: the hub gives `javafront.Front.List` a Bedrock player's skin and handle, and tells the front of each Bedrock skin change (`HandleSkinChange`, `Front.BedrockSkinChanged`), so Java rows follow it. With `skins.blockOddShapes` an odd Bedrock skin becomes `skins.StandIn` at join (Dragonfly's `JoinSkin`, a fork hook) and on each change. With `skins.uploadAccount` the uploader starts here and closes with the server.
+
+World:
+
+- **World:** the Overworld uses `worldgen.New(seed)`. The Nether and End are flat floors (Dragonfly builds all three worlds). A player-built Nether portal reaches the Nether; nothing generates an End portal yet.
 - **Seed** (`seed.go`): kept in `overmind-seed.txt` in the world folder. A new world takes `Config.Seed` or a random one. An existing world keeps its own, and a different `Config.Seed` is a start error, because saved chunks would not fit the new terrain. Any int64 works; Bedrock's own handling of negative seeds and seeds of 2^31 or more is not verified.
 - **Spawn:** Dragonfly asks the generator for a spawn only when it has no world database, so on a world with no `level.dat` yet `Start` sets `DefaultSpawn` itself. The search is deterministic, so a world that stopped before its first save finds the same spawn again.
 - **Block registration order:** worldgen registers its own block types (snow layer, seagrass) in its `init`. `uc.Config` opens the world database and that finalizes the block registry, and `worldgen.New` finalizes it too. So this package must import worldgen (it does), and any new custom block type must be registered in an `init` that runs before `Start`. Registering later panics.
