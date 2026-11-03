@@ -61,9 +61,10 @@ var (
 )
 
 // javaOresReplaced names the Java ore and rock placements whose place Bedrock's underground pass takes
-// (bedrock_ores.go): every ore_ placement of Java's ore step, and the profile's extra mountain coal.
+// (bedrock_ores.go): every ore_ placement of Java's ore step, the profile's extra mountain coal, and the
+// sand, clay and gravel disks of Bedrock's surface pass (bedrock_disks.go).
 func javaOresReplaced() map[string]bool {
-	m := map[string]bool{"ore_coal_mountains": true}
+	m := map[string]bool{"ore_coal_mountains": true, "disk_sand": true, "disk_clay": true, "disk_gravel": true}
 	for _, n := range fieldsOf(featureOrder[oreStep]) {
 		if strings.HasPrefix(n, "ore_") {
 			m[n] = true

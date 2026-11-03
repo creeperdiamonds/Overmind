@@ -97,6 +97,13 @@ func applyParity(cells *[chunkCells]bs, cx, cz int, sources []paritySource, touc
 			if w, ok := writer[c.cell]; ok && w.phase == ph && int(w.src) != i && cur != c.old && !laterWins(c.old, cur, c.now) {
 				continue // A same-phase source got there first, unseen.
 			}
+			if above := c.cell + 256; above < chunkCells && !c.now.tagged(tagLogs) && !sameSupport(cur, c.now) {
+				// Ground under another source's plant or trunk keeps holding it: a later write that would
+				// leave it floating is refused, as the Java merge does.
+				if w, ok := writer[above]; ok && int(w.src) != i && standsOnBelow(cells[above]) {
+					continue
+				}
+			}
 			writer[c.cell] = mark{ph, int8(i)}
 			cells[c.cell] = c.now
 			if touched != nil {
@@ -172,11 +179,15 @@ func (b bedrockSeeds) chunk(cx, cz int) uint32 { return bedrockChunkSeed(b.level
 // written so far, and the profile's other placements, Java's algorithms, around them in Java's steps.
 func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	ox, oz := cx*16, cz*16
-	underground := false
+	underground, surface := false, false
 	for _, pl := range d.g.profile.placements {
 		if !underground && pl.step >= oreStep {
 			underground = true
 			d.bedrockPass(bedrockUnderground)
+		}
+		if !surface && pl.step >= vegetationStep {
+			surface = true
+			d.bedrockPass(bedrockSurfacePass)
 		}
 		if d.g.profile.bedrockReplaces[pl.name] || !placementInBiomes(pl, biomes) {
 			continue
@@ -187,7 +198,13 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	if !underground {
 		d.bedrockPass(bedrockUnderground)
 	}
+	if !surface {
+		d.bedrockPass(bedrockSurfacePass)
+	}
 }
+
+// vegetationStep is Java's step of plants and trees, before which Bedrock's surface pass goes.
+const vegetationStep = 9
 
 // oreStep is Java's step of ores, where Bedrock's underground pass goes among the Java placements.
 const oreStep = 6
@@ -229,6 +246,8 @@ const (
 	bFixedGrid
 	bJitteredGrid
 	bTriangle
+	// bAboveTopSolid is a y given as query.above_top_solid of the column drawn so far (bedrock_disks.go).
+	bAboveTopSolid
 )
 
 // bAxis is one coordinate's distribution and extent.
@@ -328,6 +347,10 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 	for i := rule.iterations - 1; i >= 0; i-- {
 		p := [3]int{d.cx * 16, 0, d.cz * 16}
 		for _, a := range rule.order {
+			if rule.axes[a].kind == bAboveTopSolid {
+				p[a] = d.aboveTopSolid(p[0], p[2])
+				continue
+			}
 			p[a] += rule.axes[a].eval(r1)
 		}
 		if p[1] < minY || p[1] > maxY {
