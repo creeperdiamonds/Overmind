@@ -195,8 +195,8 @@ type conn struct {
 	attackReset time.Time
 	// swungAt is when Dragonfly last showed the player's arm swing.
 	swungAt time.Time
-	// reshow is set when the client was sent a new level (a respawn), which
-	// forgets the chunks and entities it was shown.
+	// reshow is set when the client was respawned in the same world, which
+	// leaves it what it was shown but missed what changed meanwhile.
 	reshow bool
 	// dim is the dimension the client is in.
 	dim javaDimension
@@ -1225,7 +1225,9 @@ func (c *conn) SendRespawn(pos mgl64.Vec3, ctrl session.Controllable) {
 	c.teleportSelf(pos, ctrl.Rotation())
 	c.sendHealth()
 	c.sendInventory() // the client starts the new player with nothing
-	// A new level forgets what it was shown: the next tick shows it again.
+	// The client keeps its level (the same dimension), but the conn dropped the
+	// world's callbacks while the player was in no world: the next tick catches
+	// it up (showAgain).
 	c.reshow = true
 }
 

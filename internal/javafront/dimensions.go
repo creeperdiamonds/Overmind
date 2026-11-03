@@ -88,8 +88,11 @@ func (c *conn) oldWorldsDone() bool {
 // arrive shows the client the world the player is in now: a new level
 // (Respawn, with the new dimension's type from the registries it was sent),
 // then its position and the chunks of the new world. Everything it was shown
-// of the old one goes: Java forgets a level's entities and chunks on a
-// respawn. The worlds left behind call the conn no more, so it takes
+// of the old one goes. A Java client starts a new level only for another
+// dimension (26.1's ClientPacketListener.handleRespawn): a Respawn into the
+// dimension it is in keeps its level, chunks and entities. So the old world's
+// entities and chunks are taken off first, which another dimension would have
+// done anyway. The worlds left behind call the conn no more, so it takes
 // callbacks again.
 func (c *conn) arrive(tx *world.Tx, p *player.Player) {
 	w := tx.World()
@@ -97,17 +100,25 @@ func (c *conn) arrive(tx *world.Tx, p *player.Player) {
 	c.away.Store(false)
 	c.reshow = false // the respawn below shows everything again
 	c.cmu.Lock()
+	for pos := range c.sent {
+		c.send(javaproto.UnloadChunk(pos[0], pos[1]))
+	}
 	clear(c.sent)
 	clear(c.pending)
 	c.pending = c.pending[:0]
 	c.cmu.Unlock()
 	clear(c.dirty)
 	clear(c.edits)
+	ids := make([]int32, 0, len(c.ents))
 	for h, s := range c.ents {
 		delete(c.ents, h)
+		ids = append(ids, s.id)
 		if s.player && !c.f.listed(s.account) {
 			c.hideInfo(s.uuid)
 		}
+	}
+	if len(ids) > 0 {
+		c.send(javaproto.EntitiesRemoved(ids...))
 	}
 	c.dim = dimensionOf(w.Dimension())
 	pos := p.Position()
@@ -126,10 +137,15 @@ func (c *conn) arrive(tx *world.Tx, p *player.Player) {
 	c.loader.Move(tx, pos)
 }
 
-// showAgain shows the client again what it was shown before a respawn in the
-// same world: a Java client's new level starts with no entities and no
-// chunks. The chunks go again through the paced path, nearest first; the
-// entities at once, with what they hold and wear.
+// showAgain brings the client up to date after a respawn in the same world.
+// A Java client keeps its level on a Respawn into the dimension it is in, so it
+// still has the chunks and entities it was shown, under the IDs it knows them
+// by: showing them again would give it each entity twice, the old copy a
+// ghost nothing removes. What it may lack is what the world did while the
+// player was in no world for a moment, as the conn drops the world's callbacks
+// then (viewing): entities that went (picked up, merged, despawned) are taken
+// off, entities that came are shown, and the chunks go again through the
+// paced path, nearest first, for blocks changed in that moment.
 func (c *conn) showAgain(tx *world.Tx) {
 	c.cmu.Lock()
 	sent := slices.Collect(maps.Keys(c.sent))
@@ -137,23 +153,20 @@ func (c *conn) showAgain(tx *world.Tx) {
 	for _, pos := range sent {
 		c.dirty[pos] = struct{}{}
 	}
+	var gone []int32
 	for h, s := range c.ents {
-		delete(c.ents, h)
-		e, ok := h.Entity(tx)
-		if !ok {
-			if s.player && !c.f.listed(s.account) {
-				c.hideInfo(s.uuid)
-			}
+		if _, ok := h.Entity(tx); ok {
 			continue
 		}
-		c.ViewEntity(e)
-		c.ViewEntityItems(e)
-		c.ViewEntityArmour(e)
+		delete(c.ents, h)
+		gone = append(gone, s.id)
+		if s.player && !c.f.listed(s.account) {
+			c.hideInfo(s.uuid)
+		}
 	}
-	// And any entity of the chunks shown that the conn has not got: a respawn
-	// takes the player out of its world for a moment, and the conn drops the
-	// world's callbacks while it is in none (viewing), entities that came then
-	// included.
+	if len(gone) > 0 {
+		c.send(javaproto.EntitiesRemoved(gone...))
+	}
 	for _, pos := range sent {
 		col, ok := c.loader.Chunk(pos)
 		if !ok {

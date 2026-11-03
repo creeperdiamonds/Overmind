@@ -64,10 +64,14 @@ client.on('update_health', (p) => { seen.health = p.health })
 const heights = { "minecraft:the_nether": [0, 256], "minecraft:the_end": [0, 256] }
 let dim = { name: "minecraft:overworld", minY: -64, height: 384 }
 const enter = (ws) => { const h = heights[ws.name] || [-64, 384]; dim = { name: ws.name, minY: h[0], height: h[1] }; seen.dimension = ws.name; seen.dimensionType = ws.dimension }
+// As the vanilla client (26.1 ClientPacketListener.handleRespawn) does, a new
+// level only comes with another dimension: a respawn into the same dimension
+// keeps the level, its chunks and its entities.
 client.on('respawn', (p) => {
   seen.respawns++
+  const other = p.worldState.name !== dim.name
   enter(p.worldState)
-  chunks.clear(); entities.clear(); blocks.clear(); states.clear()
+  if (other) { chunks.clear(); entities.clear(); blocks.clear(); states.clear() }
 })
 client.on('multi_block_change', (p) => {
   const c = p.chunkCoordinates
