@@ -47,8 +47,8 @@ func sweepBench(b *testing.B, cache int64, workers int) {
 	b.Logf("cache by kind (0 bases, 1.. source levels): hits %v misses %v", st.Hits, st.Misses)
 }
 
-func BenchmarkSweepCache(b *testing.B)         { sweepBench(b, DefaultCacheBytes, 1) }
-func BenchmarkSweepCacheWorkers(b *testing.B)  { sweepBench(b, DefaultCacheBytes, runtime.NumCPU()) }
+func BenchmarkSweepCache(b *testing.B)        { sweepBench(b, DefaultCacheBytes, 1) }
+func BenchmarkSweepCacheWorkers(b *testing.B) { sweepBench(b, DefaultCacheBytes, runtime.NumCPU()) }
 
 // Sweeps at other caps, to find where the cache stops rebuilding bases (ruling 31).
 func BenchmarkSweepCap(b *testing.B) {

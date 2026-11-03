@@ -166,15 +166,15 @@ func randomizedProp(pv stateProvider, key string, values intProvider) stateProvi
 // rootSystem is the root_system feature of the rooted azalea: a tree on the surface above a cave
 // ceiling, with a column of rooted dirt down to the cave and hanging roots under it.
 type rootSystem struct {
-	tree                                  *placement
-	space, radius                         int
-	replace                               uint32
-	root                                  bs
-	attempts, maxHeight                   int
-	hangRadius, hangSpan, hangAttempts    int
-	hang                                  bs
-	allowedWater                          int
-	allowed                               predicate
+	tree                               *placement
+	space, radius                      int
+	replace                            uint32
+	root                               bs
+	attempts, maxHeight                int
+	hangRadius, hangSpan, hangAttempts int
+	hang                               bs
+	allowedWater                       int
+	allowed                            predicate
 }
 
 func (c *rootSystem) feature(d *decoration, o pos) bool {

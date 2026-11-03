@@ -43,10 +43,9 @@ func dualNoiseState(lo, hi int, slow *normalNoise, slowScale float32, main *norm
 // with weight one, as the game builds them.
 func segmented(block, key string, lo, hi int) stateProvider {
 	var list []weightedState
-	_ = sAir // Made after the base states, so air stays state zero.
 	for n := lo; n <= hi; n++ {
 		for _, a := range horizontal {
-			list = append(list, weightedState{1, stateOf(fmt.Sprintf("%s[facing=%s,%s=%d]", block, dirName(a), key, n))})
+			list = append(list, weightedState{1, laterState(fmt.Sprintf("%s[facing=%s,%s=%d]", block, dirName(a), key, n))})
 		}
 	}
 	return weightedStates(list...)
@@ -90,8 +89,8 @@ func defineFlowers(t *tableBuilder) {
 
 	// Dry grass in deserts and badlands.
 	dry := simpleBlock(weightedStates(weightedState{1, stateOf("short_dry_grass")}, weightedState{1, stateOf("tall_dry_grass")}))
-	t.def("patch_dry_grass_desert", dry, chain(mods(rarityMod{3}, inSquareMod{}, ws, biomeMod{}), patch(64, 7, 3, airOnly))...)
-	t.def("patch_dry_grass_badlands", dry, chain(mods(rarityMod{6}, inSquareMod{}, ws, biomeMod{}), patch(64, 7, 3, airOnly))...)
+	t.def("patch_dry_grass_desert", dry, chain(mods(rarityMod{3}, inSquareMod{}, mb, biomeMod{}), patch(64, 7, 3, airOnly))...)
+	t.def("patch_dry_grass_badlands", dry, chain(mods(rarityMod{6}, inSquareMod{}, mb, biomeMod{}), patch(64, 7, 3, airOnly))...)
 
 	// Firefly bushes: in swamps, and beside water anywhere.
 	firefly := simpleBlock(simpleState("firefly_bush"))
@@ -106,7 +105,7 @@ func defineFlowers(t *tableBuilder) {
 	}
 	nearWater := filterMod{allOf(onlyAir, survives, waterBelowSide)}
 	fireflyPatch := patch(20, 4, 3, airOnly)
-	t.def("patch_firefly_bush_swamp", firefly, chain(mods(countMod{constInt(2)}, inSquareMod{}, mb, biomeMod{}), fireflyPatch)...)
+	t.def("patch_firefly_bush_swamp", firefly, chain(mods(rarityMod{8}, inSquareMod{}, mb, biomeMod{}), fireflyPatch)...)
 	t.def("patch_firefly_bush_near_water_swamp", firefly, chain(mods(countMod{constInt(3)}, inSquareMod{}, mb, biomeMod{}, nearWater), fireflyPatch)...)
 	t.def("patch_firefly_bush_near_water", firefly, chain(mods(countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmMotionNoLeaves}, biomeMod{}, nearWater), fireflyPatch)...)
 

@@ -13,12 +13,6 @@ func emptyWaterOrLava(s bs) bool { return emptyOrWater(s) || s.block() == sLava.
 
 func dripstoneBase(s bs) bool { return s.block() == sDripstone.block() || s.tagged(tagBaseStone) }
 
-// laterState makes a state after the base states, so air stays state zero whatever the file order.
-func laterState(name string) bs {
-	_ = sAir
-	return stateOf(name)
-}
-
 var (
 	sDripstone = laterState("dripstone_block")
 	// pointedStates holds pointed dripstone by direction (0 up, 1 down), thickness and water.
@@ -183,13 +177,13 @@ func clampedMapF(v, a, b, c, e float32) float32 {
 
 // clusterCfg is a dripstone cluster's configuration.
 type clusterCfg struct {
-	reach                     int
-	height, radius, thickness intProvider
-	heightDiff, heightDev     int
-	density                   [2]float32 // Uniform.
+	reach                         int
+	height, radius, thickness     intProvider
+	heightDiff, heightDev         int
+	density                       [2]float32 // Uniform.
 	wetMean, wetDev, wetLo, wetHi float32
-	edgeChance                float32
-	edgeReach, centreReach    int
+	edgeChance                    float32
+	edgeReach, centreReach        int
 }
 
 func dripstoneCluster(c *clusterCfg) feature {
@@ -303,14 +297,14 @@ func canPool(d *decoration, p pos) bool {
 
 // largeCfg is a large dripstone's configuration.
 type largeCfg struct {
-	reach                    int
-	radiusLo, radiusHi       int
-	scale                    [2]float32
-	ratio                    float32
-	topBlunt, bottomBlunt    [2]float32
-	wind                     [2]float32
-	windRadius               int
-	windBlunt                float32
+	reach                 int
+	radiusLo, radiusHi    int
+	scale                 [2]float32
+	ratio                 float32
+	topBlunt, bottomBlunt [2]float32
+	wind                  [2]float32
+	windRadius            int
+	windBlunt             float32
 }
 
 // dripstoneHeight is the shape of a large dripstone: its height at a distance from the middle.
@@ -327,11 +321,11 @@ func dripstoneHeight(radius, maxRadius, scale, minRadius float64) float64 {
 }
 
 type largeDrip struct {
-	root      pos
-	up        bool
-	radius    int
-	blunt     float64
-	scale     float64
+	root   pos
+	up     bool
+	radius int
+	blunt  float64
+	scale  float64
 }
 
 func (l *largeDrip) heightAt(r float32) int {

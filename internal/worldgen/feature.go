@@ -235,8 +235,13 @@ type decoration struct {
 	live           [liveSpan * liveSpan]liveChunk
 	gen            uint32
 	r              featRand
-	log            []changeEntry
-	used           []int32
+	// region is the source chunk's level random: Java's WorldGenRegion makes one per chunk it
+	// decorates, from the seed and the chunk's corner, and blocks that place themselves draw from it
+	// (a pale moss carpet's topper) instead of from the feature's random. Here a source is decorated
+	// alone, so the source's run owns it from the start, as Java's region does.
+	region xoro
+	log    []changeEntry
+	used   []int32
 	// pre is what the source's earlier neighbours left, each run alone, written before the source runs
 	// so its features see it; preLen is how much of the log those writes take.
 	pre     []sourceWrite
@@ -731,6 +736,7 @@ func (d *decoration) runSource(cx, cz int) {
 	d.r.setSeed(d.g.seed)
 	a, b := d.r.nextLong()|1, d.r.nextLong()|1
 	ox, oz := cx*16, cz*16
+	d.region = d.g.regionFac.at(int32(ox), 0, int32(oz))
 	d.decSeed = int64(ox)*a + int64(oz)*b ^ d.g.seed
 	l := d.chunkAt(cx, cz)
 	d.mapsReady(l)

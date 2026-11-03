@@ -39,13 +39,13 @@ var blockFlagGroups = []struct {
 	flags uint16
 	names string
 }{
-	{0, "allium azure_bluet big_dripleaf big_dripleaf_stem blue_orchid brown_mushroom cactus_flower cave_vines cave_vines_plant closed_eyeblossom cocoa cornflower dandelion firefly_bush kelp kelp_plant lilac lily_of_the_valley lily_pad mangrove_propagule open_eyeblossom orange_tulip oxeye_daisy pale_hanging_moss peony pink_petals pink_tulip poppy powder_snow red_mushroom red_tulip rose_bush sea_pickle small_dripleaf spore_blossom sugar_cane sunflower sweet_berry_bush torchflower white_tulip wildflowers"},
+	{0, "tube_coral tube_coral_fan tube_coral_wall_fan brain_coral brain_coral_fan brain_coral_wall_fan bubble_coral bubble_coral_fan bubble_coral_wall_fan fire_coral fire_coral_fan fire_coral_wall_fan horn_coral horn_coral_fan horn_coral_wall_fan allium azure_bluet big_dripleaf big_dripleaf_stem blue_orchid brown_mushroom cactus_flower cave_vines cave_vines_plant closed_eyeblossom cocoa cornflower dandelion firefly_bush kelp kelp_plant lilac lily_of_the_valley lily_pad mangrove_propagule open_eyeblossom orange_tulip oxeye_daisy pale_hanging_moss peony pink_petals pink_tulip poppy powder_snow red_mushroom red_tulip rose_bush sea_pickle small_dripleaf spore_blossom sugar_cane sunflower sweet_berry_bush torchflower white_tulip wildflowers"},
 	{fMotion | fSolid, "acacia_leaves amethyst_cluster azalea_leaves bamboo birch_leaves cactus cherry_leaves chest dark_oak_leaves flowering_azalea_leaves jungle_leaves large_amethyst_bud mangrove_leaves medium_amethyst_bud oak_leaves pale_oak_leaves pointed_dripstone sculk_vein small_amethyst_bud spruce_leaves"},
 	{fReplaceable, "bush dead_bush fern glow_lichen hanging_roots large_fern leaf_litter resin_clump seagrass short_dry_grass short_grass tall_dry_grass tall_grass tall_seagrass vine"},
 	{fAir | fReplaceable, "air cave_air void_air"},
 	{fMotion | fSolid | fSturdyUp | fSturdyDown | fSturdySide, "ice mangrove_roots spawner"},
 	{fLiquid | fReplaceable, "lava water"},
-	{fMotion | fSolid | fSturdyDown, "sculk_sensor sculk_shrieker"},
+	{fMotion | fSolid | fSturdyDown, "sandstone_slab sculk_sensor sculk_shrieker"},
 	{fSturdyUp, "azalea flowering_azalea"},
 	{fSolid, "bamboo_sapling"},
 	{fSturdyDown, "moss_carpet"},
@@ -248,3 +248,14 @@ var (
 	sTerrWhite  = stateOf("white_terracotta")
 	sTerrLight  = stateOf("light_gray_terracotta")
 )
+
+// laterState makes a state after the base states. Naming air makes Go make it first, so it stays
+// state zero whatever order the package's variables are made in. Every state made by a package
+// variable outside this block goes through it.
+func laterState(name string) bs {
+	_ = sAir
+	return stateOf(name)
+}
+
+// sSnowLayer is the one snow layer generation places, made once for the features that test for it.
+var sSnowLayer = laterState("snow[layers=1]")

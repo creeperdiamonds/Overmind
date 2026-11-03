@@ -14,28 +14,44 @@ var (
 
 var mossSides = [3]string{"none", "low", "tall"}
 
+// carpetForm is a pale moss carpet's shape: bottom or topper, and a side kind (0 none, 1 low, 2 tall)
+// for each horizontal direction (north, east, south, west).
+type carpetForm struct {
+	bottom bool
+	sides  [4]int
+}
+
+// carpetStates holds every pale moss carpet state by bottom and sides, and carpetForms the way back.
+// Both are made once, so placing a carpet reads no state names and takes no lock.
+var carpetStates, carpetForms = func() (t [2][3][3][3][3]bs, back map[bs]carpetForm) {
+	back = map[bs]carpetForm{}
+	for b := range 2 {
+		for n := range 3 {
+			for e := range 3 {
+				for so := range 3 {
+					for w := range 3 {
+						s := laterState("pale_moss_carpet[bottom=" + boolWord(b) + ",east=" + mossSides[e] + ",north=" + mossSides[n] +
+							",south=" + mossSides[so] + ",west=" + mossSides[w] + "]")
+						t[b][n][e][so][w] = s
+						back[s] = carpetForm{b == 1, [4]int{n, e, so, w}}
+					}
+				}
+			}
+		}
+	}
+	return t, back
+}()
+
 // paleCarpet is a pale moss carpet state: bottom or topper, with a side kind by horizontal direction
 // (north, east, south, west).
 func paleCarpet(bottom bool, sides [4]int) bs {
-	_ = sAir // Made after the base states, so air stays state zero.
-	return stateOf("pale_moss_carpet[bottom=" + boolWord(btoi(bottom)) + ",east=" + mossSides[sides[1]] + ",north=" + mossSides[sides[0]] +
-		",south=" + mossSides[sides[2]] + ",west=" + mossSides[sides[3]] + "]")
+	return carpetStates[btoi(bottom)][sides[0]][sides[1]][sides[2]][sides[3]]
 }
 
+// carpetSides is a state's carpet shape; any other block gives a topper with no sides.
 func carpetSides(s bs) (bottom bool, sides [4]int) {
-	if s.block() != paleCarpet(true, [4]int{}).block() {
-		return false, sides
-	}
-	bottom = propOf(s.name(), "bottom") == "true"
-	for i, a := range horizontal {
-		switch propOf(s.name(), dirName(a)) {
-		case "low":
-			sides[i] = 1
-		case "tall":
-			sides[i] = 2
-		}
-	}
-	return bottom, sides
+	f := carpetForms[s]
+	return f.bottom, f.sides
 }
 
 // carpetUpdated is the carpet's shape from its neighbours.
@@ -67,26 +83,46 @@ func carpetUpdated(d *decoration, bottom bool, sides [4]int, p pos, create bool)
 	return sides
 }
 
-var sPaleCarpetBlock = paleCarpet(true, [4]int{}).block()
+var sPaleCarpetBlock = carpetStates[1][0][0][0][0].block()
 
-// placeCarpet is the mossy carpet's own placement: a bottom carpet, maybe with a topper over it.
+// placeCarpet is the mossy carpet's own placement: a bottom carpet shaped by its neighbours, then
+// maybe a topper over it. Java's simple_block hands the carpet the level's random, not the feature's,
+// so the topper's side coins come from the source's region random (decoration.region), as a raw
+// xoroshiro boolean: the low bit of the next long.
 func placeCarpet(d *decoration, p pos) {
 	sides := carpetUpdated(d, true, [4]int{}, p, true)
 	d.set(p.x, p.y, p.z, paleCarpet(true, sides))
 	up := p.step(dUp)
+	if top, ok := carpetTopper(d, p, func() bool { return d.region.next()&1 != 0 }); ok {
+		d.set(up.x, up.y, up.z, top)
+		sides = carpetUpdated(d, true, sides, p, true)
+		d.set(p.x, p.y, p.z, paleCarpet(true, sides))
+	}
+}
+
+// carpetTopper is the topper a carpet at p grows. There is none where the block above is a bottom
+// carpet, or is neither a carpet nor replaceable; then no coin is drawn. Each side the topper could
+// have is kept when keep says so, drawn north, east, south, west, and only for those sides. There is
+// none either when no side is left, or when the topper is the block already there.
+func carpetTopper(d *decoration, p pos, keep func() bool) (bs, bool) {
+	up := p.step(dUp)
+	prev := d.at(up)
+	isCarpet := prev.block() == sPaleCarpetBlock
+	if prevBottom, _ := carpetSides(prev); isCarpet && prevBottom || !isCarpet && !prev.has(fReplaceable) {
+		return 0, false
+	}
 	top := carpetUpdated(d, false, [4]int{}, up, true)
 	any := false
 	for i := range top {
-		if top[i] != 0 && !d.r.nextBool() {
+		if top[i] != 0 && !keep() {
 			top[i] = 0
 		}
 		any = any || top[i] != 0
 	}
-	if any {
-		d.set(up.x, up.y, up.z, paleCarpet(false, top))
-		sides = carpetUpdated(d, true, sides, p, true)
-		d.set(p.x, p.y, p.z, paleCarpet(true, sides))
+	if s := paleCarpet(false, top); any && s != prev {
+		return s, true
 	}
+	return 0, false
 }
 
 // paleMoss is the pale oak's moss decorator: a moss patch at its foot and hanging moss under logs and
@@ -165,7 +201,7 @@ func creakingHeart(chance float32) treeDecorator {
 }
 
 func definePale(t *tableBuilder) {
-	carpet := laterState("pale_moss_carpet[bottom=true,east=none,north=none,south=none,west=none]")
+	carpet := paleCarpet(true, [4]int{})
 	paleVegetation := weightedStates(weightedState{25, carpet}, weightedState{25, stateOf("short_grass")}, weightedState{10, stateOf("tall_grass[half=lower]")})
 	plant := newNestedPlacement(func(d *decoration, p pos) bool {
 		s := paleVegetation(d, p)
@@ -195,5 +231,6 @@ func definePale(t *tableBuilder) {
 
 	eyeblossom := simpleBlock(simpleState("closed_eyeblossom"))
 	t.def("pale_garden_flowers", eyeblossom, chain(mods(rarityMod{8}, inSquareMod{}, heightmapMod{hmMotionNoLeaves}, biomeMod{}), patch(96, 7, 3, airOnly))...)
-	t.def("flower_pale_garden", eyeblossom, chain(mods(rarityMod{32}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{}), patch(1, 0, 0, airOnly))...)
+	// A single eyeblossom: Java checks only that it survives there, not that the place is air.
+	t.def("flower_pale_garden", eyeblossom, rarityMod{32}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{})
 }

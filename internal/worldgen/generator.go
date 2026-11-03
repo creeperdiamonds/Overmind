@@ -33,9 +33,11 @@ type Generator struct {
 	blocks     blocks
 	sf         surfaceFactories
 	oreFac     seedFactory
-	profile    *Profile
-	geodeOnce  sync.Once
-	geode      *normalNoise
+	// regionFac seeds each source chunk's level random, Java's WorldGenRegion random (feature.go).
+	regionFac seedFactory
+	profile   *Profile
+	geodeOnce sync.Once
+	geode     *normalNoise
 }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
@@ -47,11 +49,13 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	w := root.forkFactory()
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
+	region := w.named("minecraft:worldgen_region_random")
 	return &Generator{
 		cache:      newSharedCache(DefaultCacheBytes),
 		seed:       seed,
 		sf:         newSurfaceFactories(w),
 		oreFac:     ore.forkFactory(),
+		regionFac:  region.forkFactory(),
 		profile:    profile,
 		zoomSeed:   biomeZoomSeed(seed),
 		climate:    newClimateNoises(w),

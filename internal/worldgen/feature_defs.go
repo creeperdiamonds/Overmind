@@ -37,6 +37,12 @@ func treeBase(n intProvider, depth int) []modifier {
 	return mods(countMod{n}, inSquareMod{}, waterDepthMod{depth}, heightmapMod{hmOceanFloor}, biomeMod{})
 }
 
+// survivingTrees is treeBase for the tree placements that also check, before choosing a tree, that
+// the sapling would survive there, as Java's trees_birch, trees_snowy and trees_badlands do.
+func survivingTrees(n intProvider, sapling string) []modifier {
+	return append(treeBase(n, 0), filterMod{wouldSurvive(sapling)})
+}
+
 func checked(cfg *treeCfg, sapling string) *placement {
 	return newNestedPlacement(treeFeature(cfg), filterMod{wouldSurvive(sapling)})
 }
@@ -135,7 +141,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("forest_rock", blobFeature(stateOf("mossy_cobblestone"), anyOf(matchTag(tagDirtLike), matchTag(tagBaseStone))), countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{})
 	t.def("ice_spike", spikeFeature(sPacked, blockSet("snow_block"), blockSet("dirt sand gravel snow_block ice")), countMod{constInt(3)}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{})
 	t.def("ice_patch", diskFeature(uniInt(2, 3), 1, matchBlocks("dirt grass_block podzol coarse_dirt mycelium snow_block ice"), always(sPacked)),
-		countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmMotionBlocking}, filterMod{offsetP(0, -1, 0, matchBlocks("snow_block"))}, biomeMod{})
+		countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmMotionBlocking}, offsetMod{constInt(0), constInt(-1)}, filterMod{matchBlocks("snow_block")}, biomeMod{})
 	t.def("blue_ice", blueIceFeature, countMod{uniInt(0, 19)}, inSquareMod{}, heightRangeMod{uniHeight(30, 61)}, biomeMod{})
 	waterOnly := filterMod{func(d *decoration, p pos) bool { return d.at(p) == sWater }}
 	diskMods := func(n int) []modifier {
@@ -156,7 +162,7 @@ func defineSteps(t *tableBuilder) {
 			return sDirt, true
 		}
 		return sGrass, true
-	}), diskMods(1)...)
+	}), countMod{constInt(1)}, inSquareMod{}, heightmapMod{hmOceanFloorWG}, offsetMod{constInt(0), constInt(-1)}, filterMod{matchBlocks("mud")}, biomeMod{})
 	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(t.prof.magmaCount[0], t.prof.magmaCount[1])}, inSquareMod{}, heightRangeMod{uniHeight(minY, 256)}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -2}, biomeMod{})
 	waterRock := blockSet("stone granite diorite andesite deepslate tuff calcite dirt snow_block powder_snow packed_ice")
 	lavaRock := blockSet("stone granite diorite andesite deepslate tuff")
@@ -200,10 +206,11 @@ func defineSteps(t *tableBuilder) {
 		return append(append([]treeDecorator{}, extra...), lit...)
 	}
 
-	t.def("trees_plains", treeSel(checkedOak(bee5), selEntry{third, checkedFancy(bee5)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(0, 20, 1), 0)...)
+	t.def("trees_plains", treeSel(checkedOak(bee5), selEntry{third, checkedFancy(bee5)}, selEntry{0.0125, fallenOak()}),
+		mods(countMod{countExtra(0, 20, 1)}, inSquareMod{}, waterDepthMod{0}, heightmapMod{hmOceanFloor}, filterMod{wouldSurvive(oak)}, biomeMod{})...)
 	t.def("trees_birch_and_oak_leaf_litter", treeSel(checkedOak(withLit(bee2)...), selEntry{0.0025, fallenBirch(5, 8)}, selEntry{0.2, checkedBirch(withLit(bee2)...)}, selEntry{0.1, checkedFancy(withLit(bee2)...)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_flower_forest", treeSel(checkedOak(bee2), selEntry{0.0025, fallenBirch(5, 8)}, selEntry{0.2, checkedBirch(bee2)}, selEntry{0.1, checkedFancy(bee2)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(6, 10, 1), 0)...)
-	t.def("trees_birch", treeSel(checkedBirch(bee2), selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
+	t.def("trees_birch", treeSel(checkedBirch(bee2), selEntry{0.0125, fallenBirch(5, 8)}), survivingTrees(countExtra(10, 10, 1), birch)...)
 	t.def("birch_tall", treeSel(checked(birchTree(bee2), birch), selEntry{0.00625, fallenBirch(5, 15)}, selEntry{0.5, checked(superBirchTree(bee2), birch)}, selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("dark_forest_vegetation", treeSel(checkedOak(lit...),
 		selEntry{0.025, newNestedPlacement(hugeMushroom(false, 3))}, selEntry{0.05, newNestedPlacement(hugeMushroom(true, 2))},
@@ -212,7 +219,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("trees_taiga", treeSel(spruce(), selEntry{third, pine()}, selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_old_growth_spruce_taiga", treeSel(spruce(), selEntry{third, checked(megaSpruce(13, 17), "spruce_sapling")}, selEntry{third, pine()}, selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_old_growth_pine_taiga", treeSel(spruce(), selEntry{0.025641026, checked(megaSpruce(13, 17), "spruce_sapling")}, selEntry{0.30769232, checked(megaSpruce(3, 7), "spruce_sapling")}, selEntry{third, pine()}, selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(10, 10, 1), 0)...)
-	t.def("trees_snowy", treeSel(spruce(), selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(0, 10, 1), 0)...)
+	t.def("trees_snowy", treeSel(spruce(), selEntry{0.0125, fallenSpruce()}), survivingTrees(countExtra(0, 10, 1), "spruce_sapling")...)
 	t.def("trees_grove", treeSel(onSnow(spruceTree()), selEntry{third, onSnow(pineTree())}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_savanna", treeSel(checkedOak(), selEntry{0.8, checked(acaciaTree(), "acacia_sapling")}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(1, 10, 1), 0)...)
 	t.def("trees_windswept_savanna", treeSel(checkedOak(), selEntry{0.8, checked(acaciaTree(), "acacia_sapling")}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(2, 10, 1), 0)...)
@@ -229,7 +236,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("trees_water", treeSel(checkedOak(), selEntry{0.1, checkedFancy()}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(0, 10, 1), 0)...)
 	swampOak := treeOf("oak_log", "oak_leaves", straightTrunk{h(5, 3, 0)}, blob(3, 0, 3), 1, 0, 1, false, leaveVine(0.25))
 	t.def("trees_swamp", newNestedOnly(checked(swampOak, oak)), treeBase(countExtra(2, 10, 1), 2)...)
-	t.def("trees_badlands", treeSel(checkedOak(lit...), selEntry{0.0125, fallenOak()}), treeBase(countExtra(5, 10, 1), 0)...)
+	t.def("trees_badlands", treeSel(checkedOak(lit...), selEntry{0.0125, fallenOak()}), survivingTrees(countExtra(5, 10, 1), oak)...)
 	t.def("trees_meadow", treeSel(checked(superBirchTree(bee5), birch), selEntry{0.5, checkedFancy(bee5)}), mods(rarityMod{100}, inSquareMod{}, waterDepthMod{0}, heightmapMod{hmOceanFloor}, biomeMod{})...)
 	cherry := treeOf("cherry_log", "cherry_leaves", cherryTrunk{h(7, 1, 0), -4, -3, weightedInts(weightedInt{1, constInt(1)}, weightedInt{1, constInt(2)}, weightedInt{1, constInt(3)}), uniInt(2, 4), uniInt(-1, 0)},
 		cherryFoliage{foliageBase{constInt(4), constInt(0)}, constInt(5), 0.25, 0.5, 0.16666667, 0.33333334}, 1, 0, 2, true, bee5)
@@ -237,21 +244,9 @@ func defineSteps(t *tableBuilder) {
 
 	// Mangroves: an upwards branching trunk on roots, unverified against a Java run (no traced chunk
 	// holds a mangrove swamp).
-	propagule := randomizedProp(simpleState("mangrove_propagule[age=0,hanging=true,stage=0,waterlogged=false]"), "age", uniInt(0, 4))
-	mangrove := func(base, a, b int, steps intProvider, limit int) *treeCfg {
-		through := blockSet("mud muddy_mangrove_roots mangrove_roots mangrove_leaves mangrove_log mangrove_propagule moss_carpet vine")
-		c := treeOf("mangrove_log", "mangrove_leaves", branchingTrunk{h(base, a, b), steps, uniInt(0, 1), 0.5},
-			spreadFoliage{foliageBase{constInt(3), constInt(0)}, constInt(2), 70}, limit, 0, 2, true,
-			leaveVine(0.125), attachedToLeaves(0.14, 1, 0, propagule, 2, []dir{dDown}), beehive(0.01))
-		c.validExtra = through
-		c.roots = &mangroveRoots{offset: uniInt(1, 3), root: stateOf("mangrove_roots[waterlogged=false]"), above: stateOf("moss_carpet"), aboveChance: 0.5,
-			through: blockSet("mud muddy_mangrove_roots mangrove_roots moss_carpet vine mangrove_propagule snow"), muddyIn: blockSet("mud muddy_mangrove_roots"),
-			muddy: stateOf("muddy_mangrove_roots[axis=y]"), width: 8, length: 15, skew: 0.2}
-		return c
-	}
-	mangroveShort, mangroveTall := checked(mangrove(2, 1, 4, uniInt(1, 4), 2), "mangrove_propagule"), checked(mangrove(4, 1, 9, uniInt(1, 6), 3), "mangrove_propagule")
+	mangroveShort, mangroveTall := checked(mangroveTree(false), "mangrove_propagule"), checked(mangroveTree(true), "mangrove_propagule")
 	t.def("trees_mangrove", treeSel(mangroveShort, selEntry{0.85, mangroveTall}),
-		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{}, filterMod{wouldSurvive("mangrove_propagule")})...)
+		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{})...) // Each tree checks the propagule survives.
 
 	// Plants. A patch is a count, an offset, a filter and simple_block.
 	grass := func(n int, name string, f predicate) {
@@ -264,7 +259,7 @@ func defineSteps(t *tableBuilder) {
 	grass(5, "patch_grass_normal", airOnly)
 	t.def("patch_grass_plain", simpleBlock(simpleState("short_grass")), chain(mods(noiseThresholdMod{-0.8, 5, 10}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(32, 7, 3, airOnly))...)
 	grass(20, "patch_grass_savanna", airOnly)
-	grass(2, "patch_grass_meadow", airOnly)
+	t.def("patch_grass_meadow", simpleBlock(simpleState("short_grass")), chain(mods(noiseThresholdMod{-0.8, 5, 10}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(16, 7, 3, airOnly))...)
 	t.def("patch_grass_taiga", simpleBlock(fernMix), chain(mods(countMod{constInt(7)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(32, 7, 3, airOnly))...)
 	t.def("patch_grass_taiga_2", simpleBlock(fernMix), chain(mods(inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(32, 7, 3, airOnly))...)
 	t.def("patch_grass_jungle", simpleBlock(jungleMix), chain(mods(countMod{constInt(25)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}),
@@ -281,17 +276,18 @@ func defineSteps(t *tableBuilder) {
 		t.def(name, simpleBlock(pv), chain(m, patch(n, 7, 3, airOnly))...)
 	}
 	poppyMix := weightedStates(weightedState{2, stateOf("poppy")}, weightedState{1, stateOf("dandelion")})
-	plantAt("flower_default", poppyMix, 64, rarityMod{32}, inSquareMod{}, mb, biomeMod{})
-	plantAt("flower_warm", poppyMix, 64, rarityMod{16}, inSquareMod{}, mb, biomeMod{})
+	// One flower each, with no patch round it (Java 26.1's flower_default and flower_warm).
+	t.def("flower_default", simpleBlock(poppyMix), rarityMod{32}, inSquareMod{}, mb, biomeMod{})
+	t.def("flower_warm", simpleBlock(poppyMix), rarityMod{16}, inSquareMod{}, mb, biomeMod{})
 	plantAt("patch_dead_bush", simpleState("dead_bush"), 4, countMod{constInt(1)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_dead_bush_2", simpleState("dead_bush"), 4, countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_dead_bush_badlands", simpleState("dead_bush"), 4, countMod{constInt(20)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
-	t.def("patch_bush", simpleBlock(simpleState("bush")), chain(mods(rarityMod{4}, inSquareMod{}, heightmapMod{hmWorldSurface}, biomeMod{}), patch(24, 5, 3, airOnly))...)
+	t.def("patch_bush", simpleBlock(simpleState("bush")), chain(mods(rarityMod{4}, inSquareMod{}, mb, biomeMod{}), patch(24, 5, 3, airOnly))...)
 	plantAt("patch_berry_common", simpleState("sweet_berry_bush[age=3]"), 96, rarityMod{32}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_berry_rare", simpleState("sweet_berry_bush[age=3]"), 96, rarityMod{384}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	onGrass := allOf(airOnly, offsetP(0, -1, 0, matchBlocks("grass_block")))
 	gourd := func(name, block string, tries int, chance int) {
-		t.def(name, simpleBlock(simpleState(block)), chain(mods(rarityMod{chance}, inSquareMod{}, heightmapMod{hmWorldSurface}, biomeMod{}), patch(tries, 7, 3, onGrass))...)
+		t.def(name, simpleBlock(simpleState(block)), chain(mods(rarityMod{chance}, inSquareMod{}, mb, biomeMod{}), patch(tries, 7, 3, onGrass))...)
 	}
 	gourd("patch_pumpkin", "pumpkin", 96, 300)
 	gourd("patch_melon", "melon", 64, 6)
@@ -301,7 +297,7 @@ func defineSteps(t *tableBuilder) {
 	plantAt("red_mushroom_normal", mushroomRed, 96, rarityMod{512}, inSquareMod{}, mb, biomeMod{})
 	plantAt("brown_mushroom_taiga", mushroomBrown, 96, rarityMod{4}, inSquareMod{}, mb, biomeMod{})
 	plantAt("red_mushroom_taiga", mushroomRed, 96, rarityMod{256}, inSquareMod{}, mb, biomeMod{})
-	plantAt("brown_mushroom_old_growth", mushroomBrown, 96, rarityMod{4}, inSquareMod{}, mb, biomeMod{})
+	plantAt("brown_mushroom_old_growth", mushroomBrown, 96, countMod{constInt(3)}, rarityMod{4}, inSquareMod{}, mb, biomeMod{})
 	plantAt("red_mushroom_old_growth", mushroomRed, 96, rarityMod{171}, inSquareMod{}, mb, biomeMod{})
 	plantAt("brown_mushroom_swamp", mushroomBrown, 96, countMod{constInt(2)}, inSquareMod{}, mb, biomeMod{})
 	plantAt("red_mushroom_swamp", mushroomRed, 96, rarityMod{64}, inSquareMod{}, mb, biomeMod{})
@@ -309,13 +305,13 @@ func defineSteps(t *tableBuilder) {
 	cane := blockColumn(dUp, airOnly, false, columnLayer{biasedInt(2, 4), simpleState("sugar_cane[age=0]")})
 	caneFilter := allOf(airOnly, wouldSurvive("sugar_cane[age=0]"))
 	caneAt := func(name string, m ...modifier) { t.def(name, cane, chain(m, patch(20, 4, 0, caneFilter))...) }
-	caneAt("patch_sugar_cane", rarityMod{6}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
-	caneAt("patch_sugar_cane_desert", inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
-	caneAt("patch_sugar_cane_badlands", rarityMod{5}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
-	caneAt("patch_sugar_cane_swamp", rarityMod{3}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
+	caneAt("patch_sugar_cane", rarityMod{6}, inSquareMod{}, mb, biomeMod{})
+	caneAt("patch_sugar_cane_desert", inSquareMod{}, mb, biomeMod{})
+	caneAt("patch_sugar_cane_badlands", rarityMod{5}, inSquareMod{}, mb, biomeMod{})
+	caneAt("patch_sugar_cane_swamp", rarityMod{3}, inSquareMod{}, mb, biomeMod{})
 	cactus := blockColumn(dUp, airOnly, false, columnLayer{biasedInt(1, 3), simpleState("cactus[age=0]")})
-	t.def("patch_cactus_desert", cactus, chain(mods(rarityMod{6}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(10, 7, 3, allOf(airOnly, wouldSurvive("cactus[age=0]"))))...)
-	t.def("patch_cactus_decorated", cactus, chain(mods(rarityMod{13}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(10, 7, 3, allOf(airOnly, wouldSurvive("cactus[age=0]"))))...)
+	t.def("patch_cactus_desert", cactus, chain(mods(rarityMod{6}, inSquareMod{}, mb, biomeMod{}), patch(10, 7, 3, allOf(airOnly, wouldSurvive("cactus[age=0]"))))...)
+	t.def("patch_cactus_decorated", cactus, chain(mods(rarityMod{13}, inSquareMod{}, mb, biomeMod{}), patch(10, 7, 3, allOf(airOnly, wouldSurvive("cactus[age=0]"))))...)
 	t.def("vines", vinesFeature, mods(countMod{constInt(127)}, inSquareMod{}, heightRangeMod{uniHeight(64, 100)}, biomeMod{})...)
 	t.def("bamboo_light", bambooFeature(0), mods(rarityMod{4}, inSquareMod{}, mb, biomeMod{})...)
 	t.def("bamboo", bambooFeature(0.2), mods(noiseCountMod{160, 80, 0.3}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})...)
@@ -357,10 +353,29 @@ func defineSteps(t *tableBuilder) {
 	}
 	lily := newNestedPlacement(simpleBlock(simpleState("lily_of_the_valley")), patch(96, 7, 3, airOnly)...)
 	forestPick := simpleSelector(tallFlower("lilac"), tallFlower("rose_bush"), tallFlower("peony"), lily)
-	t.def("forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-1, 3), 0, 3)}, biomeMod{})...)
-	t.def("flower_forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-3, 1), 0, 1)}, biomeMod{})...)
+	t.def("forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-3, 1), 0, 1)}, biomeMod{})...)
+	t.def("flower_forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-1, 3), 0, 3)}, biomeMod{})...)
 	lushGrass := newNestedPlacement(simpleBlock(jungleMix), patch(32, 7, 3, airOnly)...)
 	t.def("bamboo_vegetation", treeSel(lushGrass, selEntry{0.05, checkedFancy()}, selEntry{0.15, checked(jungleBush(), "jungle_sapling")}, selEntry{0.7, checked(megaJungle(), "jungle_sapling")}), treeBase(countExtra(30, 10, 1), 0)...)
+}
+
+// mangroveTree is the mangrove or the tall mangrove. The two differ in trunk height, branch steps,
+// the size limit and how far up the trunk starts over its roots (Java 26.1's configured features
+// mangrove and tall_mangrove).
+func mangroveTree(tall bool) *treeCfg {
+	base, a, b, steps, limit, offset := 2, 1, 4, uniInt(1, 4), 2, uniInt(1, 3)
+	if tall {
+		base, a, b, steps, limit, offset = 4, 1, 9, uniInt(1, 6), 3, uniInt(3, 7)
+	}
+	propagule := randomizedProp(simpleState("mangrove_propagule[age=0,hanging=true,stage=0,waterlogged=false]"), "age", uniInt(0, 4))
+	c := treeOf("mangrove_log", "mangrove_leaves", branchingTrunk{h(base, a, b), steps, uniInt(0, 1), 0.5},
+		spreadFoliage{foliageBase{constInt(3), constInt(0)}, constInt(2), 70}, limit, 0, 2, true,
+		leaveVine(0.125), attachedToLeaves(0.14, 1, 0, propagule, 2, []dir{dDown}), beehive(0.01))
+	c.validExtra = blockSet("mud muddy_mangrove_roots mangrove_roots mangrove_leaves mangrove_log mangrove_propagule moss_carpet vine")
+	c.roots = &mangroveRoots{offset: offset, root: stateOf("mangrove_roots[waterlogged=false]"), above: stateOf("moss_carpet"), aboveChance: 0.5,
+		through: blockSet("mud muddy_mangrove_roots mangrove_roots moss_carpet vine mangrove_propagule snow"), muddyIn: blockSet("mud muddy_mangrove_roots"),
+		muddy: stateOf("muddy_mangrove_roots[axis=y]"), width: 8, length: 15, skew: 0.2}
+	return c
 }
 
 // newNestedOnly turns a nested placed feature into a plain feature.

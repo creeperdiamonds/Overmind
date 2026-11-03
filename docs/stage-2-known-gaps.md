@@ -23,6 +23,13 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 
 - **Spawn inside a tree, flower or snow layer.** `DefaultSpawn` read heights only; seed 100's spawn was inside an oak trunk and seed 12345's inside a snow layer. It now checks the finished chunk (`spawnClear`).
 
+## Bedrock profile, until Task 4e
+
+The Bedrock profile runs Java's feature algorithms with Bedrock's file values where they differ. Task 4e replaces its placement with Bedrock's own, from the BDS study. Until then:
+
+- **Underwater magma moved in the Bedrock profile too.** Task 4d (763e823) places underwater magma as Java does: Y from the bottom to 256, at least 2 under `OCEAN_FLOOR_WG`, so in flooded caves as well as on the sea floor. The Bedrock profile shares that placement and keeps only Bedrock's attempts (18 to 30, BEDROCK-NOTES row 9), so its magma moved into flooded caves as well. Where Bedrock itself puts magma is not known.
+- **Bedrock's extra mangrove rate is not applied.** BEDROCK-NOTES row 9 gives Bedrock's mangrove trees as "25 + 2 + 2" a chunk; both profiles use Java's 25 (`trees_mangrove`).
+
 ## Bedrock comparisons (measured, not asserted)
 
 The owner chose Java's algorithms for carvers, trees and plants (ruling 23), and Bedrock's placement is hidden in its program. So these are measured against the Bedrock reference worlds by `tools/seedcheck` and listed here, and do not fail a test (ruling 28). What is asserted is that ours match Java: `TestPlacementRatesMatchJava` (trees by biome, kelp, seagrass, cave air) and the golden stage tests. Bedrock's shipped data differences stay in the Bedrock profile.
@@ -60,7 +67,7 @@ Java's carvers give more air than Bedrock's at Y -20 to 0 on every seed (10.5 to
 - Close: birch forest 4.08 to 5.20 / 5.04; flower forest 3.97 to 4.09 / 4.06; mega taiga 4.07 / 4.72; badlands plateau 2.47 / 2.57 (49); grove 3.73 / 4.49.
 - Ours above: jungle 10.53 / 10.03 (49), jungle edge 2.02 / 1.43, old growth birch forest 4.18 to 5.67 / 3.64, cherry grove 3.17 / 2.41 (29).
 - Ours below: forest 4.27 to 5.21 / 5.92; roofed forest 5.00 to 5.56 / 7.44; savanna 0.66 / 1.02; savanna plateau 0.72 / 1.10; meadow 0.11 to 0.43 / 0.95; plains 0.12 to 0.20 / 0.31.
-- Pale garden 0.49 / 6.50: pale oak trees are a Task 4d gap.
+- Pale garden 4.51 / 6.50 (seed 12345, 45 chunks) after Task 4d's pale oaks; it was 0.49 before them. Java's pale garden is written from knowledge and unverified against a Java run.
 - Grove was 0.21 before round 2. It was a bug: Java's grove trees grow on snow (`spruce_on_snow`, `pine_on_snow`), and ours used the sapling survival test, which fails on snow. Java's fixtures hold 14 grove trunks where ours had 0; now the one grove chunk there matches (2.00 / 2.00), and `TestGroveHasTrees` holds it.
 
 **Against Java**, trees are asserted by biome (`TestPlacementRatesMatchJava`, with the fixtures), and all pass after round 2: jungle 9.59 / 9.73, roofed forest 4.58 / 4.64, bamboo jungle 2.88 / 2.75, forest 5.03 / 5.16. Each source now runs on top of what its earlier neighbours do (two levels), as Java's later chunk sees the earlier one's canopy. So where ours differ from Bedrock, it is Java's placement against Bedrock's.

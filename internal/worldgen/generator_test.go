@@ -289,13 +289,50 @@ func TestSurfaceHeightMatchesChunk(t *testing.T) {
 	}
 }
 
+// lushCaveBlock says whether a decoration block is one lush caves place under the terrain: their moss
+// plants (grass, tall grass, azaleas) and the rooted azalea tree, an oak trunk with azalea leaves.
+// Any other log or leaves under the terrain top is a tree grown in a cave.
+func lushCaveBlock(n string) bool {
+	switch n {
+	case "short_grass", "tall_grass", "azalea", "flowering_azalea", "oak_log", "azalea_leaves", "azalea_leaves_flowered":
+		return true
+	}
+	return false
+}
+
+// underTopAllowed is TestBlocksFollowFillRules's rule for a plant or tree block in or under the
+// terrain top: only a lush cave block, and only near lush caves.
+func underTopAllowed(name string, lushNear bool) bool { return lushNear && lushCaveBlock(name) }
+
+// TestFillRulesCatchCaveTrees checks that the lush caves allowance does not let cave trees through:
+// next to lush caves, the logs and leaves of every other tree under the terrain top still break the
+// rule, and lush cave plants break it away from lush caves.
+func TestFillRulesCatchCaveTrees(t *testing.T) {
+	for _, n := range []string{"oak_leaves", "spruce_log", "spruce_leaves", "birch_log", "birch_leaves", "jungle_log", "jungle_leaves",
+		"acacia_log", "acacia_leaves", "dark_oak_log", "dark_oak_leaves", "mangrove_log", "mangrove_leaves", "cherry_log", "cherry_leaves",
+		"pale_oak_log", "pale_oak_leaves", "snow_layer", "poppy", "dandelion"} {
+		if underTopAllowed(n, true) {
+			t.Errorf("%s under the terrain top next to lush caves passes the fill rule", n)
+		}
+	}
+	for _, n := range []string{"short_grass", "tall_grass", "azalea", "flowering_azalea", "oak_log", "azalea_leaves", "azalea_leaves_flowered"} {
+		if !underTopAllowed(n, true) {
+			t.Errorf("%s, a lush cave block, fails the fill rule next to lush caves", n)
+		}
+		if underTopAllowed(n, false) {
+			t.Errorf("%s under the terrain top away from lush caves passes the fill rule", n)
+		}
+	}
+}
+
 func TestBlocksFollowFillRules(t *testing.T) {
 	g, b := New(3), newBlocks()
 	// The blocks are the noise, surface and carver blocks and whatever Java's features place (ores,
 	// rock, glow lichen, geodes, rooms and the rest), so there is no closed list any more. A placed
 	// state Dragonfly has no block for panics under test (unknownState), so none turns into air unseen.
-	// Plants and trees under the terrain top belong to lush caves alone: a lush cave patch reaches at
-	// most 8 blocks from where it was placed, so the biome within 8 blocks each way must be lush caves.
+	// Plants and trees under the terrain top belong to lush caves alone (underTopAllowed): a lush cave
+	// patch reaches at most 8 blocks from where it was placed, so the biome within 8 blocks each way
+	// must be lush caves, and the block must be one lush caves place.
 	s := newScratch()
 	lushNear := func(x, y, z int) bool {
 		for dx := -8; dx <= 8; dx += 4 {
@@ -318,8 +355,8 @@ func TestBlocksFollowFillRules(t *testing.T) {
 				terrainTop := g.SurfaceHeight(wx, wz) // The carvers stage: terrain before features.
 				for y := int16(minY); y <= maxY; y++ {
 					if r := c.Block(x, y, z, 0); int(y) <= terrainTop && isDecorationID(r) {
-						if !lushNear(wx, int(y), wz) {
-							t.Fatalf("%s at Y %d, in or under the terrain top %d, away from lush caves", nameOf(r), y, terrainTop)
+						if !underTopAllowed(nameOf(r), lushNear(wx, int(y), wz)) {
+							t.Fatalf("%s at Y %d, in or under the terrain top %d: not a lush cave block near lush caves", nameOf(r), y, terrainTop)
 						}
 						underground++
 					}
