@@ -5,6 +5,9 @@ import "math"
 // Bedrock's underground pass for the Bedrock profile (Task 4e): the ore and rock rules and
 // OreFeature::place, in our own Go from NOTES-bedrock-exact sections 3, 4, 4b, P1 and R9.
 //
+// A rule with no coordinate_eval_order takes the default, x then z then y (Q1, scatter_feature;
+// the lush clay rule is the one such rule here).
+//
 // The rule parameters below are transcribed from the vanilla behaviour pack's feature_rules and
 // features of BDS 1.26.60.6 (newest pack's copy of each), as the study read them; the order is the
 // study's model of the pass's rule map (section 3, tools/rule_order.json, 50 of 50 pair checks).
@@ -78,7 +81,7 @@ var undergroundRows = []undergroundRow{
 	{"minecraft:overworld_underground_diamond_ore_feature", 7, 0, 0, "zyx", [3]bAxis{uni16, {bTriangle, -144, 16}, uni16}, 4, 0.5, stoneOre("diamond"), "all"},
 	{"minecraft:overworld_underground_gold_ore_lower_feature", 1, 1, 2, "zyx", [3]bAxis{uni16, {bUniform, -64, -48}, uni16}, 9, 0.5, stoneOre("gold"), "all"},
 	{"minecraft:overworld_underground_iron_ore_upper_feature", 90, 0, 0, "zyx", [3]bAxis{uni16, {bTriangle, 80, 384}, uni16}, 10, 0, stoneOre("iron"), "all"},
-	{"minecraft:lush_caves_underground_clay_ore_feature", 46, 0, 0, "xyz", [3]bAxis{uni16, {bUniform, -64, 256}, uni16}, 33, 0, []oreRule{{"clay", "stone"}}, "lush_caves"},
+	{"minecraft:lush_caves_underground_clay_ore_feature", 46, 0, 0, "xzy", [3]bAxis{uni16, {bUniform, -64, 256}, uni16}, 33, 0, []oreRule{{"clay", "stone"}}, "lush_caves"},
 	{"minecraft:overworld_underground_diamond_ore_feature_square", 2, 0, 0, "zyx", [3]bAxis{uni16, {bUniform, -64, -4}, uni16}, 4, 0.5, stoneOre("diamond"), "all"},
 }
 
