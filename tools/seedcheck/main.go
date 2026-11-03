@@ -8,6 +8,14 @@
 //
 // A reference biome is read from the block at Y = max(height, 63) + 1 at each quart's low corner, so
 // ours is the biome of the quart holding that block, at our own height there.
+//
+// The height gate (owner's ruling 30). Our carvers are Java's and Bedrock's carver positions are hidden
+// in its program, so the two worlds' carver holes never sit at the same points. A grid point is a
+// carver hole in a world if that world's finished top is more than 2 blocks under our noise height
+// there (for Bedrock, read from heights alone, a terrain difference that leaves Bedrock lower counts
+// too). At the points that are a hole in neither world, finished height within 2 must reach the
+// noise-stage figure on every seed, and seedcheck exits 1 if it does not. The total over all points
+// and the hole counts are printed as a measured comparison and do not fail the run.
 package main
 
 import (
@@ -60,14 +68,20 @@ func main() {
 		r := check(seed, m)
 		j := javaFigures[seed]
 		fmt.Printf("%-10d | %9.2f / %9.2f | %9.2f / %9.2f | %22.2f | %6.2f / %6.2f\n", seed, r.gridBiome, r.allBiome, r.gridHeight, r.allHeight, r.gridNoise, j[0], j[1])
-		fmt.Printf("    carver holes on the grid: ours %d, Bedrock %d, both %d; height<=2 away from them %.2f%%\n", r.ours, r.bedrock, r.both, r.clearHeight)
+		fmt.Printf("    carver holes on the grid: ours %d, Bedrock %d, both %d (%d points left out); height<=2 away from them %.2f%% (gate: noise %.2f%%)\n",
+			r.ours, r.bedrock, r.both, r.ours+r.bedrock-r.both, r.clearHeight, r.gridNoise)
 		for _, line := range r.notes {
 			fmt.Println("    " + line)
 		}
-		// The grid figures must reach what Java itself scores against Bedrock on this seed, within the
-		// sample's rounding. A seed with no Java figure is reported and not judged.
-		if ok := javaFigures[seed]; ok != [2]float64{} && (r.gridBiome < j[0]-figureSlack || r.gridHeight < j[1]-figureSlack) {
-			fmt.Printf("    FAIL: seed %d is under the Java vs Bedrock figures %.2f / %.2f\n", seed, j[0], j[1])
+		// The grid biome figure must reach what Java itself scores against Bedrock on this seed, within
+		// the sample's rounding; a seed with no Java figure is not judged on it. Away from carver holes,
+		// finished height must reach the noise-stage figure (ruling 30).
+		if ok := javaFigures[seed]; ok != [2]float64{} && r.gridBiome < j[0]-figureSlack {
+			fmt.Printf("    FAIL: seed %d biome is under the Java vs Bedrock figure %.2f\n", seed, j[0])
+			failed = true
+		}
+		if r.clearHeight < r.gridNoise {
+			fmt.Printf("    FAIL: seed %d height away from carver holes %.2f%% is under the noise-stage %.2f%%\n", seed, r.clearHeight, r.gridNoise)
 			failed = true
 		}
 	}
