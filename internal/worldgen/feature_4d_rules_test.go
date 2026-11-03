@@ -8,6 +8,75 @@ import (
 // Rules of Task 4d's untraced features, checked against Java 26.1's source and data files rather
 // than against a Java run, since no traced chunk holds these biomes.
 
+// java4dPlacements are Task 4d's placed features as Java 26.1 lists them (worldgen/placed_feature/
+// <name>.json), written in describePlacement's words. Patch counts, offsets and filters sit in the
+// placed feature in 26.1, as they do here.
+var java4dPlacements = map[string]string{
+	"lush_caves_clay":                     "count:62 in_square height_range:-64..256/flat environment_scan:down:12 random_offset:0:1 biome",
+	"lush_caves_ceiling_vegetation":       "count:125 in_square height_range:-64..256/flat environment_scan:up:12 random_offset:0:-1 biome",
+	"lush_caves_vegetation":               "count:125 in_square height_range:-64..256/flat environment_scan:down:12 random_offset:0:1 biome",
+	"cave_vines":                          "count:188 in_square height_range:-64..256/flat environment_scan:up:12 random_offset:0:-1 biome",
+	"spore_blossom":                       "count:25 in_square height_range:-64..256/flat environment_scan:up:12 random_offset:0:-1 biome",
+	"classic_vines_cave_feature":          "count:256 in_square height_range:-64..256/flat biome",
+	"rooted_azalea_tree":                  "count:1..2/flat in_square height_range:-64..256/flat environment_scan:up:12 random_offset:0:-1 biome",
+	"dripstone_cluster":                   "count:48..96/flat in_square height_range:-64..256/flat biome",
+	"pointed_dripstone":                   "count:192..256/flat in_square height_range:-64..256/flat count:1..5/flat random_offset:-10..10/shaped:-2..2/shaped biome",
+	"large_dripstone":                     "count:10..48/flat in_square height_range:-64..256/flat biome",
+	"sculk_patch_deep_dark":               "count:256 in_square height_range:-64..256/flat biome",
+	"sculk_vein":                          "count:204..250/flat in_square height_range:-64..256/flat biome",
+	"flower_flower_forest":                "count:3 rarity_filter:2 in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-6..6/shaped:-2..2/shaped filter",
+	"wildflowers_birch_forest":            "count:3 rarity_filter:2 in_square heightmap:MOTION_BLOCKING biome count:64 random_offset:-6..6/shaped:-2..2/shaped filter",
+	"wildflowers_meadow":                  "noise_threshold_count:-0.8:5:10 in_square heightmap:MOTION_BLOCKING biome count:8 random_offset:-6..6/shaped:-2..2/shaped filter",
+	"flower_cherry":                       "noise_threshold_count:-0.8:5:10 in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-6..6/shaped:-2..2/shaped filter",
+	"flower_meadow":                       "in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-6..6/shaped:-2..2/shaped filter",
+	"patch_leaf_litter":                   "count:2 in_square heightmap:WORLD_SURFACE_WG biome count:32 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_firefly_bush_swamp":            "rarity_filter:8 in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:-3..3/shaped filter",
+	"patch_firefly_bush_near_water_swamp": "count:3 in_square heightmap:MOTION_BLOCKING biome filter count:20 random_offset:-4..4/shaped:-3..3/shaped filter",
+	"patch_firefly_bush_near_water":       "count:2 in_square heightmap:MOTION_BLOCKING_NO_LEAVES biome filter count:20 random_offset:-4..4/shaped:-3..3/shaped filter",
+	"mushroom_island_vegetation":          "in_square heightmap:MOTION_BLOCKING biome",
+	"warm_ocean_vegetation":               "noise_based_count:20:400:0 in_square heightmap:OCEAN_FLOOR_WG biome",
+	"iceberg_packed":                      "rarity_filter:16 in_square biome",
+	"iceberg_blue":                        "rarity_filter:200 in_square biome",
+	"trees_mangrove":                      "count:25 in_square surface_water_depth_filter:5 heightmap:OCEAN_FLOOR biome",
+	"pale_moss_patch":                     "count:1 in_square heightmap:MOTION_BLOCKING_NO_LEAVES biome",
+	"pale_garden_vegetation":              "count:16 in_square surface_water_depth_filter:0 heightmap:OCEAN_FLOOR biome",
+	"pale_garden_flowers":                 "rarity_filter:8 in_square heightmap:MOTION_BLOCKING_NO_LEAVES biome count:96 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"flower_pale_garden":                  "rarity_filter:32 in_square heightmap:MOTION_BLOCKING biome",
+	"desert_well":                         "rarity_filter:1000 in_square heightmap:MOTION_BLOCKING biome",
+	"underwater_magma":                    "count:44..52/flat in_square height_range:-64..256/flat surface_relative_threshold_filter:OCEAN_FLOOR_WG:_:-2 biome",
+}
+
+// bedrock4dPlacements are where the Bedrock profile keeps Bedrock's own file values instead
+// (BEDROCK-NOTES section 5 row 9: magma 18 to 30 attempts).
+var bedrock4dPlacements = map[string]string{
+	"underwater_magma": "count:18..30/flat in_square height_range:-64..256/flat surface_relative_threshold_filter:OCEAN_FLOOR_WG:_:-2 biome",
+}
+
+// TestPlacementsFollowJava4d holds each of Task 4d's placed features, in both profiles, against
+// Java's placed feature file: modifier by modifier, with counts, rarities, heightmaps and offsets.
+// Block predicates are only checked to be where Java has one.
+func TestPlacementsFollowJava4d(t *testing.T) {
+	for _, prof := range []*Profile{ProfileOverjava, ProfileBedrock} {
+		byName := map[string]*placement{}
+		for _, pl := range prof.placements {
+			byName[pl.name] = pl
+		}
+		for name, want := range java4dPlacements {
+			if b, ok := bedrock4dPlacements[name]; ok && prof == ProfileBedrock {
+				want = b
+			}
+			pl := byName[name]
+			if pl == nil {
+				t.Errorf("%s: no %s", prof.Name, name)
+				continue
+			}
+			if got := describePlacement(pl); got != want {
+				t.Errorf("%s: %s\n ours: %s\n Java: %s", prof.Name, name, got, want)
+			}
+		}
+	}
+}
+
 // TestIcebergDrawsLikeJava replays the iceberg's shape draws in IcebergFeature's order: an ellipse
 // draws its height above water with nextInt(6), a round iceberg with nextInt(15) and maybe a tall
 // extra, never both. Both the values and the generator's state after must agree.

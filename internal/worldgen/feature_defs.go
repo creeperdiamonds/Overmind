@@ -239,7 +239,7 @@ func defineSteps(t *tableBuilder) {
 	// holds a mangrove swamp).
 	mangroveShort, mangroveTall := checked(mangroveTree(false), "mangrove_propagule"), checked(mangroveTree(true), "mangrove_propagule")
 	t.def("trees_mangrove", treeSel(mangroveShort, selEntry{0.85, mangroveTall}),
-		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{}, filterMod{wouldSurvive("mangrove_propagule")})...)
+		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{})...) // Each tree checks the propagule survives.
 
 	// Plants. A patch is a count, an offset, a filter and simple_block.
 	grass := func(n int, name string, f predicate) {

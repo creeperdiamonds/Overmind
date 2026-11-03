@@ -106,7 +106,7 @@ func defineFlowers(t *tableBuilder) {
 	}
 	nearWater := filterMod{allOf(onlyAir, survives, waterBelowSide)}
 	fireflyPatch := patch(20, 4, 3, airOnly)
-	t.def("patch_firefly_bush_swamp", firefly, chain(mods(countMod{constInt(2)}, inSquareMod{}, mb, biomeMod{}), fireflyPatch)...)
+	t.def("patch_firefly_bush_swamp", firefly, chain(mods(rarityMod{8}, inSquareMod{}, mb, biomeMod{}), fireflyPatch)...)
 	t.def("patch_firefly_bush_near_water_swamp", firefly, chain(mods(countMod{constInt(3)}, inSquareMod{}, mb, biomeMod{}, nearWater), fireflyPatch)...)
 	t.def("patch_firefly_bush_near_water", firefly, chain(mods(countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmMotionNoLeaves}, biomeMod{}, nearWater), fireflyPatch)...)
 

@@ -195,5 +195,6 @@ func definePale(t *tableBuilder) {
 
 	eyeblossom := simpleBlock(simpleState("closed_eyeblossom"))
 	t.def("pale_garden_flowers", eyeblossom, chain(mods(rarityMod{8}, inSquareMod{}, heightmapMod{hmMotionNoLeaves}, biomeMod{}), patch(96, 7, 3, airOnly))...)
-	t.def("flower_pale_garden", eyeblossom, chain(mods(rarityMod{32}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{}), patch(1, 0, 0, airOnly))...)
+	// A single eyeblossom: Java checks only that it survives there, not that the place is air.
+	t.def("flower_pale_garden", eyeblossom, rarityMod{32}, inSquareMod{}, heightmapMod{hmMotionBlocking}, biomeMod{})
 }
