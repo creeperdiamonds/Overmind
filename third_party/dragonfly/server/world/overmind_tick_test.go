@@ -1,6 +1,7 @@
 package world_test
 
-// Overmind fork: tests that a tick never waits for a chunk that a chunk worker is still making.
+// Overmind fork: tests that a tick never waits for a chunk that a chunk worker is still making, and
+// that random ticks reach every block of a sub chunk alike.
 
 import (
 	"context"
@@ -132,5 +133,43 @@ func TestTickNeverWaitsForAChunkBeingMade(t *testing.T) {
 			t.Fatal("the water never flowed into the chunk once it was made")
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestRandomTicksReachBlocksAboveOtherTickers marks leaves with no log, each 16 blocks above a lava
+// block, so the leaf and the lava share a position in their sub chunks. Every block of a sub chunk
+// must be as likely to tick as any other: at 200 random ticks a sub chunk for 200 ticks, each leaf
+// expects about 10 ticks, and the first one decays it.
+func TestRandomTicksReachBlocksAboveOtherTickers(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
+	gen := generator.NewFlat(biome.Plains{}, []world.Block{block.Grass{}, block.Dirt{}, block.Dirt{}, block.Bedrock{}})
+	w := world.Config{Entities: entity.DefaultRegistry, Generator: gen, Synchronous: true, RandomTickSpeed: 200}.New()
+	t.Cleanup(func() { _ = w.Close() })
+	w.SetTickRange(4)
+
+	var leaves []cube.Pos
+	_ = w.Do(func(tx *world.Tx) {
+		for i := range 24 {
+			lava := cube.Pos{i % 16, -60, 2 + i/16*8} // in the dirt of sub chunk -64 to -49, no air beside it
+			tx.SetBlock(lava, block.Lava{Still: true, Depth: 8}, &world.SetOpts{DisableBlockUpdates: true, DisableLiquidDisplacement: true})
+			leaf := lava.Add(cube.Pos{0, 16, 0})
+			tx.SetBlock(leaf, block.Leaves{Type: block.OakLeaves(), ShouldUpdate: true}, &world.SetOpts{DisableBlockUpdates: true})
+			leaves = append(leaves, leaf)
+		}
+	}).Wait(t.Context())
+	for range 200 {
+		w.AdvanceTick()
+	}
+	gone := 0
+	_ = w.Do(func(tx *world.Tx) {
+		for _, p := range leaves {
+			if _, ok := tx.Block(p).(block.Leaves); !ok {
+				gone++
+			}
+		}
+	}).Wait(t.Context())
+	t.Logf("%d of %d leaves above lava decayed in 200 ticks", gone, len(leaves))
+	if gone < len(leaves)-1 {
+		t.Errorf("only %d of %d leaves above lava decayed: blocks above another random ticker are seldom ticked", gone, len(leaves))
 	}
 }

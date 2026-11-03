@@ -246,25 +246,24 @@ func (t ticker) tickBlocksRandomly(tx *Tx, inReach func(ChunkPos) bool, tick int
 
 		cx, cz := int(pos[0]<<4), int(pos[1]<<4)
 
-		// We generate up to j random positions for every sub chunk.
-		for j := 0; j < tx.World().conf.RandomTickSpeed; j++ {
-			x, y, z := g.uint4(tx.World().r), g.uint4(tx.World().r), g.uint4(tx.World().r)
-
-			for i, sub := range c.Sub() {
-				if sub.Empty() {
-					// SubChunk is empty, so skip it right away.
-					continue
-				}
+		// Overmind fork: every sub chunk gets RandomTickSpeed positions of its own, as in vanilla.
+		// Upstream drew one position a round and carried it up through the sub chunks until it
+		// found a random ticker there, so a block sharing its spot in the sub chunk with a ticker
+		// below (a leaf 16 blocks above lava or grass) was reached only by a draw made just after
+		// that ticker, and ticked tens of times less often than its neighbours.
+		for i, sub := range c.Sub() {
+			if sub.Empty() {
+				// SubChunk is empty, so skip it right away.
+				continue
+			}
+			subY := (i + (tx.Range().Min() >> 4)) << 4
+			for j := 0; j < tx.World().conf.RandomTickSpeed; j++ {
+				x, y, z := g.uint4(tx.World().r), g.uint4(tx.World().r), g.uint4(tx.World().r)
 				// Generally we would want to make sure the block has its block entities, but provided blocks
 				// with block entities are generally ticked already, we are safe to assume that blocks
 				// implementing the RandomTicker don't rely on additional block entity data.
 				if rid := sub.Layers()[0].At(x, y, z); tx.World().conf.Blocks.RandomTickBlock(rid) {
-					subY := (i + (tx.Range().Min() >> 4)) << 4
 					randomBlocks = append(randomBlocks, cube.Pos{cx + int(x), subY + int(y), cz + int(z)})
-
-					// Only generate new coordinates if a tickable block was actually found. If not, we can just re-use
-					// the coordinates for the next sub chunk.
-					x, y, z = g.uint4(tx.World().r), g.uint4(tx.World().r), g.uint4(tx.World().r)
 				}
 			}
 		}
