@@ -4,11 +4,14 @@ go 1.27.3
 
 require (
 	github.com/df-mc/dragonfly v0.11.6
+	github.com/df-mc/go-nethernet v1.0.26
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/sandertv/go-raknet v1.15.2-0.20260705184311-0d1fd09e2cf6
 	github.com/sandertv/gophertunnel v1.63.0
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/text v0.34.0
 )
 
 require (
@@ -16,7 +19,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
-	github.com/df-mc/go-nethernet v1.0.26 // indirect
 	github.com/df-mc/go-playfab/v2 v2.0.2 // indirect
 	github.com/df-mc/go-xsapi/v2 v2.0.3 // indirect
 	github.com/df-mc/goleveldb v1.1.9 // indirect
@@ -41,7 +43,6 @@ require (
 	github.com/pion/transport/v5 v5.0.1 // indirect
 	github.com/pion/turn/v5 v5.1.2 // indirect
 	github.com/pion/webrtc/v4 v4.2.21-0.20260920133716-91bfc6c2039f // indirect
-	github.com/sandertv/go-raknet v1.15.2-0.20260705184311-0d1fd09e2cf6 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
@@ -51,7 +52,6 @@ require (
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 )
 

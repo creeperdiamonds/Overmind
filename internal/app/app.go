@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 
+	"github.com/overmind/overmind/internal/bedrocknet"
 	"github.com/overmind/overmind/internal/config"
 	"github.com/overmind/overmind/internal/javafront"
 	"github.com/overmind/overmind/internal/javalogin"
@@ -93,7 +94,9 @@ func Start(cfg config.Config) (*Server, error) {
 	}
 
 	uc := server.DefaultConfig()
-	uc.Network.Address = cfg.BedrockAddr
+	if err := bedrocknet.Configure(&uc, cfg); err != nil {
+		return nil, err
+	}
 	uc.Server.Name = "Overmind"
 	uc.Server.AuthEnabled = cfg.AuthEnabled
 	uc.World.Folder = cfg.WorldFolder

@@ -14,8 +14,23 @@ import (
 
 // Config holds every setting Overmind reads at startup.
 type Config struct {
-	// BedrockAddr is the UDP address Bedrock players connect to.
+	// BedrockAddr is the address Bedrock players connect to: UDP for RakNet,
+	// TCP for NetherNet's signalling, both on the same port.
 	BedrockAddr string
+	// BedrockTransports is how Bedrock players reach the server: "raknet"
+	// (UDP, older clients and the test bots) and "nethernet" (Bedrock 26.50
+	// and later, which join over WebRTC after an HTTP handshake on TCP).
+	// Both by default. internal/bedrocknet/NOTES.md explains NetherNet.
+	BedrockTransports []string
+	// NetherNetUDPPorts is the UDP port, or "min-max" range, carrying the game
+	// traffic of NetherNet players. A single port is shared by every player.
+	// Empty lets the system pick a port per player. Open it in the firewall
+	// alongside BedrockAddr's TCP port.
+	NetherNetUDPPorts string
+	// NetherNetKeyFile holds the key that identifies the server to NetherNet
+	// players, made on the first start. Keep it: a player joining by address
+	// confirms the server's key once, and a new key asks them again.
+	NetherNetKeyFile string
 	// JavaAddr is the TCP address Java players connect to.
 	JavaAddr string
 	// JavaOffline skips the Mojang account check, so anyone can join on Java
@@ -89,18 +104,21 @@ type Skins struct {
 // Default returns the settings used when a file leaves something out.
 func Default() Config {
 	return Config{
-		BedrockAddr:     ":19132",
-		JavaAddr:        ":25565",
-		AuthEnabled:     true,
-		GameMode:        "survival",
-		ViewDistance:    6,
-		WorldFolder:     "world",
-		PlayersFolder:   "players",
-		SaveSeconds:     5,
-		MaxPlayers:      50,
-		ResourcesFolder: "resources",
-		Profile:         "bedrock",
-		Skins:           Skins{UploadCache: "skins", UploadGapSeconds: 30},
+		BedrockAddr:       ":19132",
+		BedrockTransports: []string{"raknet", "nethernet"},
+		NetherNetUDPPorts: "19133",
+		NetherNetKeyFile:  "keys/nethernet-identity.pem",
+		JavaAddr:          ":25565",
+		AuthEnabled:       true,
+		GameMode:          "survival",
+		ViewDistance:      6,
+		WorldFolder:       "world",
+		PlayersFolder:     "players",
+		SaveSeconds:       5,
+		MaxPlayers:        50,
+		ResourcesFolder:   "resources",
+		Profile:           "bedrock",
+		Skins:             Skins{UploadCache: "skins", UploadGapSeconds: 30},
 	}
 }
 

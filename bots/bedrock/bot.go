@@ -122,10 +122,25 @@ func JoinAs(addr, name string, account uuid.UUID) (*Bot, error) {
 // JoinWith is JoinAs with the client's own data, such as its skin. What it
 // leaves empty gophertunnel fills in (its classic skin among it).
 func JoinWith(addr, name string, account uuid.UUID, cd login.ClientData) (*Bot, error) {
+	return join(name, account, cd, func(ctx context.Context, d minecraft.Dialer) (*minecraft.Conn, error) {
+		return d.DialContext(ctx, "raknet", addr)
+	})
+}
+
+// JoinNetherNet is Join over NetherNet, the way Bedrock 26.50 and later clients join: an HTTP
+// handshake with the server at addr (host:port, on TCP), then WebRTC over UDP. The bot sends
+// no Xbox identity, so the server must have login off.
+func JoinNetherNet(addr, name string) (*Bot, error) {
+	return join(name, uuid.New(), login.ClientData{}, func(ctx context.Context, d minecraft.Dialer) (*minecraft.Conn, error) {
+		return d.DialContextNetwork(ctx, minecraft.NetherNet{}, "http://"+addr)
+	})
+}
+
+func join(name string, account uuid.UUID, cd login.ClientData, dial func(context.Context, minecraft.Dialer) (*minecraft.Conn, error)) (*Bot, error) {
 	d := minecraft.Dialer{IdentityData: login.IdentityData{DisplayName: name, Identity: account.String()}, ClientData: cd}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	conn, err := d.DialContext(ctx, "raknet", addr)
+	conn, err := dial(ctx, d)
 	if err != nil {
 		return nil, err
 	}
