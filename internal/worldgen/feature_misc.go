@@ -509,8 +509,33 @@ func canSurvive(d *decoration, s bs, p pos) bool {
 		return below.tagged(tagBambooSoil)
 	case "pumpkin", "melon":
 		return true
+	case "moss_carpet":
+		return !below.isAir()
+	case "azalea", "flowering_azalea":
+		return below.tagged(tagDirtLike) || blockName[stateBlock[below]] == "clay"
+	case "small_dripleaf":
+		if s.half() > 0 {
+			return blockName[stateBlock[below]] == "small_dripleaf"
+		}
+		bn := blockName[stateBlock[below]]
+		if bn == "clay" || bn == "moss_block" {
+			return true
+		}
+		here := d.at(p)
+		return here.has(fWater) && here.has(fSource) && below.tagged(tagDirtLike)
+	case "spore_blossom":
+		return d.at(p.step(dUp)).has(fSturdyDown) && !d.at(p).has(fWater)
+	case "hanging_roots":
+		return d.at(p.step(dUp)).has(fSturdyDown)
 	}
 	return below.tagged(tagDirtLike)
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func wouldSurvive(name string) predicate {
@@ -533,8 +558,14 @@ func simpleBlock(pv stateProvider) feature {
 			if !d.at(up).isAir() {
 				return false
 			}
+			// A double plant that can hold water takes it from where each half goes.
+			hi := withProp(s, "half", "upper")
+			if hasProp(s, "waterlogged") {
+				s = withProp(s, "waterlogged", boolWord(btoi(d.at(p).has(fWater))))
+				hi = withProp(hi, "waterlogged", boolWord(btoi(d.at(up).has(fWater))))
+			}
 			d.set(p.x, p.y, p.z, s)
-			d.set(up.x, up.y, up.z, withProp(s, "half", "upper"))
+			d.set(up.x, up.y, up.z, hi)
 			return true
 		}
 		d.set(p.x, p.y, p.z, s)
@@ -589,13 +620,11 @@ func blockColumn(a dir, allowed predicate, tipFirst bool, layers ...columnLayer)
 		if total == 0 {
 			return false
 		}
+		// The game tests the cell past each one placed, so a column never touches what stops it.
 		n := o.step(a)
-		for y := 0; y < total-1+1; y++ {
-			if y == total-1 {
-				break
-			}
+		for y := 0; y < total; y++ {
 			if !allowed(d, n) {
-				rem := total - (y + 1)
+				rem := total - y
 				if tipFirst {
 					for i := 0; i < len(hs) && rem > 0; i++ {
 						t := min(hs[i], rem)

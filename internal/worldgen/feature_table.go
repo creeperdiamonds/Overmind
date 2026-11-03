@@ -135,6 +135,7 @@ func buildPlacements(prof *Profile) []*placement {
 	t := &tableBuilder{prof: prof, byN: map[string]*placement{}}
 	defineOres(t)
 	defineSteps(t)
+	defineLush(t)
 	var out []*placement
 	for step := 0; step <= 10; step++ {
 		names, ok := featureOrder[step]

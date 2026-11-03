@@ -749,7 +749,8 @@ func TestNoFloatingPlantsQuick(t *testing.T) {
 
 func checkNoFloatingPlants(t *testing.T, seeds []int64, chunks func(*Generator) [][2]int32) map[string]int {
 	counts := map[string]int{}
-	soil := []string{"grass_block", "dirt", "coarse_dirt", "podzol", "mycelium", "mud"}
+	// Java's dirt tag, in Bedrock's names: plants stand on moss and rooted dirt too.
+	soil := []string{"grass_block", "dirt", "coarse_dirt", "podzol", "mycelium", "mud", "moss_block", "dirt_with_roots", "pale_moss_block", "muddy_mangrove_roots"}
 	for _, seed := range seeds {
 		g := New(seed)
 		pos := chunks(g)

@@ -78,6 +78,7 @@ const (
 	tagPodzolSwap  // Bamboo's podzol replaces it.
 	tagVineHolder  // Marks blocks a vine may not cling to.
 	tagHangs       // Holds on to a side or a ceiling, not the block below: vines, lichen, cocoa.
+	tagAzaleaSoil  // An azalea, and a rooted azalea's tree, grows on it.
 )
 
 var blockTags = func() map[string]uint32 {
@@ -96,6 +97,12 @@ var blockTags = func() map[string]uint32 {
 	add(tagTerracotta, terracotta)
 	add(tagStoneOre, "stone granite diorite andesite")
 	add(tagDeepslateOre, "deepslate tuff")
+	// Lush cave tags: moss replaces base stone, cave vines and dirt; lush ground adds clay, gravel
+	// and sand; azalea roots grow through stone, dirt, terracotta, sands, clay, gravel and snow.
+	add(tagMossSwap, baseStone+dirtFamily+"cave_vines cave_vines_plant")
+	add(tagLushGround, baseStone+dirtFamily+"cave_vines cave_vines_plant clay gravel sand")
+	add(tagAzaleaSwap, baseStone+dirtFamily+terracotta+"red_sand clay gravel sand snow_block powder_snow")
+	add(tagAzaleaSoil, dirtFamily+terracotta+"sand red_sand suspicious_sand snow_block powder_snow")
 	add(tagCarvable, baseStone+dirtFamily+terracotta+"sand red_sand water gravel sandstone red_sandstone calcite snow snow_block packed_ice raw_iron_block raw_copper_block iron_ore deepslate_iron_ore copper_ore deepslate_copper_ore")
 	return m
 }()

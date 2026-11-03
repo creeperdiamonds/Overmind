@@ -82,6 +82,7 @@ type chunkScratch struct {
 	copies      []*baseChunk // Spare full buffers, which the working set's chunks are expanded into.
 	final       [chunkCells]bs
 	changes     []sourceChange
+	changeKeys  []int64 // Each change's working-set key, slot and cell.
 	merge       merger
 	firstOld    map[int64]bs
 }
@@ -227,7 +228,9 @@ func (m *merger) apply(final *[chunkCells]bs, sources *[9][]sourceChange, want *
 // trunk goes through and the plant goes.
 func laterWins(old, cur, now bs) bool {
 	switch {
-	case cur == old, cur.isAir() && old.isAir(), cur.tagged(tagBaseStone) && old.tagged(tagBaseStone):
+	case cur == old, cur == now, cur.isAir() && old.isAir(), cur.tagged(tagBaseStone) && old.tagged(tagBaseStone):
+		// cur == now: an earlier source already left what this one writes, as overlapping moss
+		// patches do. The block is the same either way, and what stands on it stays this source's.
 		return true
 	case now.tagged(tagLogs):
 		return cur.isAir() || cur.tagged(tagLeaves) || cur.tagged(tagTreeSwap) || standsOnBelow(cur) && !cur.tagged(tagLogs)
@@ -335,6 +338,7 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 		}
 	}
 	res := &sourceResult{}
+	s.changeKeys = s.changeKeys[:0]
 	for k, old := range first {
 		lv := &d.live[k>>32]
 		cell := int32(k)
@@ -344,9 +348,36 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 		}
 		dx, dz := lv.b.cx-sx+1, lv.b.cz-sz+1
 		s.changes = append(s.changes, sourceChange{int8(dx*3 + dz), cell, old, now})
+		s.changeKeys = append(s.changeKeys, k)
+	}
+	// A plant or trunk may stand on ground an earlier neighbour left at the level before (a moss
+	// patch), which the finished world may lack. Such ground goes with the source's own changes, so
+	// what stands on it keeps it: in Java the later feature saw it there.
+	type ground struct {
+		k    int64
+		at   int
+		seen bs
+	}
+	var grounds []ground
+	for i, c := range s.changes {
+		if !standsOnBelow(c.now) || c.cell < 256 {
+			continue
+		}
+		slot := s.changeKeys[i] >> 32
+		below := slot<<32 | int64(c.cell-256)
+		if _, own := first[below]; !own {
+			grounds = append(grounds, ground{below, i, d.live[slot].b.b[c.cell-256]})
+		}
 	}
 	d.rollback()
 	d.log = d.log[:0]
+	for _, gr := range grounds {
+		base := d.live[gr.k>>32].b.b[int32(gr.k)]
+		if base != gr.seen {
+			c := s.changes[gr.at]
+			s.changes = append(s.changes, sourceChange{c.chunk, c.cell - 256, base, gr.seen})
+		}
+	}
 	// By cell, so a column's blocks come bottom first: the merge decides a block after the one it
 	// stands on.
 	slices.SortFunc(s.changes, func(a, b sourceChange) int {

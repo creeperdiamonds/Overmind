@@ -191,6 +191,7 @@ type treeRun struct {
 type treeCfg struct {
 	log, foliageState    stateProvider
 	below                stateProvider // Nil: dirt, unless the block is in the no-trunk-base set.
+	forceDirt            bool          // The below provider replaces any block, dirt family too.
 	trunk                trunkPlacer
 	foliage              foliagePlacer
 	layersLimit          int
@@ -252,7 +253,7 @@ func (t *treeRun) logAxis(p pos, axis byte) bool {
 func (t *treeRun) belowTrunk(p pos) {
 	s := t.d.at(p)
 	if t.cfg.below != nil {
-		if s.tagged(tagNoTrunkBase) {
+		if s.tagged(tagNoTrunkBase) && !t.cfg.forceDirt {
 			return
 		}
 		t.trunkSet.add(p)

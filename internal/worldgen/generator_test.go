@@ -294,14 +294,34 @@ func TestBlocksFollowFillRules(t *testing.T) {
 	// The blocks are the noise, surface and carver blocks and whatever Java's features place (ores,
 	// rock, glow lichen, geodes, rooms and the rest), so there is no closed list any more. A placed
 	// state Dragonfly has no block for panics under test (unknownState), so none turns into air unseen.
+	// Plants and trees under the terrain top belong to lush caves alone: a lush cave patch reaches at
+	// most 8 blocks from where it was placed, so the biome within 8 blocks each way must be lush caves.
+	s := newScratch()
+	lushNear := func(x, y, z int) bool {
+		for dx := -8; dx <= 8; dx += 4 {
+			for dz := -8; dz <= 8; dz += 4 {
+				for dy := -8; dy <= 8; dy += 4 {
+					if biomeTableNames[s.blockBiome(g, x+dx, y+dy, z+dz)] == "lush_caves" {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	underground := 0
 	for _, p := range [][2]int32{{0, 0}, {40, 40}, {-90, 15}, {300, -120}} {
 		c := generate(g, p[0], p[1])
 		for x := uint8(0); x < 16; x++ {
 			for z := uint8(0); z < 16; z++ {
-				terrainTop := g.SurfaceHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) // The carvers stage: terrain before features.
+				wx, wz := int(p[0])*16+int(x), int(p[1])*16+int(z)
+				terrainTop := g.SurfaceHeight(wx, wz) // The carvers stage: terrain before features.
 				for y := int16(minY); y <= maxY; y++ {
 					if r := c.Block(x, y, z, 0); int(y) <= terrainTop && isDecorationID(r) {
-						t.Fatalf("%s at Y %d, in or under the terrain top %d", nameOf(r), y, terrainTop)
+						if !lushNear(wx, int(y), wz) {
+							t.Fatalf("%s at Y %d, in or under the terrain top %d, away from lush caves", nameOf(r), y, terrainTop)
+						}
+						underground++
 					}
 					switch r := c.Block(x, y, z, 0); {
 					case r == b.water && y > SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
@@ -315,6 +335,7 @@ func TestBlocksFollowFillRules(t *testing.T) {
 			}
 		}
 	}
+	t.Logf("%d plants and tree blocks in lush caves under the terrain top", underground)
 }
 
 func TestDefaultSpawnIsAboveTerrain(t *testing.T) {

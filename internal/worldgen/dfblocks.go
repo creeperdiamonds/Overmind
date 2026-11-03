@@ -161,6 +161,42 @@ func ownBlocksList() {
 		}
 	}
 	addOwn("mushroom_stem[down=false,east=true,north=true,south=true,up=false,west=true]", "brown_mushroom_block", map[string]any{"huge_mushroom_bits": int32(10)}, true)
+	lushOwnBlocks()
+}
+
+var cardinals = [4]string{"north", "east", "south", "west"}
+
+var bools = [2]string{"false", "true"}
+
+// lushOwnBlocks adds the lush cave blocks Dragonfly has no type for, in Bedrock's names and states.
+func lushOwnBlocks() {
+	plain := func(java, name string, solid bool) { addOwn(java, name, map[string]any{}, solid) }
+	plain("rooted_dirt", "dirt_with_roots", true)
+	for _, w := range bools {
+		plain("hanging_roots[waterlogged="+w+"]", "hanging_roots", false)
+	}
+	// Java's cave vines are a head with an age and a body without; Bedrock's are one block, with or
+	// without berries, whose head and body share an age. A body takes age 0.
+	for _, b := range bools {
+		head, bodyName := "cave_vines", "cave_vines"
+		if b == "true" {
+			head, bodyName = "cave_vines_head_with_berries", "cave_vines_body_with_berries"
+		}
+		for age := range 26 {
+			addOwn(fmt.Sprintf("cave_vines[age=%d,berries=%s]", age, b), head, map[string]any{"growing_plant_age": int32(age)}, false)
+		}
+		addOwn("cave_vines_plant[berries="+b+"]", bodyName, map[string]any{"growing_plant_age": int32(0)}, false)
+	}
+	// Bedrock's big dripleaf is one block: the leaf is its head, the stem the rest.
+	for _, f := range cardinals {
+		for _, w := range bools {
+			addOwn("big_dripleaf_stem[facing="+f+",waterlogged="+w+"]", "big_dripleaf", map[string]any{"big_dripleaf_head": uint8(0), "big_dripleaf_tilt": "none", "minecraft:cardinal_direction": f}, false)
+			addOwn("big_dripleaf[facing="+f+",tilt=none,waterlogged="+w+"]", "big_dripleaf", map[string]any{"big_dripleaf_head": uint8(1), "big_dripleaf_tilt": "none", "minecraft:cardinal_direction": f}, false)
+			for bit, half := range [2]string{"lower", "upper"} {
+				addOwn("small_dripleaf[facing="+f+",half="+half+",waterlogged="+w+"]", "small_dripleaf_block", map[string]any{"minecraft:cardinal_direction": f, "upper_block_bit": uint8(bit)}, false)
+			}
+		}
+	}
 }
 
 var registerOwnBlocks = sync.OnceFunc(func() {
@@ -209,7 +245,8 @@ var woods = map[string]block.WoodType{"oak": block.OakWood(), "spruce": block.Sp
 	"acacia": block.AcaciaWood(), "dark_oak": block.DarkOakWood(), "mangrove": block.MangroveWood(), "cherry": block.CherryWood(), "pale_oak": block.PaleOakWood()}
 
 var leafTypes = map[string]block.LeavesType{"oak": block.OakLeaves(), "spruce": block.SpruceLeaves(), "birch": block.BirchLeaves(), "jungle": block.JungleLeaves(),
-	"acacia": block.AcaciaLeaves(), "dark_oak": block.DarkOakLeaves(), "mangrove": block.MangroveLeaves(), "cherry": block.CherryLeaves(), "pale_oak": block.PaleOakLeaves()}
+	"acacia": block.AcaciaLeaves(), "dark_oak": block.DarkOakLeaves(), "mangrove": block.MangroveLeaves(), "cherry": block.CherryLeaves(), "pale_oak": block.PaleOakLeaves(),
+	"azalea": block.AzaleaLeaves(), "flowering_azalea": block.FloweringAzaleaLeaves()}
 
 var flowerTypes = map[string]block.FlowerType{"dandelion": block.Dandelion(), "poppy": block.Poppy(), "blue_orchid": block.BlueOrchid(), "allium": block.Allium(),
 	"azure_bluet": block.AzureBluet(), "red_tulip": block.RedTulip(), "orange_tulip": block.OrangeTulip(), "white_tulip": block.WhiteTulip(), "pink_tulip": block.PinkTulip(),
