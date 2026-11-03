@@ -10,7 +10,8 @@ import (
 // own block with a state Bedrock does not have panics when it is registered.
 var placedFamilies = strings.Fields(`moss_block moss_carpet clay azalea flowering_azalea short_grass tall_grass
 	cave_vines cave_vines_plant big_dripleaf big_dripleaf_stem small_dripleaf spore_blossom rooted_dirt hanging_roots
-	azalea_leaves flowering_azalea_leaves oak_log vine dripstone_block pointed_dripstone`)
+	azalea_leaves flowering_azalea_leaves oak_log vine dripstone_block pointed_dripstone
+	sculk sculk_vein sculk_catalyst sculk_sensor sculk_shrieker`)
 
 func TestEveryPlacedStateHasABlock(t *testing.T) {
 	NewWithProfile(1, ProfileOverjava)

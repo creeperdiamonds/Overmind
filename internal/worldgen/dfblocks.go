@@ -198,6 +198,20 @@ func lushOwnBlocks() {
 			}
 		}
 	}
+	plain("sculk", "sculk", true)
+	addOwn("sculk_catalyst[bloom=false]", "sculk_catalyst", map[string]any{"bloom": uint8(0)}, true)
+	for _, w := range bools {
+		addOwn("sculk_sensor[power=0,sculk_sensor_phase=inactive,waterlogged="+w+"]", "sculk_sensor", map[string]any{"sculk_sensor_phase": int32(0)}, false)
+		addOwn("sculk_shrieker[can_summon=true,shrieking=false,waterlogged="+w+"]", "sculk_shrieker", map[string]any{"active": uint8(0), "can_summon": uint8(1)}, false)
+	}
+	for mask := range 64 {
+		down, up, north, south, west, east := mask&1, mask>>1&1, mask>>2&1, mask>>3&1, mask>>4&1, mask>>5&1
+		for _, water := range bools {
+			j := fmt.Sprintf("sculk_vein[down=%s,east=%s,north=%s,south=%s,up=%s,waterlogged=%s,west=%s]", boolWord(down), boolWord(east), boolWord(north), boolWord(south), boolWord(up), water, boolWord(west))
+			bits := int32(down) | int32(up)<<1 | int32(south)<<2 | int32(west)<<3 | int32(north)<<4 | int32(east)<<5
+			addOwn(j, "sculk_vein", map[string]any{"multi_face_direction_bits": bits}, false)
+		}
+	}
 	// Bedrock's big dripleaf is one block: the leaf is its head, the stem the rest.
 	for _, f := range cardinals {
 		for _, w := range bools {

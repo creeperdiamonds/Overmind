@@ -103,6 +103,8 @@ var blockTags = func() map[string]uint32 {
 	add(tagLushGround, baseStone+dirtFamily+"cave_vines cave_vines_plant clay gravel sand")
 	add(tagAzaleaSwap, baseStone+dirtFamily+terracotta+"red_sand clay gravel sand snow_block powder_snow")
 	add(tagAzaleaSoil, dirtFamily+terracotta+"sand red_sand suspicious_sand snow_block powder_snow")
+	// What sculk may replace in world generation: stone, dirt, sands, clay and the like.
+	add(tagSculkSwap, baseStone+dirtFamily+terracotta+"sand red_sand gravel calcite smooth_basalt clay dripstone_block sandstone red_sandstone")
 	add(tagCarvable, baseStone+dirtFamily+terracotta+"sand red_sand water gravel sandstone red_sandstone calcite snow snow_block packed_ice raw_iron_block raw_copper_block iron_ore deepslate_iron_ore copper_ore deepslate_copper_ore")
 	return m
 }()
