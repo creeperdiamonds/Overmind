@@ -366,6 +366,7 @@ func init() {
 		}
 	}
 	add(tagLogs, logs)
+	add(tagHangs, "vine glow_lichen cave_vines cave_vines_plant hanging_roots spore_blossom pale_hanging_moss cocoa resin_clump weeping_vines weeping_vines_plant sculk_vein")
 	add(tagLeaves, leaves)
 	add(tagNoFeature, "bedrock spawner chest end_portal_frame reinforced_deepslate trial_spawner vault")
 	add(tagNoLavaPool, "bedrock spawner chest end_portal_frame reinforced_deepslate trial_spawner vault "+logs+" "+leaves)

@@ -224,16 +224,29 @@ func TestTerrainStatistics(t *testing.T) {
 	}
 }
 
-// Later tasks place trees on SurfaceHeight, so it must equal the real chunk.
+// carverTop is the highest block of a whole chunk's carvers stage that is not air or water.
+func carverTop(b *baseChunk, x, z int) int {
+	for y := maxY; y >= minY; y-- {
+		if st := b.b[cellIndex(x, y, z)]; !st.isAir() && st != sWater {
+			return y
+		}
+	}
+	return minY - 1
+}
+
+// SurfaceHeight is the terrain before any feature: the carvers stage. Built for one column, with every
+// tunnel that reaches it, it must give the whole chunk's carvers stage. (TestSurfaceHeightMatchesCarverStage
+// checks the same against Java's fixtures.)
 func TestSurfaceHeightMatchesChunk(t *testing.T) {
 	g := New(77)
-	for _, p := range [][2]int32{{0, 0}, {-1, -1}, {64, -33}, {-200, 150}, {500, 500}, {90, 300}} {
-		c := generate(g, p[0], p[1])
+	s := &chunkScratch{firstOld: map[int64]bs{}}
+	for _, p := range [][2]int{{0, 0}, {-1, -1}, {64, -33}, {-200, 150}, {500, 500}, {90, 300}} {
+		b := g.cachedBase(s, p[0], p[1])
 		for x := range 16 {
 			for z := range 16 {
-				got := g.SurfaceHeight(int(p[0])*16+x, int(p[1])*16+z)
-				if want := topSolid(c, uint8(x), uint8(z)); got != want {
-					t.Fatalf("chunk %v (%d,%d): SurfaceHeight %d, chunk top %d", p, x, z, got, want)
+				got := g.SurfaceHeight(p[0]*16+x, p[1]*16+z)
+				if want := carverTop(b, x, z); got != want {
+					t.Fatalf("chunk %v (%d,%d): SurfaceHeight %d, carvers stage top %d", p, x, z, got, want)
 				}
 			}
 		}
@@ -242,19 +255,14 @@ func TestSurfaceHeightMatchesChunk(t *testing.T) {
 
 func TestBlocksFollowFillRules(t *testing.T) {
 	g, b := New(3), newBlocks()
-	// Surface blocks replace stone near the top of a column, and the underground adds
-	// deepslate, bedrock, rock patches, ores and (below Y -54) lava.
-	solids := append([]uint32{b.stone, b.grass, b.dirt, b.podzol, b.mycelium, b.sand, b.redSand,
-		b.sandstone, b.redSandstone, b.gravel, b.clay, b.snow, b.deepslate, b.bedrock, b.lava,
-		b.coarseDirt, b.packedIce, b.ice, b.calcite, b.mud, b.rawIron, b.rawCopper, b.amethyst, b.smoothBasalt}, b.terracotta...)
-	for _, pair := range b.veins {
-		solids = append(solids, pair[0], pair[1])
-	}
+	// The blocks are the noise, surface and carver blocks and whatever Java's features place (ores,
+	// rock, glow lichen, geodes, rooms and the rest), so there is no closed list any more. A placed
+	// state Dragonfly has no block for panics under test (unknownState), so none turns into air unseen.
 	for _, p := range [][2]int32{{0, 0}, {40, 40}, {-90, 15}, {300, -120}} {
 		c := generate(g, p[0], p[1])
 		for x := uint8(0); x < 16; x++ {
 			for z := uint8(0); z < 16; z++ {
-				terrainTop := topSolid(c, x, z)
+				terrainTop := g.SurfaceHeight(int(p[0])*16+int(x), int(p[1])*16+int(z)) // The carvers stage: terrain before features.
 				for y := int16(minY); y <= maxY; y++ {
 					if r := c.Block(x, y, z, 0); int(y) <= terrainTop && isDecorationID(r) {
 						t.Fatalf("%s at Y %d, in or under the terrain top %d", nameOf(r), y, terrainTop)
@@ -266,8 +274,6 @@ func TestBlocksFollowFillRules(t *testing.T) {
 						t.Fatalf("water at Y %d above the terrain", y)
 					case r == b.air && y <= SeaLevel && g.highestSolid(int(p[0])*16+int(x), int(p[1])*16+int(z)) <= int(y):
 						t.Fatalf("air at Y %d, below sea level and not in a cave", y)
-					case r != b.air && r != b.water && !slices.Contains(solids, r) && !isDecorationID(r):
-						t.Fatalf("unexpected block %d at Y %d", r, y)
 					}
 				}
 			}

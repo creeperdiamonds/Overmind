@@ -235,12 +235,12 @@ func TestSurfaceHeightMatchesChunkWithCaves(t *testing.T) {
 				continue
 			}
 			checked++
-			c := generate(g, int32(cx), int32(cz))
+			b := g.cachedBase(&chunkScratch{firstOld: map[int64]bs{}}, cx, cz)
 			for x := range 16 {
 				for z := range 16 {
 					wx, wz := cx*16+x, cz*16+z
-					if got, want := g.SurfaceHeight(wx, wz), topSolid(c, uint8(x), uint8(z)); got != want {
-						t.Fatalf("(%d,%d): SurfaceHeight %d, chunk top %d", wx, wz, got, want)
+					if got, want := g.SurfaceHeight(wx, wz), carverTop(b, x, z); got != want {
+						t.Fatalf("(%d,%d): SurfaceHeight %d, carvers stage top %d", wx, wz, got, want)
 					}
 				}
 			}

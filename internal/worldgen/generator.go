@@ -4,6 +4,7 @@
 package worldgen
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -79,6 +80,7 @@ type chunkScratch struct {
 	copies      []*baseChunk // Spare copies for the bases a source writes: at most its 3 x 3.
 	final       [chunkCells]bs
 	changes     []sourceChange
+	merge       merger
 	firstOld    map[int64]bs
 }
 
@@ -119,26 +121,192 @@ func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
 	here := d.chunkAt(cx, cz)
 	final := &s.final
 	*final = here.b.b
-	for sx := cx - 1; sx <= cx+1; sx++ {
-		for sz := cz - 1; sz <= cz+1; sz++ {
-			changes := g.cachedSource(s, d, sx, sz)
-			want := int8((cx-sx+1)*3 + (cz - sz + 1))
-			for _, c := range changes {
-				if c.chunk == want {
-					final[c.cell] = c.now
-				}
+	var sources [9][]sourceChange
+	var want [9]int8
+	for i := range 9 {
+		sx, sz := cx-1+i/3, cz-1+i%3
+		sources[i] = g.cachedSource(s, d, sx, sz)
+		want[i] = int8((cx-sx+1)*3 + (cz - sz + 1))
+	}
+	s.merge.apply(final, &sources, &want)
+	return final
+}
+
+// merger applies the changes of a chunk's nine sources to its carvers stage, in row-major source
+// order. Each source ran alone; in Java the one that runs second sees the other's blocks. So:
+//   - where an earlier source already changed a cell, a later write is kept only if the later
+//     feature, seeing that block, would have made it too (laterWins);
+//   - a later plant is refused if an earlier source changed the block under it to one it would not
+//     stand on (sameSupport), as Java's survival test would refuse it, and so is what the same
+//     source stacked on it;
+//   - a later write is refused if it would turn the block under an earlier source's plant or trunk
+//     into one that would not hold it, which in Java leaves it floating;
+//   - a trunk always keeps the ground it was grown on: where an earlier source changed the block under
+//     a later trunk, that change is taken back. Refusing the trunk instead would leave its leaves,
+//     in other chunks, with no log;
+//   - a double plant whose other half was refused is refused whole.
+//
+// Every decision reads only the changes at that cell or in its column, so a chunk and its neighbours
+// agree on blocks that straddle their edge.
+type merger struct {
+	halves  []mergedHalf
+	trunks  []int32
+	history []mergedWrite
+	writer  [chunkCells]int8 // Which source changed a cell, counted from 1; 0 if none did.
+	refused [chunkCells]int8 // Which source last had a write refused there.
+}
+
+// mergedWrite is a kept write, with the block and writer before it.
+type mergedWrite struct {
+	cell       int32
+	prev       bs
+	prevWriter int8
+}
+
+// mergedHalf is a double plant half a source wrote, and the block before it.
+type mergedHalf struct {
+	cell      int32
+	prev, now bs
+}
+
+func (m *merger) apply(final *[chunkCells]bs, sources *[9][]sourceChange, want *[9]int8) {
+	m.halves, m.trunks, m.history = m.halves[:0], m.trunks[:0], m.history[:0]
+	clear(m.writer[:])
+	clear(m.refused[:])
+	base := *final
+	for i, changes := range sources {
+		for _, c := range changes {
+			if c.chunk != want[i] {
+				continue
 			}
+			cur := final[c.cell]
+			self := int8(i + 1)
+			if !m.keeps(final, &base, c, self) {
+				m.refused[c.cell] = self
+				continue
+			}
+			if c.now.tagged(tagLogs) {
+				m.trunks = append(m.trunks, c.cell)
+			}
+			m.history = append(m.history, mergedWrite{c.cell, cur, m.writer[c.cell]})
+			m.writer[c.cell] = self
+			if c.now.half() != 0 {
+				m.halves = append(m.halves, mergedHalf{c.cell, cur, c.now})
+			}
+			final[c.cell] = c.now
 		}
 	}
-	return final
+	for _, t := range m.trunks {
+		m.keepTrunkGround(final, &base, t)
+	}
+	// A refused half leaves its partner alone; take the partner back too, until none is left alone.
+	for again := true; again; {
+		again = false
+		for _, h := range m.halves {
+			if final[h.cell] != h.now || pairedHalf(final, h.cell) {
+				continue
+			}
+			final[h.cell] = h.prev
+			again = true
+		}
+	}
+}
+
+// laterWins says whether a write of now, by a feature that saw old there, would be made over cur, the
+// block an earlier source left. A feature replaces what it tests for, so it replaces cur if cur passes
+// the same test old did: the same block, or both base stone (the ore and rock rule, the game's
+// base_stone_overworld) or both air. Leaves also replace leaves and the plants trees grow through.
+// Anything else the later feature would have found in its way.
+//
+// A log also replaces any plant. In Java a tree finding a plant in its trunk's way is not placed at
+// all, but a tree reaches into other chunks, and one column cannot take back the rest of it, so the
+// trunk goes through and the plant goes.
+func laterWins(old, cur, now bs) bool {
+	switch {
+	case cur == old, cur.isAir() && old.isAir(), cur.tagged(tagBaseStone) && old.tagged(tagBaseStone):
+		return true
+	case now.tagged(tagLogs):
+		return cur.isAir() || cur.tagged(tagLeaves) || cur.tagged(tagTreeSwap) || standsOnBelow(cur) && !cur.tagged(tagLogs)
+	case now.tagged(tagLeaves):
+		return cur.isAir() || cur.tagged(tagLeaves) || cur.tagged(tagTreeSwap)
+	}
+	return false
+}
+
+// keeps decides one write of source self against what the earlier sources left.
+func (m *merger) keeps(final, base *[chunkCells]bs, c sourceChange, self int8) bool {
+	cur := final[c.cell]
+	if cur != c.old && !laterWins(c.old, cur, c.now) {
+		return false
+	}
+	if below := c.cell - 256; below >= 0 && standsOnBelow(c.now) && !c.now.tagged(tagLogs) {
+		if m.refused[below] == self && m.writer[below] != self {
+			return false // What it stood on, from the same source, was refused.
+		}
+		if m.byOther(below, self) && !sameSupport(base[below], final[below]) {
+			return false
+		}
+	}
+	// A trunk goes through a plant above it too (laterWins); anything else keeps the plant's ground.
+	if above := c.cell + 256; above < chunkCells && !c.now.tagged(tagLogs) && m.byOther(above, self) && standsOnBelow(final[above]) && !sameSupport(cur, c.now) {
+		return false
+	}
+	return true
+}
+
+// keepTrunkGround takes back other sources' changes under a trunk's lowest log, newest first, until
+// the block there is one of the same kind as before any source ran.
+func (m *merger) keepTrunkGround(final, base *[chunkCells]bs, trunk int32) {
+	below := trunk - 256
+	if below < 0 || m.writer[below] == m.writer[trunk] || final[below].tagged(tagLogs) {
+		return
+	}
+	for i := len(m.history) - 1; i >= 0 && !sameSupport(base[below], final[below]); i-- {
+		if h := m.history[i]; h.cell == below && m.writer[below] != m.writer[trunk] {
+			final[below], m.writer[below] = h.prev, h.prevWriter
+		}
+	}
+}
+
+// byOther says whether a source other than self changed a cell.
+func (m *merger) byOther(cell int32, self int8) bool { w := m.writer[cell]; return w != 0 && w != self }
+
+// standsOnBelow says whether a block needs the block under it: a plant, a snow layer or a log. Blocks
+// that hang from a side or a ceiling do not.
+func standsOnBelow(s bs) bool {
+	if s.tagged(tagLogs) {
+		return true
+	}
+	return !s.isAir() && !s.has(fMotion) && !s.has(fLiquid) && !s.tagged(tagHangs)
+}
+
+// sameSupport says whether a block that stood on a holds on b too: the same block, or both of the
+// dirt family, both sand, both base stone.
+func sameSupport(a, b bs) bool {
+	return a == b || a.tagged(tagDirtLike) && b.tagged(tagDirtLike) || a.tagged(tagSand) && b.tagged(tagSand) ||
+		a.tagged(tagBaseStone) && b.tagged(tagBaseStone)
+}
+
+// pairedHalf says whether the double plant half at a cell has its other half beside it.
+func pairedHalf(final *[chunkCells]bs, cell int32) bool {
+	s := final[cell]
+	other := cell + 256
+	if s.half() > 0 {
+		other = cell - 256
+	}
+	if other < 0 || other >= chunkCells {
+		return false
+	}
+	o := final[other]
+	return o.block() == s.block() && o.half() == -s.half()
 }
 
 // sourceChange is one block a source's decoration changed: the chunk of its 3 x 3 (x*3+z), the
 // cell, and the new block. A source's changes are a pure function of the seed, profile and source.
 type sourceChange struct {
-	chunk int8
-	cell  int32
-	now   bs
+	chunk    int8
+	cell     int32
+	old, now bs // The carvers stage there, and what the source left.
 }
 
 // runSourceChanges runs a source alone on the working set, lists what it changed, and rolls the
@@ -163,10 +331,18 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) []sourceChang
 			continue
 		}
 		dx, dz := lv.b.cx-sx+1, lv.b.cz-sz+1
-		s.changes = append(s.changes, sourceChange{int8(dx*3 + dz), cell, now})
+		s.changes = append(s.changes, sourceChange{int8(dx*3 + dz), cell, old, now})
 	}
 	d.rollback()
 	d.log = d.log[:0]
+	// By cell, so a column's blocks come bottom first: the merge decides a block after the one it
+	// stands on.
+	slices.SortFunc(s.changes, func(a, b sourceChange) int {
+		if a.chunk != b.chunk {
+			return int(a.chunk) - int(b.chunk)
+		}
+		return int(a.cell - b.cell)
+	})
 	return append([]sourceChange(nil), s.changes...)
 }
 

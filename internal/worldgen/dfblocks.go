@@ -2,9 +2,11 @@ package worldgen
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -418,6 +420,23 @@ func dragonflyBlock(name string) world.Block {
 		return block.MossCarpet{}
 	case "spore_blossom":
 		return block.SporeBlossom{}
+	case "air", "cave_air", "void_air":
+		return block.Air{}
+	}
+	return unknownState(name)
+}
+
+// unknownLogged holds the states already reported as having no block.
+var unknownLogged sync.Map
+
+// unknownState is what a state with no Dragonfly block becomes: air, so a chunk is still made, with a
+// warning the first time. Under test it panics instead, so a missing mapping cannot pass unseen.
+func unknownState(name string) world.Block {
+	if testing.Testing() {
+		panic(fmt.Sprintf("worldgen: state %q has no Dragonfly block", name))
+	}
+	if _, seen := unknownLogged.LoadOrStore(name, true); !seen {
+		slog.Default().Warn("worldgen: a generated state has no block and becomes air", "state", name)
 	}
 	return block.Air{}
 }
@@ -461,6 +480,7 @@ func (g *Generator) writeChunk(c *chunk.Chunk, b *baseChunk) { writeCells(c, &b.
 
 func writeCells(c *chunk.Chunk, cells *[chunkCells]bs) {
 	last, lastID := bs(0), uint32(0)
+	water := runtimeOf(sWater)
 	for i, s := range cells {
 		if s == 0 {
 			continue
@@ -468,6 +488,11 @@ func writeCells(c *chunk.Chunk, cells *[chunkCells]bs) {
 		if s != last {
 			last, lastID = s, runtimeOf(s)
 		}
-		c.SetBlock(uint8(i&15), int16(i>>8)+minY, uint8(i>>4&15), 0, lastID)
+		x, y, z := uint8(i&15), int16(i>>8)+minY, uint8(i>>4&15)
+		c.SetBlock(x, y, z, 0, lastID)
+		// Bedrock keeps the water of a waterlogged block, kelp and seagrass in the second layer.
+		if s.has(fWater) && s.block() != sWater.block() {
+			c.SetBlock(x, y, z, 1, water)
+		}
 	}
 }

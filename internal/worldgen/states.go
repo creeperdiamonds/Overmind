@@ -77,6 +77,7 @@ const (
 	tagBambooSoil  // Bamboo stands on it.
 	tagPodzolSwap  // Bamboo's podzol replaces it.
 	tagVineHolder  // Marks blocks a vine may not cling to.
+	tagHangs       // Holds on to a side or a ceiling, not the block below: vines, lichen, cocoa.
 )
 
 var blockTags = func() map[string]uint32 {
@@ -108,6 +109,7 @@ var (
 	stateName  [maxStates]string
 	stateBlock [maxStates]uint16 // The block's index, shared by all its states.
 	stateFlag  [maxStates]uint16
+	stateHalf  [maxStates]int8 // A double block's half: 1 upper, -1 lower, 0 neither.
 	blockName  [maxBlocks]string
 	blockTag   [maxBlocks]uint32
 	blockFlags = func() map[string]uint16 {
@@ -168,6 +170,12 @@ func stateOf(name string) bs {
 	if strings.Contains(props, "waterlogged=true") {
 		fl |= fWater | fSource
 	}
+	switch {
+	case strings.Contains(props, "half=upper"):
+		stateHalf[s] = 1
+	case strings.Contains(props, "half=lower"):
+		stateHalf[s] = -1
+	}
 	stateName[s], stateBlock[s], stateFlag[s] = name, b, fl
 	stateIndex[name] = s
 	return s
@@ -185,6 +193,9 @@ func (s bs) hasFluid() bool { return stateFlag[s]&(fWater|fLava) != 0 }
 func (s bs) tagged(tag uint32) bool { return blockTag[stateBlock[s]]&tag != 0 }
 
 func (s bs) block() uint16 { return stateBlock[s] }
+
+// half is a double plant's half: 1 upper, -1 lower, 0 for any other block.
+func (s bs) half() int8 { return stateHalf[s] }
 
 // name is the state's text, as the fixtures print it, without the namespace.
 func (s bs) name() string { return stateName[s] }

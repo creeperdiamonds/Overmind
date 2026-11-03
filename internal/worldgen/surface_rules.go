@@ -68,7 +68,8 @@ func biomeTemperature(b uint8, x, y, z int) float32 {
 	adj := c.temp
 	if c.frozen {
 		fx, fz := float64(x), float64(z)
-		a := fixedNoises().frozen.value(float64(fx*0.05), float64(fz*0.05))
+		// The study's notes leave out the game's factor of 7 on this noise (found in fix round 1 of task 4c).
+		a := float64(fixedNoises().frozen.value(float64(fx*0.05), float64(fz*0.05)) * 7.0)
 		bb := fixedNoises().info.value(float64(fx*0.2), float64(fz*0.2))
 		if a+bb < 0.3 && fixedNoises().info.value(float64(fx*0.09), float64(fz*0.09)) < 0.8 {
 			adj = 0.2
