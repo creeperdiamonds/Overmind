@@ -60,6 +60,7 @@ func main() {
 		r := check(seed, m)
 		j := javaFigures[seed]
 		fmt.Printf("%-10d | %9.2f / %9.2f | %9.2f / %9.2f | %22.2f | %6.2f / %6.2f\n", seed, r.gridBiome, r.allBiome, r.gridHeight, r.allHeight, r.gridNoise, j[0], j[1])
+		fmt.Printf("    carver holes on the grid: ours %d, Bedrock %d, both %d; height<=2 away from them %.2f%%\n", r.ours, r.bedrock, r.both, r.clearHeight)
 		for _, line := range r.notes {
 			fmt.Println("    " + line)
 		}
@@ -80,7 +81,12 @@ const figureSlack = 100.0 / 1225
 
 type result struct {
 	gridBiome, allBiome, gridHeight, allHeight, gridNoise float64
-	notes                                                 []string
+	// Carver holes on the grid: points where a world's finished top is more than 2 under our noise
+	// height, which only a carver (or a lake) makes. ours, bedrock and both count them; clearHeight
+	// is the height figure over the points with no hole in either world.
+	ours, bedrock, both int
+	clearHeight         float64
+	notes               []string
 }
 
 // check generates every chunk of the window and compares it.
@@ -91,6 +97,7 @@ func check(seed int64, m *refMaps) result {
 	jobs := make(chan [2]int)
 	var mu sync.Mutex
 	var allN, allHit, allB, allBHit, gridH, gridHit, gridB, gridBHit, gridNoiseHit int
+	var holesOurs, holesBedrock, holesBoth, clearN, clearHit int
 	confused := map[[2]int]int{}
 	var wg sync.WaitGroup
 	for range runtime.NumCPU() {
@@ -102,6 +109,7 @@ func check(seed int64, m *refMaps) result {
 				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 				g.GenerateChunk(world.ChunkPos{int32(cx), int32(cz)}, c)
 				var a, ah, b, bh, gh, ghit, gb, gbh, gn int
+				var ho, hb, hbo, cn, ch int
 				local := map[[2]int]int{}
 				for lx := range 16 {
 					for lz := range 16 {
@@ -129,8 +137,25 @@ func check(seed int64, m *refMaps) result {
 							if near {
 								ghit++
 							}
-							if absInt(g.NoiseHeight(x, z)-want) <= 2 {
+							noise := g.NoiseHeight(x, z)
+							if absInt(noise-want) <= 2 {
 								gn++
+							}
+							ourHole, bedrockHole := top < noise-2, want < noise-2
+							switch {
+							case ourHole && bedrockHole:
+								hbo++
+								ho++
+								hb++
+							case ourHole:
+								ho++
+							case bedrockHole:
+								hb++
+							default:
+								cn++
+								if near {
+									ch++
+								}
 							}
 						}
 						if x&3 == 0 && z&3 == 0 {
@@ -164,6 +189,11 @@ func check(seed int64, m *refMaps) result {
 				gridB += gb
 				gridBHit += gbh
 				gridNoiseHit += gn
+				holesOurs += ho
+				holesBedrock += hb
+				holesBoth += hbo
+				clearN += cn
+				clearHit += ch
 				for k, v := range local {
 					confused[k] += v
 				}
@@ -181,6 +211,7 @@ func check(seed int64, m *refMaps) result {
 	r := result{
 		gridBiome: pct(gridBHit, gridB), allBiome: pct(allBHit, allB),
 		gridHeight: pct(gridHit, gridH), allHeight: pct(allHit, allN), gridNoise: pct(gridNoiseHit, gridH),
+		ours: holesOurs, bedrock: holesBedrock, both: holesBoth, clearHeight: pct(clearHit, clearN),
 	}
 	type pair struct {
 		k [2]int

@@ -1,6 +1,8 @@
 package worldgen
 
 import (
+	"strings"
+
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item"
@@ -209,22 +211,31 @@ func newBlocks() blocks {
 	return b
 }
 
-// GroundBlocks is the study's idea of ground, by runtime ID: not air, water, lava, plants, logs or
-// leaves. The list follows the study's measuring tool for Bedrock worlds, for the blocks we place, so
-// a height read with it can be compared with theirs.
+// groundNames is the Bedrock study's list of ground blocks (measure.py, GROUND_EXACT), by Bedrock
+// name. Every ore and terracotta counts too. hardened_clay is Dragonfly's name for plain terracotta.
+var groundNames = map[string]bool{}
+
+func init() {
+	for _, n := range strings.Fields(`stone granite diorite andesite deepslate tuff calcite dirt coarse_dirt grass_block
+		podzol mycelium dirt_with_roots mud clay sand red_sand suspicious_sand sandstone red_sandstone gravel
+		suspicious_gravel bedrock terracotta hardened_clay packed_ice blue_ice snow powder_snow dripstone_block
+		moss_block pale_moss_block obsidian magma amethyst_block budding_amethyst smooth_basalt raw_iron_block
+		raw_copper_block sculk infested_stone infested_deepslate mud_bricks packed_mud`) {
+		groundNames[n] = true
+	}
+}
+
+// GroundBlocks is the study's idea of ground, by runtime ID: not air, water, lava, plants, logs,
+// leaves or anything lying on top. It follows the study's measuring tool for Bedrock worlds name by
+// name, over every registered block, so a height read with it compares with theirs.
 func GroundBlocks() map[uint32]bool {
-	b := newBlocks()
 	m := map[uint32]bool{}
-	for _, id := range []uint32{b.stone, b.granite, b.diorite, b.andesite, b.deepslate, b.tuff, b.calcite, b.dirt, b.coarseDirt,
-		b.grass, b.podzol, b.mycelium, b.mud, b.clay, b.sand, b.redSand, b.sandstone, b.redSandstone, b.gravel, b.bedrock,
-		b.packedIce, b.snow, b.amethyst, b.smoothBasalt, b.rawIron, b.rawCopper} {
-		m[id] = true
-	}
-	for _, id := range b.terracotta {
-		m[id] = true
-	}
-	for _, p := range b.veins {
-		m[p[0]], m[p[1]] = true, true
+	for _, b := range world.Blocks() {
+		name, _ := b.EncodeBlock()
+		n := strings.TrimPrefix(name, "minecraft:")
+		if groundNames[n] || strings.HasSuffix(n, "_ore") || strings.HasSuffix(n, "_terracotta") {
+			m[world.BlockRuntimeID(b)] = true
+		}
 	}
 	return m
 }

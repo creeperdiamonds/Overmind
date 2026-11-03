@@ -2,7 +2,10 @@ package worldgen
 
 import (
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/df-mc/dragonfly/server/world"
 )
 
 // Continentalness edges of the measured figures: under oceanBelow is ocean, at midBelow or over is
@@ -224,5 +227,38 @@ func TestNoiseIsContinuous(t *testing.T) {
 			t.Fatalf("jump of %.3f at x=%.2f", v-prev, x)
 		}
 		prev = v
+	}
+}
+
+// TestGroundBlocksFollowTheMeasure: GroundBlocks is the Bedrock study's measure.py rule, by Bedrock
+// block name, so a height read with it compares with the reference worlds: the listed full blocks,
+// every ore and terracotta, and nothing that grows, flows or lies on top.
+func TestGroundBlocksFollowTheMeasure(t *testing.T) {
+	ground := GroundBlocks()
+	byName := map[string][]uint32{}
+	for _, b := range world.Blocks() {
+		name, _ := b.EncodeBlock()
+		byName[strings.TrimPrefix(name, "minecraft:")] = append(byName[strings.TrimPrefix(name, "minecraft:")], world.BlockRuntimeID(b))
+	}
+	check := func(name string, want bool) {
+		ids := byName[name]
+		if len(ids) == 0 {
+			t.Errorf("no block is named %s", name)
+		}
+		for _, id := range ids {
+			if ground[id] != want {
+				t.Errorf("%s: ground %v, the measure says %v", name, ground[id], want)
+				return
+			}
+		}
+	}
+	for _, name := range []string{"stone", "grass_block", "powder_snow", "moss_block", "budding_amethyst", "magma",
+		"coal_ore", "deepslate_diamond_ore", "blue_ice", "obsidian", "sculk", "infested_stone", "dirt_with_roots",
+		"packed_ice", "snow", "orange_terracotta", "hardened_clay", "dripstone_block", "raw_iron_block", "sandstone"} {
+		check(name, true)
+	}
+	for _, name := range []string{"air", "water", "lava", "oak_log", "oak_leaves", "short_grass", "snow_layer", "ice",
+		"kelp", "seagrass", "moss_carpet", "glow_lichen", "pointed_dripstone", "cobblestone", "mossy_cobblestone"} {
+		check(name, false)
 	}
 }
