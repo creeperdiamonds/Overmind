@@ -6,6 +6,7 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 
 - **Leaf decay follows Java's distance 6 (fixed in fix round 1 of Task 5).** The earlier note here was wrong: it said leaves decayed partly because "the rest had not been marked yet". In Dragonfly a change beside a leaf marks it for a check, and each mark is itself a block change, so the mark floods the whole canopy within a few ticks; a marked leaf with no log within reach decays on its next random tick. The real cause was the reach: Dragonfly kept leaves within 4 steps of a log, but our trees are Java's, whose leaves reach 6. So any change beside an untouched tree made its outer leaves decay, and the test's "orphans" (no log within 4) included outer leaves of uncut neighbouring trees, which nothing ever marked. The fork now keeps leaves within 6 (`leafLogReach`, Java's rule). `TestLeavesDecay` at random tick speed 200, seed 1234: with every generated leaf within 40 blocks of spawn marked and no edits, 8439 of 8442 stayed after 15 s (at 4: 7967 of 8323); then, with a tree's logs cut, at least 98% of its leaves with no log within 6 must go within 60 s (measured 499 to 500 of 509). In one run 9 were still there after 40 s, all marked; a random tick by hand removed each, so the rule does not keep them, but why the server's random ticks had not reached them yet was not found.
 - **The tick distance is held two chunks under the view distance, for each player.** A tick that reads a block of a chunk that is not loaded makes Dragonfly generate it on the tick. So the tick distance is Bedrock's default 4, at most the view distance minus 2 (`Config.TickDistance`), and the Dragonfly fork holds each player's tick reach, for blocks and entities, two under that player's own view distance. Entities beyond a player's tick reach do not move, and lightning, scheduled ticks (water, fire) and neighbour updates (falling sand) wait there until a player comes near, as on Bedrock (fix round 3 of Task 4c). `TestGenerationDoesNotStallTicks` and `TestSmallViewDistanceNeverGeneratesOnTick` assert no chunk is generated on the tick.
+- **A geode can open beside underground water, as in Java.** Seed 17, chunk -8, 7: geode air at Y 7 sits under aquifer water at Y 8 (amethyst, calcite and basalt around it). Java's geode does the same: it checks only its 3 or 4 centre points for water, lava, ice or bedrock, and its blocks replace water (study notes, geode). This, not 4b's sealing, is why `TestOceanFloorHolds` could not stand; it was deleted in 4c with the reason given as 4b's sealing alone. Java schedules a fluid tick there so the water flows in; ours stays until a block update reaches it.
 - **Snow does not melt; there are no items for snow layers and seagrass** (see worldgen NOTES).
 - **Nether and End are flat floors, and the Nether can be reached.** An earlier note said nothing sends players there; that was wrong. Dragonfly lights an obsidian frame with flint and steel (or fire) into a Nether portal, and its travel takes a player to the Nether, a netherrack floor. The End needs an End portal, and nothing generates one yet (no strongholds). `TestDayCycleAdvances` lights a frame and checks the Overworld's portal destinations.
 
@@ -26,7 +27,7 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 
 The owner chose Java's algorithms for carvers, trees and plants (ruling 23), and Bedrock's placement is hidden in its program. So these are measured against the Bedrock reference worlds by `tools/seedcheck` and listed here, and do not fail a test (ruling 28). What is asserted is that ours match Java: `TestPlacementRatesMatchJava` (trees by biome, kelp, seagrass, cave air) and the golden stage tests. Bedrock's shipped data differences stay in the Bedrock profile.
 
-Figures from `seedcheck` after fix round 1 of Task 4c (4 seeds, 1120 x 1120 blocks each, all 4900 chunks of each window, default profile).
+Figures from `seedcheck` after fix round 2 of Task 4c, re-measured in fix round 3 (4 seeds, 1120 x 1120 blocks each, all 4900 chunks of each window, default profile). seedcheck exits 0.
 
 **Finished height against Bedrock (ruling 30).** Our carvers are Java's, and Bedrock's carver positions are hidden, so the two worlds' carver holes never coincide. A grid point counts as a hole in a world if that world's finished top is more than 2 under our noise height there. Bedrock's holes are read from heights alone, so a terrain difference that leaves Bedrock lower counts as a hole too. Away from holes the gate is asserted; the total is measured.
 
@@ -39,22 +40,22 @@ Figures from `seedcheck` after fix round 1 of Task 4c (4 seeds, 1120 x 1120 bloc
 
 Task 4b scored 99.02% (seed 1) and 97.55% (seed 12345) over all points because its own carvers did not carve under water. Java's do: seed 1 is mostly sea, and 30 of its grid points are Java holes in the sea floor.
 
-**Cave air**, % of blocks under the ground top minus 8, ours / Bedrock pooled over its 4 seeds. Ours matches Java within 0.1 point in every band (`TestPlacementRatesMatchJava`).
+**Cave air**, % of blocks under the ground top minus 8, ours / Bedrock pooled over its 4 seeds. Against Java, `TestPlacementRatesMatchJava` asserts every band within 0.2 points; measured, the largest gap is 0.10 (Y -20 to 0: 10.03 against 9.93), the rest 0.07 or less.
 
 | Y band | 100 | 1 | 12345 | 987654321 | Bedrock |
 |---|---|---|---|---|---|
 | -54 to -40 | 6.39 | 6.22 | 5.19 | 4.64 | 6.06 |
 | -40 to -20 | 10.27 | 9.01 | 9.04 | 8.61 | 9.21 |
 | -20 to 0 | 12.28 | 10.50 | 11.01 | 10.99 | 9.81 |
-| 0 to 20 | 11.98 | 3.71 | 8.26 | 10.08 | 7.46 |
+| 0 to 20 | 11.99 | 3.71 | 8.26 | 10.08 | 7.46 |
 | 20 to 40 | 10.09 | 3.01 | 6.89 | 10.50 | 7.21 |
 | 40 to 63 | 8.00 | 4.49 | 6.72 | 5.48 | 5.96 |
-| 63 to 100 | 8.15 | 4.06 | 8.57 | 6.73 | 7.52 |
+| 63 to 100 | 8.14 | 4.06 | 8.57 | 6.73 | 7.52 |
 | 100 to 160 | 6.84 | none | 6.24 | 2.47 | 5.11 |
 
 Java's carvers give more air than Bedrock's at Y -20 to 0 on every seed (10.5 to 12.3 against 9.81).
 
-**Trees per chunk**, by the chunk's centre biome, ours / Bedrock (with our chunk count where it is under 100), after fix round 2 of Task 4c. Bedrock's figures are over all 4 windows. All windows: ours 1.40 / 0.68 / 1.80 / 3.50 by seed, Bedrock 2.217 pooled.
+**Trees per chunk**, by the chunk's centre biome, ours / Bedrock (with our chunk count where it is under 100), after fix round 2 of Task 4c (unchanged in round 3). Bedrock's figures are over all 4 windows. All windows: ours 1.40 / 0.68 / 1.80 / 3.50 by seed, 1.85 pooled, against Bedrock's 2.217: **ours are about 17% below Bedrock.** The biomes below (forest, roofed forest, savanna, meadow, plains) outweigh those above. Against Java the same placement matches by biome, so this is Java's placement against Bedrock's.
 
 - Close: birch forest 4.08 to 5.20 / 5.04; flower forest 3.97 to 4.09 / 4.06; mega taiga 4.07 / 4.72; badlands plateau 2.47 / 2.57 (49); grove 3.73 / 4.49.
 - Ours above: jungle 10.53 / 10.03 (49), jungle edge 2.02 / 1.43, old growth birch forest 4.18 to 5.67 / 3.64, cherry grove 3.17 / 2.41 (29).
@@ -64,7 +65,7 @@ Java's carvers give more air than Bedrock's at Y -20 to 0 on every seed (10.5 to
 
 **Against Java**, trees are asserted by biome (`TestPlacementRatesMatchJava`, with the fixtures), and all pass after round 2: jungle 9.59 / 9.73, roofed forest 4.58 / 4.64, bamboo jungle 2.88 / 2.75, forest 5.03 / 5.16. Each source now runs on top of what its earlier neighbours do (two levels), as Java's later chunk sees the earlier one's canopy. So where ours differ from Bedrock, it is Java's placement against Bedrock's.
 
-**Kelp and seagrass per ocean chunk**: ours 108.0 to 109.6 kelp and 47.5 to 55.8 seagrass, against Bedrock's seed 1 figures of 189 and 57. Against Java on the same chunks: kelp 111.3 / 112.9, seagrass 44.6 / 45.5. So Bedrock places about 1.7 times Java's kelp.
+**Kelp and seagrass per ocean chunk**, after fix round 2 of Task 4c (re-measured in round 3, unchanged): ours 108.0 to 109.6 kelp and 47.5 to 55.8 seagrass on the three seeds with real ocean (seed 100 has only 20 ocean chunks: 51.5 and 39.2), against Bedrock's seed 1 figures of 189 and 57. Against Java on the same chunks: kelp 111.3 / 112.9, seagrass 44.6 / 45.5. So Bedrock places about 1.7 times Java's kelp.
 
 ## Commit e1873aa's message
 
