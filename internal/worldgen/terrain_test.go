@@ -111,6 +111,19 @@ func TestOffsetSplineDirections(t *testing.T) {
 // is found by searching for high ground, since the map of a seed changes with the generator.
 func TestMountainsHaveOverhangs(t *testing.T) {
 	skipUnlessLong(t) // A wide sweep (137 s); the noise stage is checked block for block by TestGoldenNoiseStage.
+	checkMountainOverhangs(t, 1)
+}
+
+// TestMountainsHaveOverhangsQuick is the same check, fixture free, on every third chunk of the same patch
+// each way (100 of its 900 chunks), for the default run.
+func TestMountainsHaveOverhangsQuick(t *testing.T) {
+	checkMountainOverhangs(t, 3)
+}
+
+// checkMountainOverhangs counts overhung columns in every step-th chunk of a 30 x 30 patch centred on the
+// first high ground found.
+func checkMountainOverhangs(t *testing.T, step int32) {
+	const side = 30
 	g, b := New(1), newBlocks()
 	var overhung, total, deepest int
 	var fromX, fromZ int32
@@ -118,13 +131,13 @@ search:
 	for x := -4096; x < 4096; x += 64 {
 		for z := -4096; z < 4096; z += 64 {
 			if g.highestSolid(x, z) > 150 {
-				fromX, fromZ = int32(x>>4)-15, int32(z>>4)-15
+				fromX, fromZ = int32(x>>4)-side/2, int32(z>>4)-side/2
 				break search
 			}
 		}
 	}
-	for cx := fromX; cx < fromX+30; cx++ {
-		for cz := fromZ; cz < fromZ+30; cz++ {
+	for cx := fromX; cx < fromX+side; cx += step {
+		for cz := fromZ; cz < fromZ+side; cz += step {
 			c := generate(g, cx, cz)
 			for x := uint8(0); x < 16; x++ {
 				for z := uint8(0); z < 16; z++ {

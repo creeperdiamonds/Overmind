@@ -852,12 +852,23 @@ func TestFrozenOceanHasIce(t *testing.T) {
 // the temperature read for Bedrock's warmer biomes holds at their usual heights.
 func TestSnowOnlyWhereCold(t *testing.T) {
 	skipUnlessLong(t)
+	checkSnowOnlyWhereCold(t, []int64{11, 12}, 300, 10, 40, 120, 60)
+}
+
+// TestSnowOnlyWhereColdQuick is the same check, fixture free, on a sparser sample for the default run.
+func TestSnowOnlyWhereColdQuick(t *testing.T) {
+	checkSnowOnlyWhereCold(t, []int64{11}, 300, 60, 8, 24, 12)
+}
+
+// checkSnowOnlyWhereCold samples every step-th chunk within reach of the origin on each seed, snowy
+// plains and taiga chunks per seed, and warm chunks of seed 11, needing at least minWarm of them.
+func checkSnowOnlyWhereCold(t *testing.T, seeds []int64, reach, step int32, snowy, warmN, minWarm int) {
 	var total, covered, columns int
-	for _, seed := range []int64{11, 12} {
+	for _, seed := range seeds {
 		g := New(seed)
 		var pos [][2]int32
-		for cx := int32(-300); cx < 300; cx += 10 {
-			for cz := int32(-300); cz < 300; cz += 10 {
+		for cx := -reach; cx < reach; cx += step {
+			for cz := -reach; cz < reach; cz += step {
 				pos = append(pos, [2]int32{cx, cz})
 			}
 		}
@@ -879,7 +890,7 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 				}
 			}
 		}
-		for _, q := range biomeChunks(g, 40, "ice_plains", "cold_taiga") {
+		for _, q := range biomeChunks(g, snowy, "ice_plains", "cold_taiga") {
 			c := generate(g, q[0], q[1])
 			for x := range uint8(16) {
 				for z := range uint8(16) {
@@ -907,8 +918,8 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 	}
 	// Warm biomes, at whatever height they reach, have none.
 	g := New(11)
-	warm := biomeChunks(g, 120, "plains", "forest", "desert", "savanna", "savanna_plateau", "jungle", "swampland", "beach", "river")
-	if len(warm) < 60 {
+	warm := biomeChunks(g, warmN, "plains", "forest", "desert", "savanna", "savanna_plateau", "jungle", "swampland", "beach", "river")
+	if len(warm) < minWarm {
 		t.Fatalf("only %d warm chunks", len(warm))
 	}
 	for p, c := range generateAll(g, warm) {
