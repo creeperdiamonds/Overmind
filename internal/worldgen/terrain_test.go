@@ -146,8 +146,9 @@ search:
 		t.Fatal("no overhangs in a mountain range")
 	}
 	// The bound was 25%, our own guess. The noise stage alone, which matches the game bit for bit, has
-	// 27.2% in this patch, so that bound was wrong; carvers add the rest. Half still says mostly solid.
-	if share > 0.4 {
+	// 27.2% in this patch, so that bound was wrong; carvers add the rest. With the game's carvers the
+	// patch measures 36.2%; the bound was set to 40% and then reset from that figure.
+	if share > 0.38 {
 		t.Fatalf("%.1f%% of mountain columns overhang; the ground should stay mostly solid", share*100)
 	}
 }
