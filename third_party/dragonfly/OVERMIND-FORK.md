@@ -11,4 +11,6 @@ Changes, each marked "Overmind fork" in the code:
 
 - `server/block/leaves.go`: a leaf stays while a log is within 6 steps through leaves (`leafLogReach`, Java's rule; was 4). Overmind generates Java's trees, whose leaves reach 6 steps, so at 4 any change beside an untouched tree decayed its outer leaves. Tested by internal/app `TestLeavesDecay`.
 
+- `server/session/handler_request_chunk_radius.go`: a client's radius is held to at least 2 (`minChunkRadius`, `clampChunkRadius`), the smallest tick reach (0, the player's own chunk) plus 2, so a tick never reads an unloaded chunk. Tested by `overmind_radius_test.go`.
+
 To take a new Dragonfly release: copy it over this folder, then reapply the changes above.
