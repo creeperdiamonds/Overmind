@@ -35,7 +35,12 @@ func (l Leaves) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world
 	return placed(ctx)
 }
 
-// findLog returns whether a log is within four blocks of the leaves at the position passed, counted through the
+// leafLogReach is how many steps through leaves a leaf may be from a log and stay (Overmind fork: 6,
+// Java's rule, was 4). Overmind generates Java's trees, whose leaves reach 6 steps from a log; at 4,
+// the outer leaves of an untouched tree decayed once any change beside the canopy marked them.
+const leafLogReach = 6
+
+// findLog returns whether a log is within six blocks of the leaves at the position passed, counted through the
 // leaves between them. The blocks around it are searched a step at a time, so each is reached the shortest way.
 func findLog(pos cube.Pos, tx *world.Tx) bool {
 	visited, step := map[cube.Pos]struct{}{pos: {}}, []cube.Pos{pos}
@@ -46,7 +51,7 @@ func findLog(pos cube.Pos, tx *world.Tx) bool {
 			case Log, Wood:
 				return true
 			}
-			if _, ok := tx.Block(at).(Leaves); !ok || distance >= 4 {
+			if _, ok := tx.Block(at).(Leaves); !ok || distance >= leafLogReach {
 				continue
 			}
 			at.Neighbours(func(neighbour cube.Pos) {

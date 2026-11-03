@@ -9,4 +9,6 @@ Changes, each marked "Overmind fork" in the code:
 
   Left as they are, and why that is harmless: redstone propagates within one tick from a change in reach, through at most 15 blocks of wire, and explosions and entity drops start from entities, which tick only in reach. Either can leave an entity (lit TNT, an item) at most a chunk past reach, which is still inside view (the reach is held two chunks under it). It freezes there and resumes when a player comes near, as any entity that walks out of reach does; unlike a bolt, it closes on its own once ticked.
 
+- `server/block/leaves.go`: a leaf stays while a log is within 6 steps through leaves (`leafLogReach`, Java's rule; was 4). Overmind generates Java's trees, whose leaves reach 6 steps, so at 4 any change beside an untouched tree decayed its outer leaves. Tested by internal/app `TestLeavesDecay`.
+
 To take a new Dragonfly release: copy it over this folder, then reapply the changes above.

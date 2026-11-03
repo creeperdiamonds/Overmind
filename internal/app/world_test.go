@@ -303,8 +303,39 @@ func TestLeavesDecay(t *testing.T) {
 	spawn := w.Spawn()
 	defer watch(t, w, spawn, 6)()
 
-	// Find the tree nearest spawn, cut every log within 8 blocks of it, and note which leaves are left
-	// with no log within 4 blocks through other leaves: the game's rule for a leaf to survive. Leaves
+	// First, with no player edits, every generated leaf is marked for a decay check, as any change
+	// beside a canopy floods the mark across it, and given time for many random ticks. Java's trees
+	// put leaves up to 6 steps from a log, and the game keeps those; close to all must stay.
+	var natural []cube.Pos
+	run(t, w, func(tx *world.Tx) {
+		for dx := -40; dx <= 40; dx++ {
+			for dz := -40; dz <= 40; dz++ {
+				for y := 50; y < 200; y++ {
+					p := cube.Pos{spawn.X() + dx, y, spawn.Z() + dz}
+					if l, ok := tx.Block(p).(block.Leaves); ok {
+						natural = append(natural, p)
+						l.ShouldUpdate = true
+						tx.SetBlock(p, l, &world.SetOpts{DisableBlockUpdates: true})
+					}
+				}
+			}
+		}
+	})
+	require.GreaterOrEqual(t, len(natural), 500, "too few generated leaves near spawn %v to judge", spawn)
+	time.Sleep(15 * time.Second)
+	stayed := 0
+	run(t, w, func(tx *world.Tx) {
+		for _, p := range natural {
+			if _, ok := tx.Block(p).(block.Leaves); ok {
+				stayed++
+			}
+		}
+	})
+	t.Logf("%d of %d generated leaves stayed after every one was marked", stayed, len(natural))
+	require.GreaterOrEqual(t, stayed*1000, len(natural)*995, "only %d of %d generated leaves stayed", stayed, len(natural))
+
+	// Then find the tree nearest spawn, cut every log within 8 blocks of it, and note which leaves are
+	// left with no log within 6 blocks through other leaves: the game's rule for a leaf to survive. Leaves
 	// decay on random ticks, which reach only the tick distance around a player, so the search goes
 	// outwards ring by ring and stops at the first tree.
 	var tree cube.Pos
@@ -355,8 +386,8 @@ func TestLeavesDecay(t *testing.T) {
 	require.NotEqual(t, cube.Pos{}, tree, "no tree within 60 blocks of spawn %v", spawn)
 	require.GreaterOrEqual(t, len(orphans), 5, "the tree at %v left too few leaves without a log", tree)
 
-	// Dragonfly updates a leaf only when a neighbour changes, so the ones right by a cut log go
-	// first and the rest follow as the leaves between them fall. Most must go.
+	// A change marks a leaf for a check, and each mark is itself a block change, so it floods the
+	// whole canopy; a marked leaf with no log decays on its next random tick. Close to all must go.
 	gone := func() int {
 		n := 0
 		for _, p := range orphans {
@@ -366,13 +397,13 @@ func TestLeavesDecay(t *testing.T) {
 		}
 		return n
 	}
-	require.Eventually(t, func() bool { return gone()*2 >= len(orphans) }, 60*time.Second, 500*time.Millisecond,
+	require.Eventually(t, func() bool { return gone()*100 >= len(orphans)*98 }, 60*time.Second, 500*time.Millisecond,
 		"only %d of %d leaves without a log decayed", gone(), len(orphans))
 	t.Logf("%d of %d leaves without a log had decayed", gone(), len(orphans))
 }
 
-// logNear says whether a log is within 4 blocks of p, counted through leaves, as the game decides
-// whether a leaf stays.
+// logNear says whether a log is within 6 blocks of p, counted through leaves, as the game decides
+// whether a leaf stays (Java's rule, which the Dragonfly fork follows).
 func logNear(tx *world.Tx, p cube.Pos) bool {
 	seen, step := map[cube.Pos]bool{p: true}, []cube.Pos{p}
 	for d := 0; len(step) > 0; d++ {
@@ -382,7 +413,7 @@ func logNear(tx *world.Tx, p cube.Pos) bool {
 			case block.Log, block.Wood:
 				return true
 			case block.Leaves:
-				if d < 4 {
+				if d < 6 {
 					at.Neighbours(func(n cube.Pos) {
 						if !seen[n] {
 							seen[n] = true
