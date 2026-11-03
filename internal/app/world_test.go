@@ -2,8 +2,12 @@ package app_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"math"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -92,7 +96,9 @@ func watch(t *testing.T, w *world.World, pos cube.Pos, radius int) (stop func())
 	return func() { run(t, w, func(tx *world.Tx) { l.Close(tx) }) }
 }
 
-func TestBotSpawnsOnLand(t *testing.T) {
+// TestDefaultSpawnOnLandForEverySeed checks, without a server or bot, that the generator's spawn for each
+// test seed stands on solid, dry ground above sea level with room to stand, near the origin.
+func TestDefaultSpawnOnLandForEverySeed(t *testing.T) {
 	// No server per seed: Dragonfly adds its creative items and recipes to global lists every time
 	// a server is made, so a test process that makes many of them breaks later joins.
 	for _, seed := range testSeeds {
@@ -171,10 +177,32 @@ func TestSeedSurvivesRestart(t *testing.T) {
 	require.Equal(t, col, column(t, second.World(), spawn.X()+40, spawn.Z()-24), "an untouched chunk changed after a restart")
 	require.NoError(t, second.Close())
 
-	// A different seed in the settings must not silently change an existing world.
+	// A different seed in the settings must not silently change an existing world: the start fails
+	// and leaves every file of the world as it was.
+	before := folderFiles(t, dir)
 	_, err := testserver.TryStartIn(t, dir, withSeed(99))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "seed")
+	require.Equal(t, before, folderFiles(t, dir), "a refused start changed the world folder")
+	require.NotEmpty(t, before)
+}
+
+// folderFiles maps every file under dir to a hash of its contents.
+func folderFiles(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	require.NoError(t, filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		out[p] = fmt.Sprintf("%x", sha256.Sum256(data))
+		return nil
+	}))
+	return out
 }
 
 // column lists the blocks of a whole column as encoded names.

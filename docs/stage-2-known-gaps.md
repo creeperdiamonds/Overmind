@@ -16,7 +16,7 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 
 ## Tests
 
-- **A test process can hold about 20 servers.** Dragonfly adds its creative items and recipes to global lists each time a server is made, so after that many, a joining bot's session is dropped after a second. Production makes one server per process. The tests keep to fewer, and `TestBotSpawnsOnLand` uses the generator without a server.
+- **A test process can hold about 20 servers.** Dragonfly adds its creative items and recipes to global lists each time a server is made, so after that many, a joining bot's session is dropped after a second. Production makes one server per process. The tests keep to fewer, and `TestDefaultSpawnOnLandForEverySeed` uses the generator without a server. `testserver` refuses a server past its cap of 19 with this reason.
 
 ## Fixed on the way
 
