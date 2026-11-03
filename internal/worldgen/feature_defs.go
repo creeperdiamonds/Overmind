@@ -157,7 +157,7 @@ func defineSteps(t *tableBuilder) {
 		}
 		return sGrass, true
 	}), diskMods(1)...)
-	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(t.prof.magmaCount[0], t.prof.magmaCount[1])}, inSquareMod{}, heightRangeMod{uniHeight(minY, maxY)}, surfaceThresholdMod{hmOceanFloorWG, -2, 1 << 30}, biomeMod{})
+	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(t.prof.magmaCount[0], t.prof.magmaCount[1])}, inSquareMod{}, heightRangeMod{uniHeight(minY, 256)}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -2}, biomeMod{})
 	waterRock := blockSet("stone granite diorite andesite deepslate tuff calcite dirt snow_block powder_snow packed_ice")
 	lavaRock := blockSet("stone granite diorite andesite deepslate tuff")
 	frozenRock := blockSet("snow_block powder_snow packed_ice")
