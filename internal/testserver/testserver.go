@@ -60,7 +60,10 @@ func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, 
 	cfg := config.Default()
 	cfg.AuthEnabled = false
 	cfg.JavaOffline = true
-	cfg.BedrockAddr = spareUDP(t)
+	cfg.BedrockAddr = spareUDPAndTCP(t) // RakNet on UDP, NetherNet's signalling on TCP
+	// The system picks each NetherNet player's UDP port, so test servers never share one.
+	cfg.NetherNetUDPPorts = ""
+	cfg.NetherNetKeyFile = filepath.Join(dir, "keys", "nethernet-identity.pem")
 	cfg.JavaAddr = spareTCP(t)
 	cfg.WorldFolder = filepath.Join(dir, "world")
 	cfg.PlayersFolder = filepath.Join(dir, "players")
@@ -143,6 +146,27 @@ func spareUDP(t *testing.T) string {
 	}
 	defer c.Close()
 	return c.LocalAddr().String()
+}
+
+// spareUDPAndTCP returns a local address whose port is free on both UDP and TCP.
+func spareUDPAndTCP(t *testing.T) string {
+	t.Helper()
+	for range 50 {
+		addr := spareUDP(t)
+		if l, err := net.Listen("tcp", addr); err == nil {
+			_ = l.Close()
+			return addr
+		}
+	}
+	t.Fatal("no port free on both UDP and TCP")
+	return ""
+}
+
+// SparePort returns a free UDP port, for a test that sets a port of its own.
+func SparePort(t *testing.T) string {
+	t.Helper()
+	_, port, _ := net.SplitHostPort(spareUDP(t))
+	return port
 }
 
 func spareTCP(t *testing.T) string {

@@ -37,6 +37,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 `bots/java` uses [minecraft-protocol](https://github.com/PrismarineJS/node-minecraft-protocol) and [prismarine-chunk](https://github.com/PrismarineJS/prismarine-chunk) (both MIT), installed by npm and not in the repo.
 
+## go-nethernet
+
+Bedrock 26.50+ clients join over NetherNet. [go-nethernet](https://github.com/df-mc/go-nethernet) (`github.com/df-mc/go-nethernet`, v1.0.26) carries it: the HTTP signalling endpoint, the server identity and the WebRTC data channels. Gophertunnel and the Dragonfly fork listen through it; `internal/bedrocknet` turns it on and `tools/nnprobe` dials with it. Its WebRTC stack is [Pion](https://github.com/pion/webrtc) (MIT).
+
+MIT License. Copyright (c) 2019 Dragonfly Tech. The licence text is the same as Dragonfly's, above.
+
 ## Other Go libraries
 
 gophertunnel (Bedrock protocol, used by Dragonfly and the test bot), go-toml, testify. Each keeps its own license in the Go module cache.
