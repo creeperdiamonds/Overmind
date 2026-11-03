@@ -3,7 +3,6 @@ package worldgen
 import (
 	"fmt"
 	"math"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -38,23 +37,16 @@ func seedTwoSE(bySeed []float64) float64 {
 
 // bedrockSample visits every step-th chunk of the 4 Bedrock windows (chunks -35 to 34), in parallel.
 func bedrockSample(step int, visit func(g *Generator, c *chunk.Chunk, cx, cz int)) {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
 	for _, seed := range goldenSeeds {
 		g := New(seed)
+		var pos [][2]int32
 		for cx := -35; cx < 35; cx += step {
 			for cz := -35; cz < 35; cz += step {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func() {
-					defer wg.Done()
-					defer func() { <-sem }()
-					visit(g, generate(g, int32(cx), int32(cz)), cx, cz)
-				}()
+				pos = append(pos, [2]int32{int32(cx), int32(cz)})
 			}
 		}
+		inTiles(pos, func(p [2]int32) { visit(g, generate(g, p[0], p[1]), int(p[0]), int(p[1])) })
 	}
-	wg.Wait()
 }
 
 // groundTop is the study's column top: the highest ground block.
@@ -465,38 +457,33 @@ func TestMountainOresMatchBedrock(t *testing.T) {
 		g := New(seed)
 		var mu sync.Mutex
 		counts := make([]float64, len(rows))
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, runtime.NumCPU())
+		var pos [][2]int32
 		for cx := -35; cx < 35; cx++ {
 			for cz := -35; cz < 35; cz++ {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func() {
-					defer wg.Done()
-					defer func() { <-sem }()
-					c := generate(g, int32(cx), int32(cz))
-					n := make([]float64, len(rows))
-					for x := range uint8(16) {
-						for z := range uint8(16) {
-							for y := int16(-16); y <= maxY; y++ {
-								r := c.Block(x, y, z, 0)
-								for i := range rows {
-									if r == rows[i].ids[0] || r == rows[i].ids[1] {
-										n[i]++
-									}
-								}
+				pos = append(pos, [2]int32{int32(cx), int32(cz)})
+			}
+		}
+		inTiles(pos, func(p [2]int32) {
+			c := generate(g, p[0], p[1])
+			n := make([]float64, len(rows))
+			for x := range uint8(16) {
+				for z := range uint8(16) {
+					for y := int16(-16); y <= maxY; y++ {
+						r := c.Block(x, y, z, 0)
+						for i := range rows {
+							if r == rows[i].ids[0] || r == rows[i].ids[1] {
+								n[i]++
 							}
 						}
 					}
-					mu.Lock()
-					for i := range n {
-						counts[i] += n[i]
-					}
-					mu.Unlock()
-				}()
+				}
 			}
-		}
-		wg.Wait()
+			mu.Lock()
+			for i := range n {
+				counts[i] += n[i]
+			}
+			mu.Unlock()
+		})
 		for i, r := range rows {
 			got := counts[i] / (70 * 70)
 			t.Logf("seed %d: %s %.3f a chunk, Bedrock %.3f", seed, r.name, got, r.want[seed])

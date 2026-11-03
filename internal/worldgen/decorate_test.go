@@ -91,22 +91,58 @@ func biomeChunks(g *Generator, n int, names ...string) [][2]int32 {
 func generateAll(g *Generator, pos [][2]int32) world3 {
 	w := make(world3, len(pos))
 	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
+	inTiles(pos, func(p [2]int32) {
+		c := generate(g, p[0], p[1])
+		mu.Lock()
+		w[p] = c
+		mu.Unlock()
+	})
+	return w
+}
+
+// inTiles runs f on every position, in parallel, a tile of nearby chunks per worker in row order, so a
+// worker's kept bases serve its next chunks. Tests turn base reuse on; it changes no result.
+func inTiles(pos [][2]int32, f func(p [2]int32)) {
+	const tile = 10
+	tiles := map[[2]int32][][2]int32{}
+	var keys [][2]int32
 	for _, p := range pos {
+		k := [2]int32{p[0] / tile, p[1] / tile}
+		if p[0] < 0 {
+			k[0] = (p[0] - tile + 1) / tile
+		}
+		if p[1] < 0 {
+			k[1] = (p[1] - tile + 1) / tile
+		}
+		if _, ok := tiles[k]; !ok {
+			keys = append(keys, k)
+		}
+		tiles[k] = append(tiles[k], p)
+	}
+	jobs := make(chan [][2]int32)
+	var wg sync.WaitGroup
+	for range runtime.NumCPU() {
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
-			defer func() { <-sem }()
-			c := generate(g, p[0], p[1])
-			mu.Lock()
-			w[p] = c
-			mu.Unlock()
+			for list := range jobs {
+				slices.SortFunc(list, func(a, b [2]int32) int {
+					if a[1] != b[1] {
+						return int(a[1] - b[1])
+					}
+					return int(a[0] - b[0])
+				})
+				for _, p := range list {
+					f(p)
+				}
+			}
 		}()
 	}
+	for _, k := range keys {
+		jobs <- tiles[k]
+	}
+	close(jobs)
 	wg.Wait()
-	return w
 }
 
 // blockAround gives a square of chunks around a point.

@@ -42,7 +42,7 @@ var biomeOwnFeatures = map[string]string{
 	"flower_forest":            "flower_forest_flowers trees_flower_forest flower_flower_forest " + defaultGrass,
 	"birch_forest":             "wildflowers_birch_forest trees_birch patch_bush patch_tall_grass_2 " + forestVegetation,
 	"old_growth_birch_forest":  "wildflowers_birch_forest birch_tall patch_tall_grass_2 " + forestVegetation,
-	"dark_forest":              "dark_forest_vegetation patch_leaf_litter patch_tall_grass_2 " + forestVegetation,
+	"dark_forest":              "dark_forest_vegetation patch_leaf_litter " + forestVegetation,
 	"pale_garden":              "pale_garden_vegetation pale_moss_patch pale_garden_flowers flower_pale_garden patch_tall_grass_2 " + forestVegetation,
 	"taiga":                    "trees_taiga patch_large_fern patch_berry_common brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 flower_default",
 	"snowy_taiga":              "trees_taiga patch_large_fern patch_berry_rare brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 flower_default",

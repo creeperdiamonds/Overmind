@@ -1,7 +1,6 @@
-// Package worldgen is Overmind's Overworld generator. Its seeding, noise, climate, biome lookup,
-// splines, density, noise caves and aquifers follow Mojang's algorithms, per the owner's decision, so
-// that a seed gives the same biomes and terrain shape as Mojang's. Carvers, ores and decoration are
-// our own designs on top. See NOTES.md.
+// Package worldgen is Overmind's Overworld generator. Per the owner's decision it follows Mojang's
+// algorithms throughout, in our own Go from written study notes, so that a seed gives the game's
+// biomes, terrain, caves, ores and decorations. See NOTES.md.
 package worldgen
 
 import (
@@ -25,6 +24,8 @@ const (
 type Generator struct {
 	seed       int64
 	reuseBases bool
+	keptLock   sync.Mutex
+	kept       []*chunkScratch // Working spaces kept with reuse on, one per worker that has asked.
 	zoomSeed   int64
 	climate    climateNoises
 	caves      caveNoises
@@ -50,6 +51,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
 	return &Generator{
+		reuseBases: defaultReuseBases,
 		seed:       seed,
 		sf:         newSurfaceFactories(w),
 		oreFac:     ore.forkFactory(),
@@ -80,9 +82,13 @@ type chunkScratch struct {
 	base        baseChunk
 	masks       [256]carveMask
 	deco        decoration
-	bases       [liveSpan * liveSpan]*baseChunk
+	bases       [keptSpan * keptSpan]*baseChunk
 	final       [chunkCells]bs
-	kept        []keptCell
+	sources     [keptSpan * keptSpan]sourceResult
+	firstOld    map[int64]bs
+	busy        bool
+	lastCX      int
+	lastCZ      int
 }
 
 const cellsAcross = 16 / cellXZ
@@ -100,59 +106,89 @@ func (s *chunkScratch) startColumnOnly(g *Generator) {
 	s.walkAqReady = false
 }
 
-var scratchPool = sync.Pool{New: func() any { return new(chunkScratch) }}
+var scratchPool = sync.Pool{New: func() any { return &chunkScratch{firstOld: map[int64]bs{}} }}
 
 // GenerateChunk builds a chunk: noise, surface and carvers for it and its neighbours, then the changes
 // of the nine source chunks that can reach it, each decorated alone, merged in row-major order. It
 // reads no real neighbour and keeps nothing about a chunk after it returns, unless the generator was
 // told to reuse bases (SetReuseBases), which changes speed and never a result.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
-	s := scratchPool.Get().(*chunkScratch)
-	defer scratchPool.Put(s)
 	cx, cz := int(pos[0]), int(pos[1])
+	s := g.getScratch(cx, cz)
+	defer g.putScratch(s)
 	if !g.reuseBases {
 		s.forgetBases()
 	}
+	writeCells(c, g.finalCells(s, cx, cz))
+	g.storeBiomes(c, s, cx, cz)
+}
+
+// finalCells makes a chunk's finished blocks, in the scratch.
+func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
 	d := s.startDecoration(g, cx, cz)
 	here := d.chunkAt(cx, cz)
 	final := &s.final
 	*final = here.b.b
 	for sx := cx - 1; sx <= cx+1; sx++ {
 		for sz := cz - 1; sz <= cz+1; sz++ {
-			d.runSource(sx, sz)
-			s.keepChanges(d, here, final)
-			d.rollback()
+			m := s.sourceChanges(g, d, sx, sz)
+			want := int8((cx-sx+1)*3 + (cz - sz + 1))
+			for _, c := range m.changes {
+				if c.chunk == want {
+					final[c.cell] = c.now
+				}
+			}
 		}
 	}
-	writeCells(c, final)
-	g.storeBiomes(c, s, cx, cz)
+	return final
 }
 
-// keepChanges records a source's changes that land in the chunk being made.
-func (s *chunkScratch) keepChanges(d *decoration, here *liveChunk, final *[chunkCells]bs) {
-	s.kept = s.kept[:0]
-	me := int32((liveSpan/2)*liveSpan + liveSpan/2)
+// sourceResult is what one source's decoration changed, by chunk of its 3 x 3 (x*3+z) and cell. It
+// is a pure function of the seed, profile and source chunk.
+type sourceResult struct {
+	owner   *Generator
+	sx, sz  int
+	ok      bool
+	changes []sourceChange
+}
+
+type sourceChange struct {
+	chunk int8
+	cell  int32
+	now   bs
+}
+
+// sourceChanges runs a source alone, or finds its result kept from an earlier chunk when bases are
+// reused, and rolls the working set back.
+func (s *chunkScratch) sourceChanges(g *Generator, d *decoration, sx, sz int) *sourceResult {
+	m := &s.sources[floorMod(sx, keptSpan)*keptSpan+floorMod(sz, keptSpan)]
+	if g.reuseBases && m.ok && m.owner == g && m.sx == sx && m.sz == sz {
+		return m
+	}
+	d.runSource(sx, sz)
+	m.owner, m.sx, m.sz, m.ok = g, sx, sz, g.reuseBases
+	m.changes = m.changes[:0]
+	first := s.firstOld
+	clear(first)
 	for _, e := range d.log {
-		if e.chunk == me {
-			s.kept = append(s.kept, keptCell{e.cell, here.b.b[e.cell]})
+		k := int64(e.chunk)<<32 | int64(e.cell)
+		if _, seen := first[k]; !seen {
+			first[k] = e.old
 		}
 	}
-	for i := len(d.log) - 1; i >= 0; i-- {
-		e := d.log[i]
-		d.live[e.chunk].b.b[e.cell] = e.old
+	for k, old := range first {
+		lv := &d.live[k>>32]
+		cell := int32(k)
+		now := lv.b.b[cell]
+		if now == old {
+			continue
+		}
+		dx, dz := lv.b.cx-sx+1, lv.b.cz-sz+1
+		m.changes = append(m.changes, sourceChange{int8(dx*3 + dz), cell, now})
 	}
+	d.rollback()
 	d.log = d.log[:0]
-	for _, k := range s.kept {
-		if here.b.b[k.cell] != k.now {
-			final[k.cell] = k.now
-		}
-	}
-}
-
-// keptCell is a cell's value after a source ran.
-type keptCell struct {
-	cell int32
-	now  bs
+	return m
 }
 
 // storeBiomes writes the chunk's quart biomes, from the same lookups the passes read.
@@ -390,7 +426,7 @@ func (s *chunkScratch) forgetBases() {
 
 // baseFor gives a chunk's carvers stage, in a slot by its position, built on first use.
 func (s *chunkScratch) baseFor(g *Generator, _, cx, cz int) *baseChunk {
-	slot := floorMod(cx, liveSpan)*liveSpan + floorMod(cz, liveSpan)
+	slot := floorMod(cx, keptSpan)*keptSpan + floorMod(cz, keptSpan)
 	b := s.bases[slot]
 	if b == nil {
 		b = new(baseChunk)
@@ -405,9 +441,47 @@ func (s *chunkScratch) baseFor(g *Generator, _, cx, cz int) *baseChunk {
 
 func floorMod(a, b int) int { return a - floorDiv(a, b)*b }
 
-// SetReuseBases lets workers keep neighbour bases between chunks, in pooled scratch. A base is a pure
-// function of the seed and the chunk, so this changes speed and never a result; but it is per-chunk data
-// kept after a chunk is made, so it is off unless the owner asks for it.
+// getScratch takes a chunk's working space. With reuse on, a generator keeps its own spaces, which the
+// garbage collector does not empty as it does a sync.Pool, and hands out the free one that last made
+// the nearest chunk, so its kept bases serve.
+func (g *Generator) getScratch(cx, cz int) *chunkScratch {
+	if !g.reuseBases {
+		return scratchPool.Get().(*chunkScratch)
+	}
+	g.keptLock.Lock()
+	defer g.keptLock.Unlock()
+	best, bestD := -1, 1<<62
+	for i, k := range g.kept {
+		if k.busy {
+			continue
+		}
+		if d := absInt(k.lastCX-cx) + absInt(k.lastCZ-cz); d < bestD {
+			best, bestD = i, d
+		}
+	}
+	if best < 0 {
+		s := &chunkScratch{firstOld: map[int64]bs{}}
+		g.kept = append(g.kept, s)
+		best = len(g.kept) - 1
+	}
+	s := g.kept[best]
+	s.busy, s.lastCX, s.lastCZ = true, cx, cz
+	return s
+}
+
+func (g *Generator) putScratch(s *chunkScratch) {
+	if !g.reuseBases {
+		scratchPool.Put(s)
+		return
+	}
+	g.keptLock.Lock()
+	s.busy = false
+	g.keptLock.Unlock()
+}
+
+// SetReuseBases lets workers keep neighbour bases and source results between chunks, in pooled
+// scratch. Both are pure functions of the seed, profile and chunk, so this changes speed and never a
+// result; but it is per-chunk data kept after a chunk is made, so it is off unless the owner asks.
 func (g *Generator) SetReuseBases(on bool) { g.reuseBases = on }
 
 // startDecoration readies the working set around a chunk.
@@ -415,3 +489,8 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 	s.deco.startTarget(g, s, cx, cz)
 	return &s.deco
 }
+
+// keptSpan is how many chunks across the kept bases and source results span, by position: enough for
+// a worker sweeping rows a few dozen chunks wide to find the row above. Without SetReuseBases only the
+// 25 a chunk needs are ever built.
+const keptSpan = 12

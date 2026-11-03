@@ -33,10 +33,29 @@ type oreSpec struct {
 	targets []oreTarget
 }
 
-// oreScratch is an ore's working space, kept between blobs: the seen set is cleared by what was set.
+// oreScratch is an ore's working space. seen marks keys by stamp, so it needs no clearing; keys outside
+// it, which the game's key formula allows, go in the map.
 type oreScratch struct {
-	seen map[int]struct{}
-	d    [64][4]float64
+	stamp uint32
+	seen  [1 << 15]uint32
+	far   map[int]struct{}
+	d     [64][4]float64
+}
+
+// see marks a key and says whether it was marked already in this blob.
+func (o *oreScratch) see(key int) bool {
+	if key >= 0 && key < len(o.seen) {
+		if o.seen[key] == o.stamp {
+			return true
+		}
+		o.seen[key] = o.stamp
+		return false
+	}
+	if _, ok := o.far[key]; ok {
+		return true
+	}
+	o.far[key] = struct{}{}
+	return false
 }
 
 func (o oreSpec) place(d *decoration, p pos) bool {
@@ -69,10 +88,15 @@ gate:
 	}
 
 	sc := &d.ore
-	if sc.seen == nil {
-		sc.seen = map[int]struct{}{}
-	} else {
-		clear(sc.seen)
+	sc.stamp++
+	if sc.stamp == 0 {
+		clear(sc.seen[:])
+		sc.stamp = 1
+	}
+	if sc.far == nil {
+		sc.far = map[int]struct{}{}
+	} else if len(sc.far) > 0 {
+		clear(sc.far)
 	}
 	sp64 := sc.d[:size]
 	for i := range size {
@@ -128,10 +152,9 @@ gate:
 						continue
 					}
 					key := (x - xs) + (y-ys)*dxz + (z-zs)*dxz*dy
-					if _, ok := sc.seen[key]; ok {
+					if sc.see(key) {
 						continue
 					}
-					sc.seen[key] = struct{}{}
 					if !d.canWrite(x, y, z) {
 						continue
 					}

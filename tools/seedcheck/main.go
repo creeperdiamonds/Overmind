@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -45,6 +46,7 @@ func main() {
 	if *ref == "" {
 		log.Fatal("seedcheck: -ref is required")
 	}
+	failed := false
 	fmt.Printf("%-10s | %-22s | %-22s | %-22s | %s\n", "seed", "biome % grid/all", "height<=2 % grid/all", "noise height<=2 % grid", "Java vs Bedrock biome/height (grid)")
 	for _, s := range regexp.MustCompile(`,`).Split(*seedsFlag, -1) {
 		seed, err := strconv.ParseInt(s, 10, 64)
@@ -61,8 +63,20 @@ func main() {
 		for _, line := range r.notes {
 			fmt.Println("    " + line)
 		}
+		// The grid figures must reach what Java itself scores against Bedrock on this seed, within the
+		// sample's rounding. A seed with no Java figure is reported and not judged.
+		if ok := javaFigures[seed]; ok != [2]float64{} && (r.gridBiome < j[0]-figureSlack || r.gridHeight < j[1]-figureSlack) {
+			fmt.Printf("    FAIL: seed %d is under the Java vs Bedrock figures %.2f / %.2f\n", seed, j[0], j[1])
+			failed = true
+		}
+	}
+	if failed {
+		os.Exit(1)
 	}
 }
+
+// figureSlack is one grid point of 1225, in percent: the smallest step the figures can move by.
+const figureSlack = 100.0 / 1225
 
 type result struct {
 	gridBiome, allBiome, gridHeight, allHeight, gridNoise float64
@@ -72,6 +86,7 @@ type result struct {
 // check generates every chunk of the window and compares it.
 func check(seed int64, m *refMaps) result {
 	g := worldgen.New(seed)
+	g.SetReuseBases(true) // A tool sweeping a window; it changes speed and no result.
 	ground := worldgen.GroundBlocks()
 	jobs := make(chan [2]int)
 	var mu sync.Mutex
@@ -92,7 +107,7 @@ func check(seed int64, m *refMaps) result {
 					for lz := range 16 {
 						x, z := cx*16+lx, cz*16+lz
 						i, j := z-m.z0, x-m.x0
-						if !m.mask[i*m.w+j] {
+						if i < 0 || j < 0 || j >= m.w || i*m.w+j >= len(m.mask) || !m.mask[i*m.w+j] {
 							continue
 						}
 						top := minY - 1

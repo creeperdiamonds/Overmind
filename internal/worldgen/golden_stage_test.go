@@ -162,7 +162,7 @@ func compareStage(t *testing.T, dir, stage string, stageOf baseStage, profile *P
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				s := new(chunkScratch)
+				s := scratchPool.Get().(*chunkScratch)
 				for j := range jobs {
 					want, err := readStage(chunkFile(dir, seed, j.cx, j.cz), stage)
 					if err != nil {
@@ -311,7 +311,7 @@ func TestGoldenBiomeStage(t *testing.T) {
 	step := goldenStep()
 	for _, seed := range goldenSeeds {
 		g := NewWithProfile(seed, ProfileOverjava)
-		s := new(chunkScratch)
+		s := scratchPool.Get().(*chunkScratch)
 		total, miss := 0, 0
 		first := ""
 		for cx := goldenMinCX; cx <= goldenMaxCX; cx += step {
@@ -354,7 +354,7 @@ func TestGoldenCarverStage(t *testing.T) {
 // so the mask contract holds. Fixtures are not needed.
 func TestSurfaceHeightMatchesCarverStage(t *testing.T) {
 	g := NewWithProfile(100, ProfileOverjava)
-	s := new(chunkScratch)
+	s := scratchPool.Get().(*chunkScratch)
 	for _, p := range [][2]int{{0, 0}, {30, -18}, {-7, 44}} {
 		g.buildBase(&s.base, s, p[0], p[1], stageCarvers, 0, 15, 0, 15)
 		var tops [256]int
@@ -371,6 +371,46 @@ func TestSurfaceHeightMatchesCarverStage(t *testing.T) {
 			if got := g.SurfaceHeight(p[0]*16+i&15, p[1]*16+i>>4); got != tops[i] {
 				t.Errorf("chunk %v column %d: SurfaceHeight %d, chunk %d", p, i, got, tops[i])
 			}
+		}
+	}
+}
+
+// TestGoldenFinalAgainstJava measures how far a finished chunk, by our fixed merge, lands from the
+// Java world, on the same stage. It cannot be exact (Java has no single answer where sources overlap,
+// and some features are known gaps), so it asserts only a floor and logs the figure for the report.
+func TestGoldenFinalAgainstJava(t *testing.T) {
+	dir := goldenFeaturesDir(t)
+	step := goldenStep() * 2
+	for _, seed := range goldenSeeds {
+		g := NewWithProfile(seed, ProfileOverjava)
+		g.reuseBases = true
+		s := scratchPool.Get().(*chunkScratch)
+		var chunks, blocks, bad int64
+		var diffs diffCounter
+		for cx := goldenMinCX + 1; cx < goldenMaxCX; cx += step {
+			for cz := goldenMinCZ + 1; cz < goldenMaxCZ; cz += step {
+				want, err := readStage(chunkFile(dir, seed, cx, cz), "features")
+				if err != nil {
+					t.Fatal(err)
+				}
+				final := g.finalCells(s, cx, cz)
+				for i, w := range want {
+					if got := final[i]; got != w {
+						bad++
+						diffs.add(got, w)
+					}
+				}
+				chunks++
+				blocks += chunkCells
+			}
+		}
+		if chunks == 0 {
+			t.Fatalf("seed %d: no chunks read", seed)
+		}
+		share := float64(bad) / float64(blocks)
+		t.Logf("final seed %d: %d chunks, %.3f%% of blocks differ from Java (%d)\n%s", seed, chunks, 100*share, bad, diffs.top(10))
+		if share > 0.01 {
+			t.Errorf("seed %d: %.3f%% of final blocks differ from Java, over the 1%% floor", seed, 100*share)
 		}
 	}
 }

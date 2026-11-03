@@ -147,7 +147,7 @@ search:
 	}
 	// The bound was 25%, our own guess. The noise stage alone, which matches the game bit for bit, has
 	// 27.2% in this patch, so that bound was wrong; carvers add the rest. Half still says mostly solid.
-	if share > 0.5 {
+	if share > 0.4 {
 		t.Fatalf("%.1f%% of mountain columns overhang; the ground should stay mostly solid", share*100)
 	}
 }

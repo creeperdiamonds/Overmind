@@ -129,12 +129,9 @@ func darkOak(decos ...treeDecorator) *treeCfg {
 
 // leafLitter is the ground decorator of forest trees. Its numbers are inferred from the traces.
 func leafLitterProvider(d *decoration, _ pos) bs {
-	k := d.r.nextInt(12)
-	return stateOf(fmt.Sprintf("leaf_litter[facing=%s,segment_amount=%d]", dirName(twoDOrder[k%4]), k/4+1))
+	k := d.r.nextInt(16)
+	return stateOf(fmt.Sprintf("leaf_litter[facing=%s,segment_amount=%d]", dirName(horizontal[k%4]), k/4+1))
 }
-
-// twoDOrder is the game's order of horizontal directions by their 2D index.
-var twoDOrder = [4]dir{dSouth, dWest, dNorth, dEast}
 
 func litter(tries, radius int) treeDecorator {
 	return placeOnGround(tries, radius, 2, leafLitterProvider)
@@ -174,7 +171,7 @@ func defineSteps(t *tableBuilder) {
 		}
 		return sGrass, true
 	}), diskMods(1)...)
-	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(44, 52)}, inSquareMod{}, heightRangeMod{uniHeight(minY, maxY)}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -2}, biomeMod{})
+	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(44, 52)}, inSquareMod{}, heightRangeMod{uniHeight(minY, maxY)}, surfaceThresholdMod{hmOceanFloorWG, -2, 1 << 30}, biomeMod{})
 	waterRock := blockSet("stone granite diorite andesite deepslate tuff calcite dirt snow_block powder_snow packed_ice")
 	lavaRock := blockSet("stone granite diorite andesite deepslate tuff")
 	frozenRock := blockSet("snow_block powder_snow packed_ice")
@@ -212,8 +209,8 @@ func defineSteps(t *tableBuilder) {
 	t.def("trees_plains", treeSel(checkedOak(bee5), selEntry{third, checkedFancy(bee5)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(0, 20, 1), 0)...)
 	t.def("trees_birch_and_oak_leaf_litter", treeSel(checkedOak(withLit(bee2)...), selEntry{0.0025, fallenBirch(5, 8)}, selEntry{0.2, checkedBirch(withLit(bee2)...)}, selEntry{0.1, checkedFancy(withLit(bee2)...)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_flower_forest", treeSel(checkedOak(bee2), selEntry{0.0025, fallenBirch(5, 8)}, selEntry{0.2, checkedBirch(bee2)}, selEntry{0.1, checkedFancy(bee2)}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(6, 10, 1), 0)...)
-	t.def("trees_birch", treeSel(checkedBirch(withLit(bee2)...), selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
-	t.def("birch_tall", treeSel(checked(birchTree(withLit(bee2)...), birch), selEntry{0.00625, fallenBirch(5, 15)}, selEntry{0.5, checked(superBirchTree(withLit(bee2)...), birch)}, selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
+	t.def("trees_birch", treeSel(checkedBirch(bee2), selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
+	t.def("birch_tall", treeSel(checked(birchTree(bee2), birch), selEntry{0.00625, fallenBirch(5, 15)}, selEntry{0.5, checked(superBirchTree(bee2), birch)}, selEntry{0.0125, fallenBirch(5, 8)}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("dark_forest_vegetation", treeSel(checkedOak(lit...),
 		selEntry{0.025, newNestedPlacement(hugeMushroom(false, 3))}, selEntry{0.05, newNestedPlacement(hugeMushroom(true, 2))},
 		selEntry{0.6666667, checked(darkOak(lit...), "dark_oak_sapling")}, selEntry{0.0025, fallenBirch(5, 8)}, selEntry{0.2, checkedBirch(lit...)}, selEntry{0.0125, fallenOak()}, selEntry{0.1, checkedFancy(lit...)}),
@@ -277,12 +274,12 @@ func defineSteps(t *tableBuilder) {
 	plantAt("patch_dead_bush", simpleState("dead_bush"), 4, countMod{constInt(1)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_dead_bush_2", simpleState("dead_bush"), 4, countMod{constInt(2)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_dead_bush_badlands", simpleState("dead_bush"), 4, countMod{constInt(20)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
-	t.def("patch_bush", simpleBlock(simpleState("bush")), chain(mods(rarityMod{4}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(24, 5, 3, airOnly))...)
+	t.def("patch_bush", simpleBlock(simpleState("bush")), chain(mods(rarityMod{4}, inSquareMod{}, heightmapMod{hmWorldSurface}, biomeMod{}), patch(24, 5, 3, airOnly))...)
 	plantAt("patch_berry_common", simpleState("sweet_berry_bush[age=3]"), 96, rarityMod{32}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	plantAt("patch_berry_rare", simpleState("sweet_berry_bush[age=3]"), 96, rarityMod{384}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{})
 	onGrass := allOf(airOnly, offsetP(0, -1, 0, matchBlocks("grass_block")))
 	gourd := func(name, block string, tries int, chance int) {
-		t.def(name, simpleBlock(simpleState(block)), chain(mods(rarityMod{chance}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(tries, 7, 3, onGrass))...)
+		t.def(name, simpleBlock(simpleState(block)), chain(mods(rarityMod{chance}, inSquareMod{}, heightmapMod{hmWorldSurface}, biomeMod{}), patch(tries, 7, 3, onGrass))...)
 	}
 	gourd("patch_pumpkin", "pumpkin", 96, 300)
 	gourd("patch_melon", "melon", 64, 6)
@@ -326,6 +323,32 @@ func defineSteps(t *tableBuilder) {
 	t.def("kelp_cold", kelpFeature, mods(noiseCountMod{120, 80, 0}, inSquareMod{}, heightmapMod{hmOceanFloorWG}, biomeMod{})...)
 	t.def("kelp_warm", kelpFeature, mods(noiseCountMod{80, 80, 0}, inSquareMod{}, heightmapMod{hmOceanFloorWG}, biomeMod{})...)
 	t.def("sea_pickle", picklesFeature(20), mods(rarityMod{16}, inSquareMod{}, heightmapMod{hmOceanFloorWG}, biomeMod{})...)
+
+	// Noise-chosen flowers. Inferred from the game's providers and tested on the traces.
+	flowerNoise := legacyNormal(2345, 0, []float64{1})
+	tulips := []bs{stateOf("orange_tulip"), stateOf("red_tulip"), stateOf("pink_tulip"), stateOf("white_tulip")}
+	bright := []bs{stateOf("poppy"), stateOf("azure_bluet"), stateOf("oxeye_daisy"), stateOf("cornflower")}
+	dandelion := stateOf("dandelion")
+	plainsFlower := func(d *decoration, p pos) bs {
+		v := flowerNoise.at(float64(float64(p.x)*0.005), float64(float64(p.y)*0.005), float64(float64(p.z)*0.005))
+		if v < -0.8 {
+			return tulips[d.r.nextInt(len(tulips))]
+		}
+		if d.r.nextFloat() < 0.33 {
+			return bright[d.r.nextInt(len(bright))]
+		}
+		return dandelion
+	}
+	t.def("flower_plains", simpleBlock(plainsFlower), chain(mods(noiseThresholdMod{-0.8, 15, 4}, rarityMod{32}, inSquareMod{}, mb, biomeMod{}), patch(64, 6, 2, airOnly))...)
+	tallFlower := func(block string) *placement {
+		return newNestedPlacement(simpleBlock(simpleState(block+"[half=lower]")), patch(96, 7, 3, airOnly)...)
+	}
+	lily := newNestedPlacement(simpleBlock(simpleState("lily_of_the_valley")), patch(96, 7, 3, airOnly)...)
+	forestPick := simpleSelector(tallFlower("lilac"), tallFlower("rose_bush"), tallFlower("peony"), lily)
+	t.def("forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-1, 3), 0, 3)}, biomeMod{})...)
+	t.def("flower_forest_flowers", forestPick, mods(rarityMod{7}, inSquareMod{}, mb, countMod{clampedInt(uniInt(-3, 1), 0, 1)}, biomeMod{})...)
+	lushGrass := newNestedPlacement(simpleBlock(jungleMix), patch(32, 7, 3, airOnly)...)
+	t.def("bamboo_vegetation", treeSel(lushGrass, selEntry{0.05, checkedFancy()}, selEntry{0.15, checked(jungleBush(), "jungle_sapling")}, selEntry{0.7, checked(megaJungle(), "jungle_sapling")}), treeBase(countExtra(30, 10, 1), 0)...)
 }
 
 // newNestedOnly turns a nested placed feature into a plain feature.

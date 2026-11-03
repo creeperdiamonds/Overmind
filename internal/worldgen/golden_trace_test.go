@@ -83,7 +83,7 @@ func traceFiles(t *testing.T, dir string, seed int64) []string {
 func traceReplay(t *testing.T, dir string, scores map[string]*featureScore) {
 	for _, seed := range goldenSeeds {
 		g := NewWithProfile(seed, ProfileOverjava)
-		s := new(chunkScratch)
+		s := scratchPool.Get().(*chunkScratch)
 		byName := map[string]*placement{}
 		for _, pl := range g.profile.placements {
 			byName[pl.name] = pl

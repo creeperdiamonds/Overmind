@@ -232,11 +232,15 @@ type decoration struct {
 	ore            oreScratch
 	decSeed        int64
 	placed         bool
+	// The chunk last read, a shortcut for runs of reads in one chunk.
+	lastCX, lastCZ int
+	lastB          *baseChunk
 }
 
 // startTarget makes the working set ready for a chunk.
 func (d *decoration) startTarget(g *Generator, s *chunkScratch, cx, cz int) {
 	d.g, d.s, d.baseCX, d.baseCZ = g, s, cx, cz
+	d.lastB = nil
 	for _, i := range d.used {
 		d.live[i].b = nil
 	}
@@ -338,10 +342,15 @@ func (d *decoration) block(x, y, z int) bs {
 	if y < minY || y > maxY {
 		return sAir
 	}
-	l := d.chunkAt(x>>4, z>>4)
+	cx, cz := x>>4, z>>4
+	if cx == d.lastCX && cz == d.lastCZ && d.lastB != nil {
+		return d.lastB.b[cellIndex(x&15, y, z&15)]
+	}
+	l := d.chunkAt(cx, cz)
 	if l == nil {
 		return sAir
 	}
+	d.lastCX, d.lastCZ, d.lastB = cx, cz, l.b
 	return l.b.b[cellIndex(x&15, y, z&15)]
 }
 

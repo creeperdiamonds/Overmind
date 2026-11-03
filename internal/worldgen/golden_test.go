@@ -21,6 +21,9 @@ func goldenDir(t testing.TB) string {
 	if dir == "" {
 		t.Skip("OVERMIND_GOLDEN is not set: point it at the golden fixtures folder to run the exact-match tests")
 	}
+	if rows, err := filepath.Glob(filepath.Join(dir, "seed_*")); err != nil || len(rows) == 0 {
+		t.Fatalf("OVERMIND_GOLDEN=%s holds no seed folders", dir)
+	}
 	return dir
 }
 
@@ -36,6 +39,9 @@ func goldenRows(t testing.TB, parts ...string) []map[string]string {
 	all, err := r.ReadAll()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(all) < 2 {
+		t.Fatalf("%s holds no rows: the fixtures are empty", filepath.Join(parts...))
 	}
 	rows := make([]map[string]string, 0, len(all)-1)
 	for _, line := range all[1:] {
@@ -394,6 +400,39 @@ func TestGoldenColumns(t *testing.T) {
 			c.same(solid == gi(t, row, "top_solid_y"), "(%d,%d) top solid %d, want %s", x, z, solid, row["top_solid_y"])
 			c.same(nonAir == gi(t, row, "top_nonair_y"), "(%d,%d) top non-air %d, want %s", x, z, nonAir, row["top_nonair_y"])
 			c.same(g.preliminarySurface(&s.prelims, x, z) == gi(t, row, "preliminary_surface_level_quart"), "(%d,%d) prelim", x, z)
+		}
+		c.report()
+	}
+}
+
+// TestGoldenFillNoiseMaterial compares the noise pass itself, block by block, with the study's
+// material_chunk column: solid, air, water or lava.
+func TestGoldenFillNoiseMaterial(t *testing.T) {
+	dir := goldenDir(t)
+	for _, seed := range goldenSeeds {
+		g := NewWithProfile(seed, ProfileOverjava)
+		c := goldenCount{t: t, name: fmt.Sprintf("fillNoise material %d", seed)}
+		s := new(chunkScratch)
+		for i, row := range goldenRows(t, seedDir(dir, seed), "density.csv") {
+			if i%8 != 0 {
+				continue
+			}
+			x, y, z := gi(t, row, "x"), gi(t, row, "y"), gi(t, row, "z")
+			g.buildBase(&s.base, s, x>>4, z>>4, stageNoise, x&15, x&15, z&15, z&15)
+			st := s.base.b[cellIndex(x&15, y, z&15)]
+			name := "solid"
+			switch st {
+			case sAir:
+				name = "air"
+			case sWater:
+				name = "water"
+			case sLava:
+				name = "lava"
+			}
+			c.same(name == row["material_chunk"], "at %d,%d,%d: %s, want %s", x, y, z, name, row["material_chunk"])
+		}
+		if c.total == 0 {
+			t.Fatalf("seed %d: no rows compared", seed)
 		}
 		c.report()
 	}
