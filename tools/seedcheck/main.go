@@ -34,7 +34,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
-	"github.com/overmind/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // Java 26.1 against the same worlds on the 32-block grid, for the table (BEDROCK-NOTES section 9).

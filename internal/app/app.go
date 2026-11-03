@@ -15,8 +15,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world/biome"
 	"github.com/df-mc/dragonfly/server/world/generator"
 
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // Start creates the server from cfg, starts listening and keeps accepting

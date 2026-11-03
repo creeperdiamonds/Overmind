@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/overmind/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 func main() {

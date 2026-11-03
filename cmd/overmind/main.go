@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/overmind/overmind/internal/app"
-	"github.com/overmind/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/app"
+	"github.com/creeperdiamonds/overmind/internal/config"
 )
 
 func main() {

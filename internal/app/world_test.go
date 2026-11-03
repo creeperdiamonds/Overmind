@@ -21,11 +21,11 @@ import (
 	"github.com/df-mc/dragonfly/server/world/portal"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/app"
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/testserver"
-	"github.com/overmind/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/app"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // Seeds that must all work: small, negative, past 32 bits and the int64 limits.
