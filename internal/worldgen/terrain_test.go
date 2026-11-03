@@ -110,6 +110,7 @@ func TestOffsetSplineDirections(t *testing.T) {
 // A column with open air under solid ground can only come from the 3D density. The patch
 // is found by searching for high ground, since the map of a seed changes with the generator.
 func TestMountainsHaveOverhangs(t *testing.T) {
+	skipUnlessLong(t) // A wide sweep (137 s); the noise stage is checked block for block by TestGoldenNoiseStage.
 	g, b := New(1), newBlocks()
 	var overhung, total, deepest int
 	var fromX, fromZ int32
