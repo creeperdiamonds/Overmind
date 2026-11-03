@@ -1,13 +1,22 @@
 package worldgen
 
+
 // Profile holds what differs between Bedrock's and Java's placement rules. The algorithms are the
 // same; only values differ. The default is Bedrock; Overjava is "Overmind as a Java server".
 type Profile struct {
 	Name string
-	// bedrockFloorTop is the first Y with no bedrock; bedrockMeasured chooses Bedrock's measured
-	// floor over Java's even fall.
+	// bedrockFloorTop is the first Y with no bedrock from the surface rule's floor, Java's even fall;
+	// minY for none.
 	bedrockFloorTop int
-	bedrockMeasured bool
+	// floorMT lays Bedrock's own floor after the noise stage, from each chunk's MT stream
+	// (NOTES-bedrock-exact R1), instead of the surface rule's floor.
+	floorMT bool
+	// deepslateName names the random of the deepslate gradient: Java's "minecraft:deepslate", or
+	// Bedrock's "minecraft:depth_based_layer" (NOTES-bedrock-exact R2; the gradient is otherwise Java's).
+	deepslateName string
+	// deepslateFirst puts the gradient before the surface materials: Bedrock lays deepslate in the noise
+	// fill, and its surface builder replaces only stone-like blocks (R2, phase 5 surface builder).
+	deepslateFirst bool
 
 	// Where the Bedrock data files differ from Java's ore table (BEDROCK-NOTES section 5).
 	ironSize, diamondMediumSize                int
@@ -28,12 +37,12 @@ type Profile struct {
 
 var (
 	// ProfileBedrock is the default: Java's algorithms with Bedrock's data where it differs.
-	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY + 5, bedrockMeasured: true,
+	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true,
 		ironSize: 10, diamondMediumSize: 4, dirtReplaces: "stone", gravelReplaces: "stone deepslate", rockReplaces: "stone",
 		oresSkipTuff: true, infestedBedrock: true, extraMountainCoal: true, climate: &bedrockClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30}})
 	// ProfileOverjava uses Java's values throughout.
-	ProfileOverjava = newProfile(&Profile{Name: "overjava", bedrockFloorTop: minY + 5, ironSize: 9, diamondMediumSize: 8, climate: &biomeClimates,
+	ProfileOverjava = newProfile(&Profile{Name: "overjava", bedrockFloorTop: minY + 5, deepslateName: "minecraft:deepslate", ironSize: 9, diamondMediumSize: 8, climate: &biomeClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{44, 52}})
 )
 

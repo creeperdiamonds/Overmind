@@ -86,6 +86,9 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 	clear(b.b[:])
 	s.startChunk(g, originX, originZ)
 	g.fillNoise(b, s, x0, x1, z0, z1)
+	if g.profile.floorMT {
+		writeBedrockFloor(b, x0, x1, z0, z1)
+	}
 	b.computeTops(x0, x1, z0, z1)
 	if stage == stageNoise {
 		return

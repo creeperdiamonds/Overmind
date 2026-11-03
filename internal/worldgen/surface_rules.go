@@ -164,9 +164,9 @@ type surfaceFactories struct {
 	bands                     [192]bs
 }
 
-func newSurfaceFactories(w seedFactory) surfaceFactories {
+func newSurfaceFactories(w seedFactory, deepslateName string) surfaceFactories {
 	bed := w.named("minecraft:bedrock_floor")
-	deep := w.named("minecraft:deepslate")
+	deep := w.named(deepslateName)
 	f := surfaceFactories{world: w, bedrock: bed.forkFactory(), deepslate: deep.forkFactory()}
 	r := w.named("minecraft:clay_bands")
 	for i := range f.bands {
@@ -362,6 +362,9 @@ func (c *ruleContext) ruleAt() bs {
 	if c.y < g.profile.bedrockFloorTop && g.bedrockAt(c.x, c.y, c.z) {
 		return sBedrock
 	}
+	if g.profile.deepslateFirst && gradient(g.sf.deepslate, c.x, c.y, c.z, 0, 8) {
+		return sDeepsl
+	}
 	if c.y >= c.minLevel {
 		if s := c.surfaceAtBlock(); s != noRule {
 			return s
@@ -373,17 +376,10 @@ func (c *ruleContext) ruleAt() bs {
 	return noRule
 }
 
-// bedrockAt is the floor. Java's falls evenly over five layers; Bedrock's was measured.
+// bedrockAt is Java's floor, falling evenly over five layers. The Bedrock profile lays its own after
+// the noise stage instead (writeBedrockFloor).
 func (g *Generator) bedrockAt(x, y, z int) bool {
-	if !g.profile.bedrockMeasured {
-		return gradient(g.sf.bedrock, x, y, z, minY, minY+5)
-	}
-	ch := bedrockChance[y-minY]
-	if ch >= 1 {
-		return true
-	}
-	r := g.sf.bedrock.at(int32(x), int32(y), int32(z))
-	return float64(r.nextFloat()) < ch
+	return gradient(g.sf.bedrock, x, y, z, minY, minY+5)
 }
 
 func (c *ruleContext) grassOrDirt() bs {

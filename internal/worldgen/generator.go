@@ -53,7 +53,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	return &Generator{
 		cache:      newSharedCache(DefaultCacheBytes),
 		seed:       seed,
-		sf:         newSurfaceFactories(w),
+		sf:         newSurfaceFactories(w, profile.deepslateName),
 		oreFac:     ore.forkFactory(),
 		regionFac:  region.forkFactory(),
 		profile:    profile,
