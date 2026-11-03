@@ -18,6 +18,7 @@ type baseChunk struct {
 	b       [chunkCells]bs
 	wgTop   [256]int16 // WORLD_SURFACE_WG: above the highest block that is not air.
 	wgFloor [256]int16 // OCEAN_FLOOR_WG: above the highest block that blocks motion.
+	whole   bool       // All columns were built, to the carvers stage.
 }
 
 // computeTops works the two stage heightmaps out from the blocks, for the columns given.
@@ -81,7 +82,7 @@ func (b *baseChunk) updated(top int16, x, y, z int, s bs, flag uint16, invert bo
 // read; SurfaceHeight asks for one column.
 func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage baseStage, x0, x1, z0, z1 int) {
 	originX, originZ := cx*16, cz*16
-	b.cx, b.cz, b.owner = cx, cz, g
+	b.cx, b.cz, b.owner, b.whole = cx, cz, g, false
 	clear(b.b[:])
 	s.startChunk(g, originX, originZ)
 	g.fillNoise(b, s, x0, x1, z0, z1)

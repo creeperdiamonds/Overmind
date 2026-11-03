@@ -95,7 +95,7 @@ var blockTags = func() map[string]uint32 {
 	add(tagTerracotta, terracotta)
 	add(tagStoneOre, "stone granite diorite andesite")
 	add(tagDeepslateOre, "deepslate tuff")
-	add(tagCarvable, baseStone+dirtFamily+terracotta+"sand red_sand water gravel sandstone red_sandstone calcite snow packed_ice raw_iron_block raw_copper_block iron_ore deepslate_iron_ore copper_ore deepslate_copper_ore")
+	add(tagCarvable, baseStone+dirtFamily+terracotta+"sand red_sand water gravel sandstone red_sandstone calcite snow snow_block packed_ice raw_iron_block raw_copper_block iron_ore deepslate_iron_ore copper_ore deepslate_copper_ore")
 	return m
 }()
 

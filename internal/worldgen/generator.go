@@ -90,6 +90,8 @@ type chunkScratch struct {
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
+	deco        decoration
+	bases       [liveSpan * liveSpan]*baseChunk
 }
 
 const cellsAcross = 16 / cellXZ
@@ -349,4 +351,24 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 		}
 	}
 	return cube.Pos{0, max(g.SurfaceHeight(0, 0), SeaLevel) + 1, 0}
+}
+
+// baseFor gives a chunk's carvers stage, in a slot of the working set, built on first use.
+func (s *chunkScratch) baseFor(g *Generator, slot, cx, cz int) *baseChunk {
+	b := s.bases[slot]
+	if b == nil {
+		b = new(baseChunk)
+		s.bases[slot] = b
+	}
+	if b.owner != g || b.cx != cx || b.cz != cz || !b.whole {
+		g.buildBase(b, s, cx, cz, stageCarvers, 0, 15, 0, 15)
+		b.whole = true
+	}
+	return b
+}
+
+// startDecoration readies the working set around a chunk.
+func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
+	s.deco.startTarget(g, s, cx, cz)
+	return &s.deco
 }
