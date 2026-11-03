@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft"
 
-	"github.com/overmind/overmind/internal/javafront"
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/javafront"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // edition is the client a player plays on.

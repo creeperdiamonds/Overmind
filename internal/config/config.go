@@ -9,7 +9,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // Config holds every setting Overmind reads at startup.

@@ -12,8 +12,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // clientBlock is a block as the bot has it, its properties decoded by

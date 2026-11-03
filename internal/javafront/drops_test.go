@@ -14,8 +14,8 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // itemOnServer is where the one item entity in the world is, and what it holds.

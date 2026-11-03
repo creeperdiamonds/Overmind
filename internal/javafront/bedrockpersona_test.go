@@ -11,9 +11,9 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/skins/skintest"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/skins/skintest"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // A Character Creator skin as a real client logs in with it: persona pieces,

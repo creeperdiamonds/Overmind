@@ -12,8 +12,8 @@ import (
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
 
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // swingEcho is how long after Dragonfly swung a player's arm a swing from the

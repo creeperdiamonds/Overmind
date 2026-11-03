@@ -3,7 +3,7 @@ package javaproto
 import (
 	"encoding/binary"
 
-	"github.com/overmind/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
 )
 
 // Windows, block entities and signs. Layouts are minecraft-data's for 26.1.

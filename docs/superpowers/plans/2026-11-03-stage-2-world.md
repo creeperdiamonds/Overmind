@@ -6,7 +6,7 @@
 
 **Architecture:** One deterministic generator package implements Dragonfly's `world.Generator`. Each chunk is built from only the seed and its coordinates, in passes: climate, terrain shape, surface, caves, ores, decoration. Nothing is cached between chunks and no neighbouring chunk needs to exist, so generation is safe on many workers and keeps memory low. Saving, backups and tick measurement sit in `internal/app` around Dragonfly's own world and LevelDB storage.
 
-**Tech Stack:** Go; Dragonfly v0.11.6 (pinned commit `51dd9c1`); module `github.com/overmind/overmind`.
+**Tech Stack:** Go; Dragonfly v0.11.6 (pinned commit `51dd9c1`); module `github.com/creeperdiamonds/overmind`.
 
 **Spec:** `docs/superpowers/specs/2026-11-02-overmind-restart-design.md`
 

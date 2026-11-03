@@ -1,4 +1,4 @@
-module github.com/overmind/overmind
+module github.com/creeperdiamonds/overmind
 
 go 1.27.3
 

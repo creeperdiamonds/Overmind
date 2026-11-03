@@ -8,8 +8,8 @@ import (
 	"github.com/df-mc/dragonfly/server"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/bedrocknet"
-	"github.com/overmind/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/bedrocknet"
+	"github.com/creeperdiamonds/overmind/internal/config"
 )
 
 // A vanilla 26.60 client reaches only NetherNet, so a settings file made by default must turn

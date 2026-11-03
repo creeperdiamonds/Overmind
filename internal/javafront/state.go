@@ -9,9 +9,9 @@ import (
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
 
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // Player metadata, by minecraft-data's indexes and types (java261).

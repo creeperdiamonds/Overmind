@@ -11,9 +11,9 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/tables/java261"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // damageTypeID is a damage type's place in the registry Java was sent.

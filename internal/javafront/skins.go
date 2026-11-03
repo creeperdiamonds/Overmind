@@ -20,7 +20,7 @@ import (
 	"github.com/df-mc/dragonfly/server/player/skin"
 	"github.com/df-mc/dragonfly/server/world"
 
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // Skins between the editions.

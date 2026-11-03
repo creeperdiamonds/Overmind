@@ -15,8 +15,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
 )
 
 // A placed block reaches the client before the acknowledgement of the place,

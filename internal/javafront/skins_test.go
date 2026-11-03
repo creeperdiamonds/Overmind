@@ -21,8 +21,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/javawire"
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // textures is a Mojang textures property naming a skin.

@@ -1,6 +1,6 @@
 package javaproto
 
-import "github.com/overmind/overmind/internal/javawire"
+import "github.com/creeperdiamonds/overmind/internal/javawire"
 
 // Item and inventory packets. Layouts are minecraft-data's for 26.1.
 var (

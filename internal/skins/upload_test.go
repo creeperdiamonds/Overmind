@@ -19,8 +19,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/skins"
-	"github.com/overmind/overmind/internal/skins/skintest"
+	"github.com/creeperdiamonds/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/skins/skintest"
 )
 
 type fixedTokens struct {

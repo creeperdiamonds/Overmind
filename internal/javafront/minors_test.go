@@ -13,8 +13,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // acked waits until the bot has seen the acknowledgement of seq.

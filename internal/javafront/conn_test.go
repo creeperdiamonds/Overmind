@@ -24,9 +24,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
 )
 
 var registryOnce sync.Once

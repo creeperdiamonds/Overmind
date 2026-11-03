@@ -23,11 +23,11 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/text/language"
 
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/javawire"
-	"github.com/overmind/overmind/internal/rules"
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/rules"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/world"
 
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // A section's block count leaves out all three of Java's airs. No Dragonfly

@@ -10,8 +10,8 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // Window 0 is the player's own inventory, its slots numbered as the Java client

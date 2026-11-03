@@ -24,13 +24,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 
-	"github.com/overmind/overmind/internal/bedrocknet"
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/javafront"
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/playerstore"
-	"github.com/overmind/overmind/internal/skins"
-	"github.com/overmind/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/internal/bedrocknet"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/javafront"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/playerstore"
+	"github.com/creeperdiamonds/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // Server is the running game and its Java front end.

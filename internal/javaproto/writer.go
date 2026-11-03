@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/google/uuid"
-	"github.com/overmind/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
 )
 
 // Writer builds one packet body.
