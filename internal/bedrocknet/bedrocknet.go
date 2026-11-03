@@ -11,7 +11,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server"
 
-	"github.com/overmind/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/config"
 )
 
 // Transport names, as cfg.BedrockTransports spells them.

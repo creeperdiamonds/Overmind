@@ -16,10 +16,10 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/skins"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 const javaSkinURL = "http://textures.minecraft.net/texture/0f1e2d3c4b5a69788796a5b4c3d2e1f0"

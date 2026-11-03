@@ -12,7 +12,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 
-	"github.com/overmind/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
 )
 
 // cursorSlack is how far outside its block a click point may be: the client

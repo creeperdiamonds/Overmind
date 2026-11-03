@@ -13,8 +13,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 
-	"github.com/overmind/overmind/internal/app"
-	"github.com/overmind/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/app"
+	"github.com/creeperdiamonds/overmind/internal/config"
 )
 
 // Server is a running test server.

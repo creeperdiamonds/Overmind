@@ -7,8 +7,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
 
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // Entities other than players and items: whatever Dragonfly has (arrows and

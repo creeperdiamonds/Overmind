@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/overmind/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
 )
 
 // ErrMalformed reports a packet that is short, too long or otherwise wrong.

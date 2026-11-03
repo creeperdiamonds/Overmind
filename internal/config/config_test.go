@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/config"
 )
 
 func TestSeedIsOptional(t *testing.T) {

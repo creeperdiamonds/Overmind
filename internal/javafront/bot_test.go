@@ -18,7 +18,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // javaBot drives bots/java/player.js.

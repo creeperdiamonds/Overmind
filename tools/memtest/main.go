@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/overmind/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
 )
 
 func main() {

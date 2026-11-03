@@ -15,9 +15,9 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/tables/java261"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // The Java window 0 slots, as the client numbers them: 5-8 armour, 9-35 the

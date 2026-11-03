@@ -16,10 +16,10 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/tables/java261"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // Player metadata as the Java bot read it, by minecraft-data's indexes. The

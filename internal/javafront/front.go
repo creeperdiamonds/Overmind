@@ -19,10 +19,10 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/google/uuid"
 
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/javawire"
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // Limits on connections still logging in. javalogin holds a goroutine and

@@ -17,12 +17,12 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/javafront"
-	"github.com/overmind/overmind/internal/javalogin"
-	"github.com/overmind/overmind/internal/tables/java261"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/javafront"
+	"github.com/creeperdiamonds/overmind/internal/javalogin"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // The default flat world: bedrock at Y -64, dirt at -63 and -62, grass at -61.

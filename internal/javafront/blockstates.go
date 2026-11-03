@@ -8,7 +8,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 
-	"github.com/overmind/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 )
 
 // The Java state of a block depends on more than its Dragonfly runtime ID in

@@ -19,11 +19,11 @@ import (
 	"github.com/sandertv/go-raknet"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/javawire"
-	"github.com/overmind/overmind/internal/tables/java261"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/javawire"
+	"github.com/creeperdiamonds/overmind/internal/tables/java261"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // onJava runs f on a Java player's world goroutine and waits for it.

@@ -6,8 +6,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/google/uuid"
 
-	"github.com/overmind/overmind/internal/javaproto"
-	"github.com/overmind/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/javaproto"
+	"github.com/creeperdiamonds/overmind/internal/skins"
 )
 
 // Bedrock players' skins, as Java viewers see them (internal/skins says why).

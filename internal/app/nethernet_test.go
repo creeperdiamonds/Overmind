@@ -10,9 +10,9 @@ import (
 	"github.com/df-mc/go-nethernet/endpoint"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/bots/bedrock"
-	"github.com/overmind/overmind/internal/config"
-	"github.com/overmind/overmind/internal/testserver"
+	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
 // A Bedrock 26.60 client joins over NetherNet only: an HTTP handshake on the TCP port, then

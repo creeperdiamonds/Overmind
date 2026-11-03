@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/overmind/overmind/internal/skins"
-	"github.com/overmind/overmind/internal/skins/skintest"
+	"github.com/creeperdiamonds/overmind/internal/skins"
+	"github.com/creeperdiamonds/overmind/internal/skins/skintest"
 )
 
 // bedrockSkin is a skin as Dragonfly decodes it from client data.
