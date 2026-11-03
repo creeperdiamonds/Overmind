@@ -509,7 +509,7 @@ func canSurvive(d *decoration, s bs, p pos) bool {
 		return below.tagged(tagBambooSoil)
 	case "pumpkin", "melon":
 		return true
-	case "moss_carpet":
+	case "moss_carpet", "pale_moss_carpet":
 		return !below.isAir()
 	case "azalea", "flowering_azalea":
 		return below.tagged(tagDirtLike) || blockName[stateBlock[below]] == "clay"

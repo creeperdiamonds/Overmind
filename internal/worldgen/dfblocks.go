@@ -214,6 +214,24 @@ func lushOwnBlocks() {
 			}
 		}
 	}
+	plain("pale_moss_block", "pale_moss_block", true)
+	plain("closed_eyeblossom", "closed_eyeblossom", false)
+	for i, tip := range bools {
+		addOwn("pale_hanging_moss[tip="+tip+"]", "pale_hanging_moss", map[string]any{"tip": uint8(i)}, false)
+	}
+	addOwn("creaking_heart[axis=y,creaking_heart_state=dormant,natural=true]", "creaking_heart", map[string]any{"creaking_heart_state": "dormant", "natural": uint8(1), "pillar_axis": "y"}, true)
+	sideNames := map[string]string{"none": "none", "low": "short", "tall": "tall"}
+	for _, bottom := range bools {
+		for n := range 81 {
+			side := [4]string{}
+			props := map[string]any{"upper_block_bit": uint8(btoi(bottom == "false"))}
+			for i, f := range cardinals {
+				side[i] = [3]string{"none", "low", "tall"}[n/[4]int{1, 3, 9, 27}[i]%3]
+				props["pale_moss_carpet_side_"+f] = sideNames[side[i]]
+			}
+			addOwn("pale_moss_carpet[bottom="+bottom+",east="+side[1]+",north="+side[0]+",south="+side[2]+",west="+side[3]+"]", "pale_moss_carpet", props, false)
+		}
+	}
 	plain("sculk", "sculk", true)
 	addOwn("sculk_catalyst[bloom=false]", "sculk_catalyst", map[string]any{"bloom": uint8(0)}, true)
 	for _, w := range bools {

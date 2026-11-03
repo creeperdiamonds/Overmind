@@ -14,7 +14,8 @@ var placedFamilies = strings.Fields(`moss_block moss_carpet clay azalea flowerin
 	sculk sculk_vein sculk_catalyst sculk_sensor sculk_shrieker
 	wildflowers pink_petals leaf_litter short_dry_grass tall_dry_grass firefly_bush allium oxeye_daisy pink_tulip
 	tube_coral tube_coral_block tube_coral_fan tube_coral_wall_fan horn_coral horn_coral_wall_fan packed_ice blue_ice snow_block
-	mangrove_log mangrove_leaves mangrove_roots muddy_mangrove_roots mangrove_propagule`)
+	mangrove_log mangrove_leaves mangrove_roots muddy_mangrove_roots mangrove_propagule
+	pale_oak_log pale_oak_leaves pale_moss_block pale_moss_carpet pale_hanging_moss creaking_heart closed_eyeblossom`)
 
 func TestEveryPlacedStateHasABlock(t *testing.T) {
 	NewWithProfile(1, ProfileOverjava)
