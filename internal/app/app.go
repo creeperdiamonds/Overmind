@@ -30,6 +30,9 @@ func Start(cfg config.Config) (*server.Server, error) {
 	// level.dat is written when the world first saves. Until then the spawn is ours to choose.
 	_, statErr := os.Stat(filepath.Join(cfg.WorldFolder, "level.dat"))
 	newWorld := errors.Is(statErr, os.ErrNotExist)
+	if seedFileMissing(cfg.WorldFolder) {
+		log.Warn("The world folder has a saved world but no seed file. The seed in the settings, or a random one, is used and kept from now on; if it is not the seed the world was made with, saved chunks will not fit the terrain made around them.", "folder", cfg.WorldFolder, "file", seedFile)
+	}
 	seed, err := worldSeed(cfg.WorldFolder, cfg.Seed)
 	if err != nil {
 		return nil, err

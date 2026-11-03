@@ -51,3 +51,10 @@ func worldSeed(folder string, want *int64) (int64, error) {
 	}
 	return seed, nil
 }
+
+// seedFileMissing says whether folder holds a saved world (level.dat) but no seed file.
+func seedFileMissing(folder string) bool {
+	_, levelErr := os.Stat(filepath.Join(folder, "level.dat"))
+	_, seedErr := os.Stat(filepath.Join(folder, seedFile))
+	return levelErr == nil && errors.Is(seedErr, os.ErrNotExist)
+}
