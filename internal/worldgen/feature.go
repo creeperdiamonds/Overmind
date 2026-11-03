@@ -200,13 +200,10 @@ const (
 	hmMotionNoLeaves
 )
 
-// liveChunk is a chunk being read and written during one source's decoration. b is the shared
-// cache's base until the source first writes it, then the worker's own copy of it, given back when
-// the source's writes are rolled back.
+// liveChunk is a chunk being read and written during one source's decoration: the cache's compact
+// base expanded into one of the worker's buffers, given back when the working set moves.
 type liveChunk struct {
 	b        *baseChunk
-	shared   *baseChunk
-	own      bool
 	gen      uint32 // The source run its maps are valid for.
 	primed   bool
 	maps     [4][256]int16 // WorldSurface, OceanFloor, Motion, MotionNoLeaves.
@@ -240,10 +237,13 @@ type decoration struct {
 	r              featRand
 	log            []changeEntry
 	used           []int32
-	owned          []int32 // Working-set slots the source being run has its own copy of.
-	ore            oreScratch
-	decSeed        int64
-	placed         bool
+	// pre is what the source's earlier neighbours left, each run alone, written before the source runs
+	// so its features see it; preLen is how much of the log those writes take.
+	pre     []sourceWrite
+	preLen  int
+	ore     oreScratch
+	decSeed int64
+	placed  bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.
 	lastCX, lastCZ     int
 	lastB              *baseChunk
@@ -256,7 +256,8 @@ func (d *decoration) startTarget(g *Generator, s *chunkScratch, cx, cz int) {
 	d.cx, d.cz = cx, cz
 	d.lastB = nil
 	for _, i := range d.used {
-		d.live[i].b, d.live[i].shared, d.live[i].own = nil, nil, false
+		d.s.giveBuffer(d.live[i].b)
+		d.live[i].b = nil
 	}
 	d.used = d.used[:0]
 }
@@ -273,8 +274,9 @@ func (d *decoration) chunkAt(cx, cz int) *liveChunk {
 	i := dx*liveSpan + dz
 	l := &d.live[i]
 	if l.b == nil {
-		l.b = d.g.cachedBase(d.s, cx, cz)
-		l.shared, l.own = l.b, false
+		cb := d.g.cachedBase(d.s, cx, cz)
+		l.b = d.s.takeBuffer()
+		cb.expand(l.b)
 		l.hasClean = false
 		d.used = append(d.used, int32(i))
 	}
@@ -386,11 +388,6 @@ func (d *decoration) write(l *liveChunk, x, y, z int, s bs) {
 	cell := cellIndex(x&15, y, z&15)
 	dx, dz := (x>>4)-d.baseCX+liveSpan/2, (z>>4)-d.baseCZ+liveSpan/2
 	slot := dx*liveSpan + dz
-	if !l.own {
-		l.b, l.own = d.s.takeCopy(l.shared), true
-		d.owned = append(d.owned, int32(slot))
-		d.lastB = nil
-	}
 	d.log = append(d.log, changeEntry{int32(slot), int32(cell), l.b.b[cell]})
 	l.b.b[cell] = s
 }
@@ -726,6 +723,10 @@ func (d *decoration) runSource(cx, cz int) {
 	d.cx, d.cz = cx, cz
 	d.gen++
 	d.log = d.log[:0]
+	for _, w := range d.pre {
+		d.preset(w)
+	}
+	d.preLen = len(d.log)
 	d.r = featRand{}
 	d.r.setSeed(d.g.seed)
 	a, b := d.r.nextLong()|1, d.r.nextLong()|1
@@ -744,18 +745,31 @@ func (d *decoration) runSource(cx, cz int) {
 	}
 }
 
-// rollback undoes a source's writes and gives the copies back: each is its shared base again.
+// sourceWrite is a block another source left, by world position.
+type sourceWrite struct {
+	p pos
+	s bs
+}
+
+// preset writes a neighbour's block into the working set before a source runs, where the source can
+// read it, with the heightmaps hearing of it as they would of any placed block.
+func (d *decoration) preset(w sourceWrite) {
+	l := d.chunkAt(w.p.x>>4, w.p.z>>4)
+	if l == nil || w.p.y < minY || w.p.y > maxY {
+		return
+	}
+	d.mapsReady(l)
+	l.primed = true
+	d.write(l, w.p.x, w.p.y, w.p.z, w.s)
+	l.updateMaps(w.p.x&15, w.p.y, w.p.z&15, w.s)
+}
+
+// rollback undoes a source's writes, so the working set is the carvers stage again.
 func (d *decoration) rollback() {
 	for i := len(d.log) - 1; i >= 0; i-- {
 		e := d.log[i]
 		d.live[e.chunk].b.b[e.cell] = e.old
 	}
-	for _, i := range d.owned {
-		l := &d.live[i]
-		d.s.giveCopy(l.b)
-		l.b, l.own = l.shared, false
-	}
-	d.owned = d.owned[:0]
 	d.lastB = nil
 }
 

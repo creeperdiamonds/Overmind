@@ -18,13 +18,15 @@ func sameIDs(t *testing.T, what string, a, b []uint32) {
 	}
 }
 
-// TestReuseBasesChangesNothing: the shared cache, the speed option, gives the same chunks as keeping
-// nothing, in any order and with workers racing for the same entries.
+// TestReuseBasesChangesNothing: the shared cache, the speed option, gives the same chunks with a cap
+// far under the working set, where entries are dropped and built again all the time, as with the
+// default cap, in any order and with workers racing for the same entries. (With no cache at all each
+// source level would build its neighbours' levels again, which takes minutes.)
 func TestReuseBasesChangesNothing(t *testing.T) {
 	order := [][2]int32{{5, 5}, {6, 5}, {5, 6}, {-40, 30}, {6, 6}, {4, 5}}
 	for _, profile := range []*Profile{ProfileBedrock, ProfileOverjava} {
 		bare := NewWithProfile(100, profile)
-		bare.SetCacheBytes(0)
+		bare.SetCacheBytes(4 << 20)
 		want := map[[2]int32][]uint32{}
 		for _, p := range order {
 			want[p] = chunkRuntimeIDs(bare, p[0], p[1])
@@ -50,10 +52,10 @@ func TestReuseBasesChangesNothing(t *testing.T) {
 
 // sourceFrom runs a source on a working set centred on a chunk next to it, with nothing cached.
 func sourceFrom(g *Generator, tx, tz, sx, sz int) map[[2]int32]bs {
-	s := &chunkScratch{firstOld: map[int64]bs{}}
+	s := newScratch()
 	d := s.startDecoration(g, tx, tz)
 	out := map[[2]int32]bs{}
-	for _, c := range s.runSourceChanges(d, sx, sz) {
+	for _, c := range s.runSourceChanges(d, sx, sz).changes {
 		out[[2]int32{int32(c.chunk), c.cell}] = c.now
 	}
 	return out
@@ -78,24 +80,21 @@ func TestSourceSameFromEitherSide(t *testing.T) {
 	}
 }
 
-// TestScratchStaysSmall: after many chunks a worker's scratch holds at most its own copies of the 3 x 3
-// one source writes, and the shared cache stays under its cap.
+// TestScratchStaysSmall: after many chunks a worker holds full buffers only for the chunks a source
+// can read, its 3 x 3 and 3 more each way (sourceReach), and the shared cache stays under its cap.
 func TestScratchStaysSmall(t *testing.T) {
 	g := New(100)
 	const limit = 8 << 20
 	g.SetCacheBytes(limit)
-	s := &chunkScratch{firstOld: map[int64]bs{}}
+	s := newScratch()
 	for i := range 20 {
 		g.finalCells(s, i*2, i/3)
 	}
-	copies := len(s.copies)
-	bytes := int64(unsafe.Sizeof(*s)) + int64(copies)*baseBytes
-	t.Logf("scratch: %d copies, %.1f MB; cache peak %.1f MB", copies, float64(bytes)/(1<<20), float64(g.CacheStats().PeakBytes)/(1<<20))
-	if copies > 9 {
-		t.Errorf("scratch holds %d base copies, more than the 9 one source writes", copies)
-	}
-	if bytes > 4<<20 {
-		t.Errorf("scratch holds %d bytes, over 4 MB", bytes)
+	buffers := len(s.copies) + len(s.deco.used) // Spare, and bound in the working set.
+	bytes := int64(unsafe.Sizeof(*s)) + int64(buffers)*int64(unsafe.Sizeof(baseChunk{}))
+	t.Logf("scratch: %d full buffers, %.1f MB; cache peak %.1f MB", buffers, float64(bytes)/(1<<20), float64(g.CacheStats().PeakBytes)/(1<<20))
+	if most := (2*sourceReach + 1) * (2*sourceReach + 1); buffers > most {
+		t.Errorf("scratch holds %d buffers, more than the %d chunks a source can read", buffers, most)
 	}
 	if st := g.CacheStats(); st.PeakBytes > limit {
 		t.Errorf("cache peaked at %d bytes, over its %d cap", st.PeakBytes, limit)
@@ -131,10 +130,10 @@ func TestCacheBuildsOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got[i] = c.get(cacheKey{cacheSource, 1, 2}, func(e *cacheEntry) int64 {
+			got[i] = c.get(cacheKey{cacheLevel, 1, 2}, func(e *cacheEntry) int64 {
 				builds.Add(1)
 				time.Sleep(20 * time.Millisecond)
-				e.changes = make([]sourceChange, 3)
+				e.src = &sourceResult{changes: make([]sourceChange, 3)}
 				return 36
 			})
 		}()
@@ -153,19 +152,43 @@ func TestCacheBuildsOnce(t *testing.T) {
 // TestCacheDropsOldest: past its cap the cache drops the least recently used entry.
 func TestCacheDropsOldest(t *testing.T) {
 	c := newSharedCache(3 * (100 + entryBytes))
-	put := func(x int32) { c.get(cacheKey{cacheSource, x, 0}, func(*cacheEntry) int64 { return 100 }) }
+	put := func(x int32) { c.get(cacheKey{cacheLevel, x, 0}, func(*cacheEntry) int64 { return 100 }) }
 	put(1)
 	put(2)
 	put(3)
 	put(1) // Now the most recent.
 	put(4)
-	if _, ok := c.entries[cacheKey{cacheSource, 2, 0}]; ok {
+	if _, ok := c.entries[cacheKey{cacheLevel, 2, 0}]; ok {
 		t.Fatal("the least recently used entry was kept")
 	}
-	if _, ok := c.entries[cacheKey{cacheSource, 1, 0}]; !ok {
+	if _, ok := c.entries[cacheKey{cacheLevel, 1, 0}]; !ok {
 		t.Fatal("a recently used entry was dropped")
 	}
 	if c.used > c.limit {
 		t.Fatalf("holds %d bytes, over %d", c.used, c.limit)
+	}
+}
+
+// TestCompactBaseIsExact: a base packed by sections and expanded again is the same base, and it is
+// smaller than the full one.
+func TestCompactBaseIsExact(t *testing.T) {
+	g := New(100)
+	s := newScratch()
+	full := int64(unsafe.Sizeof(baseChunk{}))
+	var packed int64
+	for _, p := range [][2]int{{0, 0}, {5, -3}, {-40, 30}, {120, 7}} {
+		b := new(baseChunk)
+		g.buildBase(b, s, p[0], p[1], stageCarvers, 0, 15, 0, 15)
+		c := compact(b)
+		packed += c.bytes()
+		back := new(baseChunk)
+		c.expand(back)
+		if back.b != b.b || back.wgTop != b.wgTop || back.wgFloor != b.wgFloor || back.cx != b.cx || back.cz != b.cz {
+			t.Fatalf("chunk %v: the compact base expands to a different chunk", p)
+		}
+	}
+	t.Logf("compact bases: %.0f KB each against %.0f KB full", float64(packed)/4/1024, float64(full)/1024)
+	if packed/4 >= full/2 {
+		t.Errorf("compact bases average %d bytes, not under half of %d", packed/4, full)
 	}
 }

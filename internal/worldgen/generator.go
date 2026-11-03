@@ -79,7 +79,7 @@ type chunkScratch struct {
 	base        baseChunk
 	masks       [256]carveMask
 	deco        decoration
-	copies      []*baseChunk // Spare copies for the bases a source writes: at most its 3 x 3.
+	copies      []*baseChunk // Spare full buffers, which the working set's chunks are expanded into.
 	final       [chunkCells]bs
 	changes     []sourceChange
 	merge       merger
@@ -101,7 +101,11 @@ func (s *chunkScratch) startColumnOnly(g *Generator) {
 	s.walkAqReady = false
 }
 
-var scratchPool = sync.Pool{New: func() any { return &chunkScratch{firstOld: map[int64]bs{}} }}
+var scratchPool = sync.Pool{New: func() any { return newScratch() }}
+
+func newScratch() *chunkScratch {
+	return &chunkScratch{firstOld: map[int64]bs{}}
+}
 
 // GenerateChunk builds a chunk: noise, surface and carvers for it and its neighbours, then the changes
 // of the nine source chunks that can reach it, each decorated alone, merged in row-major order. It
@@ -119,15 +123,13 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 
 // finalCells makes a chunk's finished blocks, in the scratch.
 func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
-	d := s.startDecoration(g, cx, cz)
-	here := d.chunkAt(cx, cz)
 	final := &s.final
-	*final = here.b.b
+	g.cachedBase(s, cx, cz).expandCells(final)
 	var sources [9][]sourceChange
 	var want [9]int8
 	for i := range 9 {
 		sx, sz := cx-1+i/3, cz-1+i%3
-		sources[i] = g.cachedSource(s, d, sx, sz)
+		sources[i] = g.cachedSource(s, sx, sz).changes
 		want[i] = int8((cx-sx+1)*3 + (cz - sz + 1))
 	}
 	s.merge.apply(final, &sources, &want)
@@ -304,27 +306,35 @@ func pairedHalf(final *[chunkCells]bs, cell int32) bool {
 }
 
 // sourceChange is one block a source's decoration changed: the chunk of its 3 x 3 (x*3+z), the
-// cell, and the new block. A source's changes are a pure function of the seed, profile and source.
+// cell, the block before and after, and the feature call (unit) that last wrote it.
 type sourceChange struct {
 	chunk    int8
 	cell     int32
-	old, now bs // The carvers stage there, and what the source left.
+	old, now bs // What the source found there, and what it left.
+}
+
+// sourceResult is what one source's decoration did, a pure function of the seed, profile, source and
+// level (cachedLevel).
+type sourceResult struct {
+	changes []sourceChange
 }
 
 // runSourceChanges runs a source alone on the working set, lists what it changed, and rolls the
 // working set back.
-func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) []sourceChange {
+func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult {
 	d.runSource(sx, sz)
 	s.changes = s.changes[:0]
 	first := s.firstOld
 	clear(first)
-	for _, e := range d.log {
+	// The source's own writes, after what its earlier neighbours left (d.preLen).
+	for _, e := range d.log[d.preLen:] {
 		// A cell of the working set as one key: its slot in the high half, its cell in the low.
 		k := int64(e.chunk)<<32 | int64(e.cell)
 		if _, seen := first[k]; !seen {
 			first[k] = e.old
 		}
 	}
+	res := &sourceResult{}
 	for k, old := range first {
 		lv := &d.live[k>>32]
 		cell := int32(k)
@@ -345,7 +355,8 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) []sourceChang
 		}
 		return int(a.cell - b.cell)
 	})
-	return append([]sourceChange(nil), s.changes...)
+	res.changes = append([]sourceChange(nil), s.changes...)
+	return res
 }
 
 // storeBiomes writes the chunk's quart biomes, from the same lookups the passes read.
@@ -572,20 +583,18 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	return cube.Pos{0, max(g.SurfaceHeight(0, 0), SeaLevel) + 1, 0}
 }
 
-// takeCopy gives the worker its own copy of a shared base, to write.
-func (s *chunkScratch) takeCopy(from *baseChunk) *baseChunk {
-	var b *baseChunk
+// takeBuffer gives the worker a full base buffer from its spares.
+func (s *chunkScratch) takeBuffer() *baseChunk {
 	if n := len(s.copies); n > 0 {
-		b, s.copies = s.copies[n-1], s.copies[:n-1]
-	} else {
-		b = new(baseChunk)
+		b := s.copies[n-1]
+		s.copies = s.copies[:n-1]
+		return b
 	}
-	*b = *from
-	return b
+	return new(baseChunk)
 }
 
-// giveCopy returns a copy for the next source.
-func (s *chunkScratch) giveCopy(b *baseChunk) { s.copies = append(s.copies, b) }
+// giveBuffer returns a buffer to the spares.
+func (s *chunkScratch) giveBuffer(b *baseChunk) { s.copies = append(s.copies, b) }
 
 // startDecoration readies the working set around a chunk.
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {

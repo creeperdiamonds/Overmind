@@ -98,7 +98,9 @@ func (t *climateTable) temperature(b uint8, x, y, z int) float32 {
 }
 
 // coldEnough says whether a biome freezes at a block under this generator's profile.
-func (g *Generator) coldEnough(b uint8, x, y, z int) bool { return g.profile.climate.temperature(b, x, y, z) < 0.15 }
+func (g *Generator) coldEnough(b uint8, x, y, z int) bool {
+	return g.profile.climate.temperature(b, x, y, z) < 0.15
+}
 
 // quartColumn is one quart column's stored biomes, by table index. A pure function of the seed and
 // the position, it lives in pooled scratch and changes speed and nothing else.

@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -36,10 +37,22 @@ func sweepBench(b *testing.B, cache int64, workers int) {
 		wg.Wait()
 	}
 	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*side*side), "ms/chunk")
-	b.ReportMetric(float64(g.CacheStats().PeakBytes)/(1<<20), "cacheMB")
+	st := g.CacheStats()
+	b.ReportMetric(float64(st.PeakBytes)/(1<<20), "cacheMB")
+	var hits, misses uint64
+	for k := range st.Hits {
+		hits, misses = hits+st.Hits[k], misses+st.Misses[k]
+	}
+	b.ReportMetric(100*float64(hits)/float64(max(hits+misses, 1)), "hit%")
+	b.Logf("cache by kind (0 bases, 1.. source levels): hits %v misses %v", st.Hits, st.Misses)
 }
 
-func BenchmarkSweepNoKeep(b *testing.B)        { sweepBench(b, 0, 1) }
-func BenchmarkSweepNoKeepWorkers(b *testing.B) { sweepBench(b, 0, runtime.NumCPU()) }
 func BenchmarkSweepCache(b *testing.B)         { sweepBench(b, DefaultCacheBytes, 1) }
 func BenchmarkSweepCacheWorkers(b *testing.B)  { sweepBench(b, DefaultCacheBytes, runtime.NumCPU()) }
+
+// Sweeps at other caps, to find where the cache stops rebuilding bases (ruling 31).
+func BenchmarkSweepCap(b *testing.B) {
+	for _, mb := range []int64{26, 28, 30, 32} {
+		b.Run(fmt.Sprintf("%dMB", mb), func(b *testing.B) { sweepBench(b, mb<<20, 1) })
+	}
+}

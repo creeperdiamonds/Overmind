@@ -224,6 +224,13 @@ func TestTerrainStatistics(t *testing.T) {
 	}
 }
 
+// carversStage is a chunk's carvers stage, expanded from the cache.
+func carversStage(g *Generator, s *chunkScratch, cx, cz int) *baseChunk {
+	b := new(baseChunk)
+	g.cachedBase(s, cx, cz).expand(b)
+	return b
+}
+
 // carverTop is the highest block of a whole chunk's carvers stage that is not air or water.
 func carverTop(b *baseChunk, x, z int) int {
 	for y := maxY; y >= minY; y-- {
@@ -239,9 +246,9 @@ func carverTop(b *baseChunk, x, z int) int {
 // checks the same against Java's fixtures.)
 func TestSurfaceHeightMatchesChunk(t *testing.T) {
 	g := New(77)
-	s := &chunkScratch{firstOld: map[int64]bs{}}
+	s := newScratch()
 	for _, p := range [][2]int{{0, 0}, {-1, -1}, {64, -33}, {-200, 150}, {500, 500}, {90, 300}} {
-		b := g.cachedBase(s, p[0], p[1])
+		b := carversStage(g, s, p[0], p[1])
 		for x := range 16 {
 			for z := range 16 {
 				got := g.SurfaceHeight(p[0]*16+x, p[1]*16+z)

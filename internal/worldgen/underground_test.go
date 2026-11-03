@@ -235,7 +235,7 @@ func TestSurfaceHeightMatchesChunkWithCaves(t *testing.T) {
 				continue
 			}
 			checked++
-			b := g.cachedBase(&chunkScratch{firstOld: map[int64]bs{}}, cx, cz)
+			b := carversStage(g, newScratch(), cx, cz)
 			for x := range 16 {
 				for z := range 16 {
 					wx, wz := cx*16+x, cz*16+z

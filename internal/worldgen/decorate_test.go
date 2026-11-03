@@ -232,7 +232,7 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 							switch {
 							case isLeavesID(id):
 								leaves++
-								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) {
+								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) && !cutOnlyByNeighbours(g, x, y, z) {
 									t.Fatalf("chunk %v: leaves at %d %d %d reach no log within 6 steps", p, x, y, z)
 								}
 							case isLogID(id):
@@ -270,7 +270,7 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 												covered = true
 											}
 										}
-										if !covered {
+										if !covered && !neighbourStoodBeside(g, pos{x, y, z}, d) {
 											t.Fatalf("chunk %v: trunk top at %d %d %d has nothing beside it towards %v", p, x, y, z, d)
 										}
 									}
@@ -292,8 +292,131 @@ func TestTreesWholeAcrossEdges(t *testing.T) {
 // no log within 6 through its leaves when it placed it, so in the game it decays. Dragonfly's blocks
 // keep no distance, so the generator's state is read.
 func javaDecays(g *Generator, x, y, z int) bool {
-	f := g.finalCells(&chunkScratch{firstOld: map[int64]bs{}}, x>>4, z>>4)
+	f := g.finalCells(newScratch(), x>>4, z>>4)
 	return propOf(f[cellIndex(x&15, y, z&15)].name(), "distance") == "7"
+}
+
+// neighbourStoodBeside says whether, in the view of the source that placed a trunk top, a block that an
+// earlier neighbour left stood beside it towards d (within a block up or down), one the source did not
+// place itself. The source ran on top of that neighbour's level before (cachedLevel); the finished
+// world has the neighbour's next level, where it can be gone.
+func neighbourStoodBeside(g *Generator, top pos, d [2]int) bool {
+	s := newScratch()
+	cx, cz := top.x>>4, top.z>>4
+	for sx := cx - 1; sx <= cx+1; sx++ {
+		for sz := cz - 1; sz <= cz+1; sz++ {
+			placed := false
+			for _, c := range g.cachedLevel(s, sx, sz, sourceDepth).changes {
+				q := pos{(sx-1+int(c.chunk)/3)*16 + int(c.cell)&15, int(c.cell)>>8 + minY, (sz-1+int(c.chunk)%3)*16 + int(c.cell)>>4&15}
+				if q == top && c.now.tagged(tagLogs) {
+					placed = true
+				}
+			}
+			if !placed {
+				continue
+			}
+			for ex := sx - 1; ex <= sx; ex++ {
+				for ez := sz - 1; ez <= sz+1; ez++ {
+					if ex == sx && ez >= sz {
+						continue
+					}
+					for _, c := range g.cachedLevel(s, ex, ez, sourceDepth-1).changes {
+						q := pos{(ex-1+int(c.chunk)/3)*16 + int(c.cell)&15, int(c.cell)>>8 + minY, (ez-1+int(c.chunk)%3)*16 + int(c.cell)>>4&15}
+						if q.x == top.x+d[0] && q.z == top.z+d[1] && absInt(q.y-top.y) <= 1 && !c.now.isAir() {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// cutOnlyByNeighbours says whether a leaf lost its way to a log only through blocks its own source did
+// not place. A source runs on top of what its earlier neighbours did at the level before (cachedLevel),
+// and its leaf distances count their leaves, as Java's do; those neighbours' blocks in the finished
+// world are from the next level and can differ. Leaves the source's own tree cut off still fail.
+func cutOnlyByNeighbours(g *Generator, x, y, z int) bool {
+	s := newScratch()
+	cx, cz := x>>4, z>>4
+	finals := map[[2]int]*[chunkCells]bs{}
+	final := func(q pos) bs {
+		k := [2]int{q.x >> 4, q.z >> 4}
+		if finals[k] == nil {
+			f := *g.finalCells(newScratch(), k[0], k[1])
+			finals[k] = &f
+		}
+		return finals[k][cellIndex(q.x&15, q.y, q.z&15)]
+	}
+	near := func(q pos) bool { return absInt(q.x-x) <= 7 && absInt(q.z-z) <= 7 && absInt(q.y-y) <= 7 }
+	collect := func(sx, sz, level int, into map[pos]bs) {
+		for _, c := range g.cachedLevel(s, sx, sz, level).changes {
+			q := pos{(sx-1+int(c.chunk)/3)*16 + int(c.cell)&15, int(c.cell)>>8 + minY, (sz-1+int(c.chunk)%3)*16 + int(c.cell)>>4&15}
+			if near(q) {
+				into[q] = c.now
+			}
+		}
+	}
+	for sx := cx - 1; sx <= cx+1; sx++ {
+		for sz := cz - 1; sz <= cz+1; sz++ {
+			own := map[pos]bs{}
+			collect(sx, sz, sourceDepth, own)
+			if !own[pos{x, y, z}].tagged(tagLeaves) {
+				continue
+			}
+			seen := map[pos]bs{} // What the source saw of its earlier neighbours.
+			for ex := sx - 1; ex <= sx; ex++ {
+				for ez := sz - 1; ez <= sz+1; ez++ {
+					if ex != sx || ez < sz {
+						collect(ex, ez, sourceDepth-1, seen)
+					}
+				}
+			}
+			view := func(q pos) (bs, bool, bool) { // Block, known, placed by the source itself.
+				if st, ok := own[q]; ok {
+					return st, true, true
+				}
+				st, ok := seen[q]
+				return st, ok, false
+			}
+			type node struct {
+				p   pos
+				d   int
+				cut bool
+			}
+			start := pos{x, y, z}
+			visited := map[pos]bool{start: true}
+			queue := []node{{start, 0, false}}
+			for len(queue) > 0 {
+				n := queue[0]
+				queue = queue[1:]
+				for _, a := range allDirs {
+					q := n.p.step(a)
+					st, ok, mine := view(q)
+					if visited[q] || !ok {
+						continue
+					}
+					visited[q] = true
+					differs := final(q) != st
+					if differs && mine {
+						continue // The source's own block is gone: not this allowance.
+					}
+					cut := n.cut || differs
+					if st.tagged(tagLogs) {
+						if cut {
+							return true
+						}
+						continue
+					}
+					if st.tagged(tagLeaves) && n.d < 5 {
+						queue = append(queue, node{q, n.d + 1, cut})
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func logConnected(w world3, x, y, z int) bool {
@@ -622,11 +745,11 @@ func TestFrozenOceanHasIce(t *testing.T) {
 	if len(frozen) < 10 || len(warm) < 10 {
 		t.Fatalf("found %d frozen and %d warmer ocean chunks", len(frozen), len(warm))
 	}
-	s := &chunkScratch{firstOld: map[int64]bs{}}
+	s := newScratch()
 	var iced, open int
 	for _, p := range frozen {
 		cx, cz := int(p[0]), int(p[1])
-		base := g.cachedBase(s, cx, cz)
+		base := carversStage(g, s, cx, cz)
 		final := g.finalCells(s, cx, cz)
 		for i := range 256 {
 			x, z := i&15, i>>4
@@ -690,7 +813,7 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 						}
 						total++
 						// The layer rests on the block below, so that is the height the pass asks about.
-						sc := new(chunkScratch)
+						sc := newScratch()
 						if b := sc.blockBiome(g, wx, int(y), wz); !g.coldEnough(b, wx, int(y), wz) {
 							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, biomeTableNames[b], g.profile.climate.temperature(b, wx, int(y), wz))
 						}

@@ -7,7 +7,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-
 func chunkRuntimeIDs(g *Generator, cx, cz int32) []uint32 {
 	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 	g.GenerateChunk(world.ChunkPos{cx, cz}, c)

@@ -14,7 +14,7 @@ import (
 // server keeps none of it.
 
 // DefaultCacheBytes is the shared cache's cap when nothing else is set.
-const DefaultCacheBytes = 24 << 20
+const DefaultCacheBytes = 30 << 20
 
 // cacheIdleDelay is how long after the last GenerateChunk ends the cache waits before emptying. Workers
 // take chunks one after another, so the count of running calls touches zero between two chunks of one
@@ -24,8 +24,8 @@ var cacheIdleDelay = time.Second
 type cacheKind uint8
 
 const (
-	cacheBase cacheKind = iota
-	cacheSource
+	cacheBase  cacheKind = iota
+	cacheLevel           // Source results: cacheLevel plus the level.
 )
 
 type cacheKey struct {
@@ -39,15 +39,15 @@ type cacheEntry struct {
 	key        cacheKey
 	ready      chan struct{}
 	failed     bool // The build panicked; waiters build it again themselves.
-	base       *baseChunk
-	changes    []sourceChange
+	base       *compactBase
+	src        *sourceResult
 	bytes      int64
 	prev, next *cacheEntry
 }
 
 var (
-	baseBytes   = int64(unsafe.Sizeof(baseChunk{}))
 	changeBytes = int64(unsafe.Sizeof(sourceChange{}))
+	resultBytes = int64(unsafe.Sizeof(sourceResult{}))
 	entryBytes  = int64(unsafe.Sizeof(cacheEntry{}))
 )
 
@@ -60,6 +60,8 @@ type sharedCache struct {
 	entries map[cacheKey]*cacheEntry
 	lru     cacheEntry // Sentinel: lru.next is the most recently used entry, lru.prev the least.
 	running int        // GenerateChunk calls under way.
+	hits    [8]uint64  // Gets answered from the cache, by kind (levels past 6 share the last).
+	misses  [8]uint64  // Gets that built the entry, by kind.
 	calls   uint64     // GenerateChunk calls ever started, so a timer knows if one came since.
 	timer   *time.Timer
 }
@@ -87,6 +89,7 @@ func (c *sharedCache) get(key cacheKey, build func(e *cacheEntry) int64) *cacheE
 	for {
 		c.mu.Lock()
 		if e, ok := c.entries[key]; ok {
+			c.hits[min(int(key.kind), 7)]++
 			if e.prev != nil {
 				c.unlink(e)
 				c.pushFront(e)
@@ -99,6 +102,7 @@ func (c *sharedCache) get(key cacheKey, build func(e *cacheEntry) int64) *cacheE
 			continue
 		}
 		e := &cacheEntry{key: key, ready: make(chan struct{})}
+		c.misses[min(int(key.kind), 7)]++
 		c.entries[key] = e
 		c.pushFront(e)
 		c.mu.Unlock()
@@ -193,6 +197,8 @@ func (c *sharedCache) emptyLocked() {
 type CacheStats struct {
 	Bytes, PeakBytes int64
 	Entries          int
+	// Hits and Misses count gets by kind: 0 bases, then source results by level from 1.
+	Hits, Misses [8]uint64
 }
 
 // CacheStats returns the shared cache's figures.
@@ -200,7 +206,7 @@ func (g *Generator) CacheStats() CacheStats {
 	c := g.cache
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return CacheStats{Bytes: c.used, PeakBytes: c.peak, Entries: len(c.entries)}
+	return CacheStats{Bytes: c.used, PeakBytes: c.peak, Entries: len(c.entries), Hits: c.hits, Misses: c.misses}
 }
 
 // SetCacheBytes changes the shared cache's cap. 0 keeps nothing between chunks, which is slow and
@@ -219,25 +225,55 @@ func (g *Generator) SetCacheBytes(limit int64) {
 	}
 }
 
-// cachedBase gives a chunk's carvers stage from the cache, building it with the worker's scratch if
-// nobody has. The base returned must not be written.
-func (g *Generator) cachedBase(s *chunkScratch, cx, cz int) *baseChunk {
+// cachedBase gives a chunk's carvers stage, compact, from the cache, building it in one of the
+// worker's buffers if nobody has. Expand it to read it (compactBase.expand).
+func (g *Generator) cachedBase(s *chunkScratch, cx, cz int) *compactBase {
 	e := g.cache.get(cacheKey{cacheBase, int32(cx), int32(cz)}, func(e *cacheEntry) int64 {
-		b := new(baseChunk)
+		b := s.takeBuffer()
 		g.buildBase(b, s, cx, cz, stageCarvers, 0, 15, 0, 15)
-		b.whole = true
-		e.base = b
-		return baseBytes
+		e.base = compact(b)
+		s.giveBuffer(b)
+		return e.base.bytes()
 	})
 	return e.base
 }
 
-// cachedSource gives what a source chunk's decoration changes, from the cache, running the source on
-// the worker's working set if nobody has.
-func (g *Generator) cachedSource(s *chunkScratch, d *decoration, sx, sz int) []sourceChange {
-	e := g.cache.get(cacheKey{cacheSource, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
-		e.changes = s.runSourceChanges(d, sx, sz)
-		return int64(cap(e.changes)) * changeBytes
+// sourceDepth is how many levels of earlier neighbours a source sees (cachedLevel).
+var sourceDepth = 2
+
+// cachedSource gives what a source chunk's decoration did as the merge uses it (cachedLevel at
+// sourceDepth).
+func (g *Generator) cachedSource(s *chunkScratch, sx, sz int) *sourceResult {
+	return g.cachedLevel(s, sx, sz, sourceDepth)
+}
+
+// cachedLevel gives what a source chunk's decoration does, from the cache. Level 0 is the source run
+// alone on the carvers stage. Level L is the source run on top of what its earlier neighbours (before
+// it in row-major order) do at level L-1. In Java the chunk decorated second sees the first's blocks:
+// its trees meet the other's canopy through the live heightmap and fail, and the random draws after
+// them change with it. A fixed number of levels keeps the result a pure function of the source and
+// the chunks around it.
+func (g *Generator) cachedLevel(s *chunkScratch, sx, sz, level int) *sourceResult {
+	e := g.cache.get(cacheKey{cacheLevel + cacheKind(level), int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
+		var pre []sourceWrite
+		if level > 0 {
+			for ex := sx - 1; ex <= sx; ex++ {
+				for ez := sz - 1; ez <= sz+1; ez++ {
+					if ex == sx && ez >= sz {
+						continue
+					}
+					for _, c := range g.cachedLevel(s, ex, ez, level-1).changes {
+						cx, cz := ex-1+int(c.chunk)/3, ez-1+int(c.chunk)%3
+						pre = append(pre, sourceWrite{pos{cx*16 + int(c.cell)&15, int(c.cell)>>8 + minY, cz*16 + int(c.cell)>>4&15}, c.now})
+					}
+				}
+			}
+		}
+		d := s.startDecoration(g, sx, sz)
+		d.pre = pre
+		e.src = s.runSourceChanges(d, sx, sz)
+		d.pre = nil
+		return int64(cap(e.src.changes))*changeBytes + resultBytes
 	})
-	return e.changes
+	return e.src
 }
