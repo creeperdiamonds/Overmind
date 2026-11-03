@@ -52,7 +52,9 @@ func isPlantName(n string) bool {
 	switch n {
 	case "short_grass", "fern", "tall_grass", "large_fern", "deadbush", "cactus", "reeds", "kelp", "seagrass", "waterlily",
 		"dandelion", "poppy", "blue_orchid", "allium", "azure_bluet", "red_tulip", "orange_tulip", "white_tulip", "pink_tulip",
-		"oxeye_daisy", "cornflower", "lily_of_the_valley", "sunflower", "lilac", "rose_bush", "peony":
+		"oxeye_daisy", "cornflower", "lily_of_the_valley", "sunflower", "lilac", "rose_bush", "peony",
+		// Task 4d's surface and cave plants.
+		"wildflowers", "pink_petals", "firefly_bush", "short_dry_grass", "tall_dry_grass", "closed_eyeblossom", "azalea", "flowering_azalea":
 		return true
 	}
 	return false
@@ -771,7 +773,10 @@ func checkNoFloatingPlants(t *testing.T, seeds []int64, chunks func(*Generator) 
 						switch n {
 						case "cactus":
 							ok = under == "sand" || under == "red_sand" || under == "cactus"
-						case "deadbush":
+						case "azalea", "flowering_azalea":
+							// Java's azalea also stands on clay.
+							ok = under == "clay" || slices.Contains(soil, under)
+						case "deadbush", "short_dry_grass", "tall_dry_grass":
 							ok = under == "sand" || under == "red_sand" || strings.HasSuffix(under, "hardened_clay") || strings.HasSuffix(under, "terracotta") || slices.Contains(soil, under)
 						case "reeds":
 							ok = under == "reeds" || under == "sand" || under == "red_sand" || slices.Contains(soil, under)
