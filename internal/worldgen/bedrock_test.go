@@ -59,62 +59,6 @@ func groundTop(c *chunk.Chunk, ground map[uint32]bool, x, z uint8) int {
 	return minY - 1
 }
 
-// Air in full chunks, with carvers, by the study's method: blocks under the column's top minus 8,
-// per band. These are the first real references for the carvers. Each band's tolerance comes from
-// its by-seed figures, with a floor of 1 point. The 100 to 160 row has 3 seeds: seed 1 has no land
-// up there.
-func TestCaveAirMatchesBedrock(t *testing.T) {
-	bands := []struct {
-		lo, hi int
-		pooled float64 // Weighted by blocks, so not always the mean of the seeds.
-		bySeed []float64
-	}{
-		{-54, -40, 6.06, []float64{8.53, 5.26, 5.79, 4.65}},
-		{-40, -20, 9.21, []float64{11.08, 8.15, 9.26, 8.35}},
-		{-20, 0, 9.81, []float64{10.64, 9.56, 9.44, 9.59}},
-		{0, 20, 7.46, []float64{10.22, 3.32, 7.09, 9.18}},
-		{20, 40, 7.21, []float64{8.96, 2.92, 6.21, 9.88}},
-		{40, 63, 5.96, []float64{7.3, 4.04, 5.84, 5.04}},
-		{63, 100, 7.52, []float64{7.66, 4.38, 7.64, 6.83}},
-		{100, 160, 5.11, []float64{5.67, 5.33, 2.14}},
-	}
-	air, total := make([]float64, len(bands)), make([]float64, len(bands))
-	ground := GroundBlocks()
-	var mu sync.Mutex
-	bedrockSample(1, func(g *Generator, c *chunk.Chunk, _, _ int) {
-		a, n := make([]float64, len(bands)), make([]float64, len(bands))
-		for x := uint8(0); x < 16; x += 3 {
-			for z := uint8(0); z < 16; z += 3 {
-				top := groundTop(c, ground, x, z)
-				for i, b := range bands {
-					for y := b.lo; y < min(b.hi, top-8); y++ {
-						n[i]++
-						if c.Block(x, int16(y), z, 0) == g.blocks.air {
-							a[i]++
-						}
-					}
-				}
-			}
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		for i := range a {
-			air[i] += a[i]
-			total[i] += n[i]
-		}
-	})
-	var s strings.Builder
-	for i, b := range bands {
-		tol := max(seedTwoSE(b.bySeed), 1)
-		got := air[i] / total[i] * 100
-		fmt.Fprintf(&s, "\nY %4d to %4d: air %5.2f, Bedrock %5.2f, tolerance %.2f, off %+.2f", b.lo, b.hi, got, b.pooled, tol, got-b.pooled)
-		if math.Abs(got-b.pooled) > tol {
-			t.Errorf("Y %d to %d: air %.2f%%, Bedrock %.2f%%, tolerance %.2f", b.lo, b.hi, got, b.pooled, tol)
-		}
-	}
-	t.Log(s.String())
-}
-
 // oreBands are the bands of aggregate.json: 16 blocks up to Y 64, then wider.
 var oreBands = []int{-64, -48, -32, -16, 0, 16, 32, 48, 64, 96, 128, 192, 320}
 

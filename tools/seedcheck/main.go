@@ -70,6 +70,9 @@ func main() {
 		fmt.Printf("%-10d | %9.2f / %9.2f | %9.2f / %9.2f | %22.2f | %6.2f / %6.2f\n", seed, r.gridBiome, r.allBiome, r.gridHeight, r.allHeight, r.gridNoise, j[0], j[1])
 		fmt.Printf("    carver holes on the grid: ours %d, Bedrock %d, both %d (%d points left out); height<=2 away from them %.2f%% (gate: noise %.2f%%)\n",
 			r.ours, r.bedrock, r.both, r.ours+r.bedrock-r.both, r.clearHeight, r.gridNoise)
+		for _, line := range r.feat.report(seed) {
+			fmt.Println("    " + line)
+		}
 		for _, line := range r.notes {
 			fmt.Println("    " + line)
 		}
@@ -100,6 +103,7 @@ type result struct {
 	// is the height figure over the points with no hole in either world.
 	ours, bedrock, both int
 	clearHeight         float64
+	feat                *tally
 	notes               []string
 }
 
@@ -113,6 +117,8 @@ func check(seed int64, m *refMaps) result {
 	var allN, allHit, allB, allBHit, gridH, gridHit, gridB, gridBHit, gridNoiseHit int
 	var holesOurs, holesBedrock, holesBoth, clearN, clearHit int
 	confused := map[[2]int]int{}
+	feat := newTally()
+	info := blockInfos()
 	var wg sync.WaitGroup
 	for range runtime.NumCPU() {
 		wg.Add(1)
@@ -122,6 +128,19 @@ func check(seed int64, m *refMaps) result {
 				cx, cz := job[0], job[1]
 				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 				g.GenerateChunk(world.ChunkPos{int32(cx), int32(cz)}, c)
+				var tops [256]int
+				for lx := range 16 {
+					for lz := range 16 {
+						tops[lx*16+lz] = minY - 1
+						for y := maxY; y >= minY; y-- {
+							if ground[c.Block(uint8(lx), int16(y), uint8(lz), 0)] {
+								tops[lx*16+lz] = y
+								break
+							}
+						}
+					}
+				}
+				ct := chunkTally(c, info, &tops, g.BiomeAt(cx*16+8, maxY, cz*16+8).String())
 				var a, ah, b, bh, gh, ghit, gb, gbh, gn int
 				var ho, hb, hbo, cn, ch int
 				local := map[[2]int]int{}
@@ -132,13 +151,7 @@ func check(seed int64, m *refMaps) result {
 						if i < 0 || j < 0 || j >= m.w || i*m.w+j >= len(m.mask) || !m.mask[i*m.w+j] {
 							continue
 						}
-						top := minY - 1
-						for y := maxY; y >= minY; y-- {
-							if ground[c.Block(uint8(lx), int16(y), uint8(lz), 0)] {
-								top = y
-								break
-							}
-						}
+						top := tops[lx*16+lz]
 						want := int(m.height[i*m.w+j])
 						near := absInt(top-want) <= 2
 						a++
@@ -211,6 +224,7 @@ func check(seed int64, m *refMaps) result {
 				for k, v := range local {
 					confused[k] += v
 				}
+				feat.add(ct)
 				mu.Unlock()
 			}
 		}()
@@ -225,7 +239,7 @@ func check(seed int64, m *refMaps) result {
 	r := result{
 		gridBiome: pct(gridBHit, gridB), allBiome: pct(allBHit, allB),
 		gridHeight: pct(gridHit, gridH), allHeight: pct(allHit, allN), gridNoise: pct(gridNoiseHit, gridH),
-		ours: holesOurs, bedrock: holesBedrock, both: holesBoth, clearHeight: pct(clearHit, clearN),
+		ours: holesOurs, bedrock: holesBedrock, both: holesBoth, clearHeight: pct(clearHit, clearN), feat: feat,
 	}
 	type pair struct {
 		k [2]int
