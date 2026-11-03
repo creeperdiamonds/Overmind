@@ -115,12 +115,47 @@ func (c *conn) playerMeta(p *player.Player) javaproto.Meta {
 
 // selfMeta is what the client is told of its own player: the flags the server
 // sets (fire, invisible) and the skin layers it chose, which it draws from this.
-// Its pose and health it has already.
+// The client owns its sneaking and sprinting: those bits are what it last
+// declared, never the server's view, because a late echo of an old sprint state
+// left Java players sprinting without the key (playtest, 2026-11-04). Its pose
+// and health it has already.
 func (c *conn) selfMeta(p *player.Player) javaproto.Meta {
+	f := serverFlags(p)
+	if c.keys&javaproto.InputShift != 0 {
+		f |= flagCrouching
+	}
+	if c.clientSprint.Load() {
+		f |= flagSprinting
+	}
+	if p.Swimming() || p.Crawling() {
+		f |= flagSwimming
+	}
+	if p.Gliding() {
+		f |= flagGliding
+	}
 	var m javaproto.Meta
-	m.Byte(metaFlags, metaTypeByte, sharedFlags(p))
+	m.Byte(metaFlags, metaTypeByte, f)
 	m.Byte(metaSkinParts, metaTypeByte, byte(c.skin.Load()))
 	return m
+}
+
+// serverFlags are the shared flags the server alone decides for a player.
+func serverFlags(p *player.Player) byte {
+	var f byte
+	if p.OnFireDuration() > 0 {
+		f |= flagOnFire
+	}
+	if p.Invisible() {
+		f |= flagInvisible
+	}
+	return f
+}
+
+// selfChanged reports whether the server-owned part of the client's own
+// metadata changed since it was last sent, and records it.
+func (c *conn) selfChanged(p *player.Player) bool {
+	now := int32(serverFlags(p))<<8 | int32(c.skin.Load()&0xff)
+	return c.selfShown.Swap(now) != now
 }
 
 // ViewEntityState shows a player's state: sneaking, sprinting and the rest.
@@ -133,7 +168,10 @@ func (c *conn) ViewEntityState(e world.Entity) {
 		return
 	}
 	if e.H() == c.handle {
-		c.send(javaproto.EntityMetadata(selfEntityID, c.selfMeta(p)))
+		// Only what the server owns is worth telling the client of itself.
+		if c.selfChanged(p) {
+			c.send(javaproto.EntityMetadata(selfEntityID, c.selfMeta(p)))
+		}
 		return
 	}
 	if s, ok := c.ents[e.H()]; ok {
@@ -198,8 +236,10 @@ func (c *conn) input(p *player.Player, keys byte) {
 func (c *conn) command(p *player.Player, a javaproto.EntityAction) {
 	switch a.Action {
 	case javaproto.ActionStartSprinting:
+		c.clientSprint.Store(true)
 		p.StartSprinting()
 	case javaproto.ActionStopSprinting:
+		c.clientSprint.Store(false)
 		p.StopSprinting()
 	case javaproto.ActionStartFallFlying:
 		// Dragonfly checks the elytra, as Java's server does.

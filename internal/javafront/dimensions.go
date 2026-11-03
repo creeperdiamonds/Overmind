@@ -121,6 +121,7 @@ func (c *conn) arrive(tx *world.Tx, p *player.Player) {
 	c.sendHealth()
 	c.sendInventory()
 	c.send(javaproto.HeldSlot(int32(*c.invs.held)))
+	c.selfChanged(p)
 	c.send(javaproto.EntityMetadata(selfEntityID, c.selfMeta(p)))
 	c.loader.Move(tx, pos)
 }

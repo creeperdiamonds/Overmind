@@ -179,6 +179,12 @@ type conn struct {
 	// skin is the skin layers the client shows (its settings), read by other
 	// clients' viewers.
 	skin atomic.Uint32
+	// clientSprint is the sprint state the client last declared (entity_action).
+	// The client owns its own sprinting; the server only echoes it back.
+	clientSprint atomic.Bool
+	// selfShown is the last server-owned part of the client's own metadata sent
+	// (fire and invisible flags, skin layers).
+	selfShown atomic.Int32
 
 	// rules are the player's own edition's: Java's.
 	rules rules.Player
@@ -325,6 +331,7 @@ func (c *conn) join() error {
 		c.loader.Move(tx, pos)
 		c.sendInventory()
 		c.send(javaproto.HeldSlot(int32(d.HeldSlot)))
+		c.selfChanged(p)
 		c.send(javaproto.EntityMetadata(selfEntityID, c.selfMeta(p)))
 		// As a Bedrock session does: the player hears what the server says.
 		chat.Global.Subscribe(p)
