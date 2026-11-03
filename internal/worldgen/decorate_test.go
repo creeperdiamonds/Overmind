@@ -561,15 +561,39 @@ func TestForestHasTreesDesertHasNone(t *testing.T) {
 // cut from its base by another source's block is not. Neighbouring chunks are generated as needed.
 func TestTreesStandOnSoil(t *testing.T) {
 	skipUnlessLong(t)
-	var trunks, joined int
-	for _, seed := range []int64{5, 6} {
-		g := New(seed)
+	checkTreesStandOnSoil(t, []int64{5, 6}, func(*Generator) [][2]int32 { return spread(-200, 200, 9) }, 1000)
+}
+
+// TestTreesStandOnSoilQuick is the same check on a few dense blocks of chunks, for the default run:
+// forests and jungles, where sources overlap most, and savanna, whose acacias bend.
+func TestTreesStandOnSoilQuick(t *testing.T) {
+	checkTreesStandOnSoil(t, []int64{41}, func(g *Generator) [][2]int32 {
 		var pos [][2]int32
-		for cx := int32(-200); cx < 200; cx += 9 {
-			for cz := int32(-200); cz < 200; cz += 9 {
-				pos = append(pos, [2]int32{cx, cz})
+		for _, b := range [][]string{{"jungle"}, {"roofed_forest"}, {"forest"}, {"savanna"}} {
+			for _, c := range biomeChunks(g, 1, b...) {
+				pos = append(pos, blockAround(c, 2)...)
 			}
 		}
+		return pos
+	}, 300)
+}
+
+// spread is every step-th chunk of a square, from lo to hi on both axes.
+func spread(lo, hi, step int32) [][2]int32 {
+	var pos [][2]int32
+	for cx := lo; cx < hi; cx += step {
+		for cz := lo; cz < hi; cz += step {
+			pos = append(pos, [2]int32{cx, cz})
+		}
+	}
+	return pos
+}
+
+func checkTreesStandOnSoil(t *testing.T, seeds []int64, chunks func(*Generator) [][2]int32, minTrunks int) {
+	var trunks, joined int
+	for _, seed := range seeds {
+		g := New(seed)
+		pos := chunks(g)
 		w := generateAll(g, pos)
 		extra := world3{}
 		at := func(x, y, z int) uint32 {
@@ -605,7 +629,7 @@ func TestTreesStandOnSoil(t *testing.T) {
 		}
 	}
 	t.Logf("%d trunk bottoms checked, %d of them bends or branches joined to a grounded trunk", trunks, joined)
-	if trunks < 1000 {
+	if trunks < minTrunks {
 		t.Fatalf("only %d trunks", trunks)
 	}
 }
@@ -655,16 +679,39 @@ func logGrounded(at func(x, y, z int) uint32, x, y, z int) bool {
 // carvers opened under them. Plants on the outermost columns read the real neighbour for water.
 func TestNoFloatingPlants(t *testing.T) {
 	skipUnlessLong(t)
-	counts := map[string]int{}
-	soil := []string{"grass_block", "dirt", "coarse_dirt", "podzol", "mycelium", "mud"}
-	for _, seed := range []int64{7, 8, 9} {
-		g := New(seed)
+	counts := checkNoFloatingPlants(t, []int64{7, 8, 9}, func(*Generator) [][2]int32 { return spread(-260, 260, 12) })
+	for _, n := range []string{"short_grass", "fern", "tall_grass", "large_fern", "dandelion", "poppy", "sunflower", "cactus", "reeds", "deadbush", "kelp", "seagrass", "waterlily", "snow_layer"} {
+		if counts[n] == 0 {
+			t.Errorf("no %s in the sample", n)
+		}
+	}
+}
+
+// TestNoFloatingPlantsQuick is the same check on a few dense blocks of chunks, for the default run:
+// where plants of neighbouring sources overlap (forests, plains and taiga with double plants, jungle,
+// swamp), under water (ocean) and on sand (desert).
+func TestNoFloatingPlantsQuick(t *testing.T) {
+	counts := checkNoFloatingPlants(t, []int64{7}, func(g *Generator) [][2]int32 {
 		var pos [][2]int32
-		for cx := int32(-260); cx < 260; cx += 12 {
-			for cz := int32(-260); cz < 260; cz += 12 {
-				pos = append(pos, [2]int32{cx, cz})
+		for _, b := range [][]string{{"forest"}, {"flower_forest"}, {"plains", "sunflower_plains"}, {"taiga", "old_growth_spruce_taiga"},
+			{"jungle"}, {"swampland"}, {"ocean", "lukewarm_ocean"}, {"desert"}} {
+			for _, c := range biomeChunks(g, 1, b...) {
+				pos = append(pos, blockAround(c, 2)...)
 			}
 		}
+		return pos
+	})
+	if counts["short_grass"] == 0 || counts["seagrass"] == 0 {
+		t.Fatalf("the sample holds no grass or seagrass: %v", counts)
+	}
+}
+
+func checkNoFloatingPlants(t *testing.T, seeds []int64, chunks func(*Generator) [][2]int32) map[string]int {
+	counts := map[string]int{}
+	soil := []string{"grass_block", "dirt", "coarse_dirt", "podzol", "mycelium", "mud"}
+	for _, seed := range seeds {
+		g := New(seed)
+		pos := chunks(g)
 		for p, c := range generateAll(g, pos) {
 			for x := range uint8(16) {
 				for z := range uint8(16) {
@@ -718,11 +765,7 @@ func TestNoFloatingPlants(t *testing.T) {
 		}
 	}
 	t.Logf("%v", counts)
-	for _, n := range []string{"short_grass", "fern", "tall_grass", "large_fern", "dandelion", "poppy", "sunflower", "cactus", "reeds", "deadbush", "kelp", "seagrass", "waterlily", "snow_layer"} {
-		if counts[n] == 0 {
-			t.Errorf("no %s in the sample", n)
-		}
-	}
+	return counts
 }
 
 // isGround is any block that holds a plant up, by name.
