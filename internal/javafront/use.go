@@ -143,8 +143,9 @@ func validCursor(u javaproto.BlockPlace) bool {
 	return true
 }
 
-// useInAir handles use_item: eating, drinking, throwing, drawing a bow, and
-// buckets, which Java aims at fluids itself.
+// useInAir handles use_item: eating, drinking, throwing, drawing a bow,
+// buckets, which Java aims at fluids itself, and blocks, which bridge as on
+// Bedrock (bridge.go).
 func (c *conn) useInAir(p *player.Player, u javaproto.UseItem) {
 	defer func() {
 		c.flushWorld()
@@ -153,6 +154,9 @@ func (c *conn) useInAir(p *player.Player, u javaproto.UseItem) {
 	// The look the client used it with.
 	c.turnTo(p, float64(u.Yaw), float64(u.Pitch))
 	held := handItem(p, u.Hand)
+	if c.bridge(p, u.Hand) {
+		return
+	}
 	if b, ok := held.Item().(item.Bucket); ok {
 		c.withHand(p, u.Hand, func() { c.useBucket(p, b) })
 		return

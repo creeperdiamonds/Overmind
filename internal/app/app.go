@@ -235,6 +235,7 @@ func Start(cfg config.Config) (*Server, error) {
 		Left:             func(id uuid.UUID) { h.left(java, id) },
 		Log:              log,
 		Uploader:         uploader,
+		BedrockBridging:  cfg.JavaBedrockBridging,
 	})
 	if err != nil {
 		if uploader != nil {

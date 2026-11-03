@@ -66,6 +66,9 @@ type Options struct {
 	// Uploader has Bedrock players' Java-format skins signed by Mojang, so Java
 	// clients can draw them (bedrockskins.go). Nil shows those as Steve or Alex.
 	Uploader *skins.Uploader
+	// BedrockBridging places a block used in the air the way a Bedrock client
+	// does when bridging (bridge.go). Not vanilla for Java.
+	BedrockBridging bool
 }
 
 // TabEntry is one row of the player list every Java client shows.

@@ -77,6 +77,12 @@ type Config struct {
 	// player (the showcoordinates game rule), sent as they join. On by default;
 	// vanilla BDS defaults it to false. Java needs nothing: F3 shows them.
 	ShowCoordinates bool
+	// JavaBedrockBridging gives Java players Bedrock's bridging: using a block
+	// while aiming at air, looking down past the edge they stand at, places it
+	// against the block under their feet, the way a Bedrock client does
+	// (internal/javafront/NOTES.md). Not vanilla for Java, whose client places
+	// only on a block face it aims at. On by default.
+	JavaBedrockBridging bool
 	// Skins is how skins cross between the editions ([skins] in the file).
 	Skins Skins `toml:"skins"`
 	// FlatWorld, set by tests (never read from the file), makes the Overworld
@@ -108,22 +114,23 @@ type Skins struct {
 // Default returns the settings used when a file leaves something out.
 func Default() Config {
 	return Config{
-		BedrockAddr:       ":19132",
-		BedrockTransports: []string{"raknet", "nethernet"},
-		NetherNetUDPPorts: "19133",
-		NetherNetKeyFile:  "keys/nethernet-identity.pem",
-		JavaAddr:          ":25565",
-		AuthEnabled:       true,
-		GameMode:          "survival",
-		ViewDistance:      6,
-		WorldFolder:       "world",
-		PlayersFolder:     "players",
-		SaveSeconds:       5,
-		MaxPlayers:        50,
-		ResourcesFolder:   "resources",
-		Profile:           "bedrock",
-		ShowCoordinates:   true,
-		Skins:             Skins{UploadCache: "skins", UploadGapSeconds: 30},
+		BedrockAddr:         ":19132",
+		BedrockTransports:   []string{"raknet", "nethernet"},
+		NetherNetUDPPorts:   "19133",
+		NetherNetKeyFile:    "keys/nethernet-identity.pem",
+		JavaAddr:            ":25565",
+		AuthEnabled:         true,
+		GameMode:            "survival",
+		ViewDistance:        6,
+		WorldFolder:         "world",
+		PlayersFolder:       "players",
+		SaveSeconds:         5,
+		MaxPlayers:          50,
+		ResourcesFolder:     "resources",
+		Profile:             "bedrock",
+		ShowCoordinates:     true,
+		JavaBedrockBridging: true,
+		Skins:               Skins{UploadCache: "skins", UploadGapSeconds: 30},
 	}
 }
 

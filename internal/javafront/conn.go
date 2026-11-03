@@ -207,6 +207,10 @@ type conn struct {
 	sign *openSign
 	// hurtBy is what last hurt the player.
 	hurtBy world.DamageSource
+	// bridgedAt is the tick of the last Bedrock-style bridging place, if
+	// bridged (bridge.go).
+	bridgedAt int64
+	bridged   bool
 }
 
 // pendingChunk is an encoded chunk waiting for the batch.
