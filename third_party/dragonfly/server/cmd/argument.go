@@ -281,12 +281,10 @@ func (p parser) parseTargets(line *Line, tx *world.Tx) ([]Target, error) {
 	switch first[:min(len(first), 2)] {
 	case "@p":
 		pos := line.src.Position()
-		playerDistances := make([]float64, len(players))
-		for i, p := range players {
-			playerDistances[i] = p.Position().Sub(pos).Len()
-		}
-		sort.Slice(players, func(i, j int) bool {
-			return playerDistances[i] < playerDistances[j]
+		// Overmind fork: sorted by each player's own distance. Upstream sorted
+		// by a slice of distances that the sort did not move with the players.
+		sort.SliceStable(players, func(i, j int) bool {
+			return players[i].Position().Sub(pos).Len() < players[j].Position().Sub(pos).Len()
 		})
 		if len(players) == 0 {
 			return nil, nil

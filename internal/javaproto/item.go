@@ -1,6 +1,10 @@
 package javaproto
 
-import "github.com/creeperdiamonds/overmind/internal/javawire"
+import (
+	"encoding/binary"
+
+	"github.com/creeperdiamonds/overmind/internal/javawire"
+)
 
 // Item and inventory packets. Layouts are minecraft-data's for 26.1.
 var (
@@ -38,6 +42,21 @@ func VarIntComponent(typ, v int32) Component {
 // TextComponent is a component whose data is a text component, such as
 // custom_name.
 func TextComponent(typ int32, t Text) Component { return Component{typ, appendText(nil, t)} }
+
+// LoreComponent is the lore component: a VarInt count of text components.
+func LoreComponent(typ int32, lines []Text) Component {
+	b := javawire.AppendVarInt(nil, int32(len(lines)))
+	for _, l := range lines {
+		b = appendText(b, l)
+	}
+	return Component{typ, b}
+}
+
+// IntComponent is a component whose data is one big-endian int, such as
+// dyed_color.
+func IntComponent(typ, v int32) Component {
+	return Component{typ, binary.BigEndian.AppendUint32(nil, uint32(v))}
+}
 
 // Enchantment is one entry of an enchantments component: the enchantment's
 // place in the enchantment registry, and its level.

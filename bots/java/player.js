@@ -125,6 +125,9 @@ client.on('player_remove', (p) => p.players.forEach((u) => {
   if (name !== undefined && profiles.has(name) && profiles.get(name).uuid === u) profiles.delete(name)
 }))
 // Chat as the client gets it: components simplified from NBT to plain values.
+// The command tree, as the server last declared it.
+let commandTree = null
+client.on('declare_commands', (p) => { commandTree = p })
 client.on('system_chat', (p) => chat.push({ kind: 'system', msg: nbt.simplify(p.content) }))
 client.on('profileless_chat', (p) => chat.push({ kind: 'disguised', msg: nbt.simplify(p.message), name: nbt.simplify(p.name), type: p.type }))
 client.on('player_chat', (p) => chat.push({ kind: 'player', msg: p.plainMessage }))
@@ -359,6 +362,7 @@ const commands = {
   },
   command: ({ text }) => { client.write('chat_command', { command: text }); return {} },
   inventory: () => ({ slots: inv, cursor, held, state: invState }),
+  commandTree: () => ({ tree: commandTree }),
   // click sends a window click with no guesses at the result, which the
   // server works out itself.
   click: ({ slot, button, mode, window }) => {

@@ -164,7 +164,7 @@ func TestJavaCommands(t *testing.T) {
 
 	systemText := func(want string) bool {
 		for _, l := range j.chat() {
-			if l.Kind == "system" && strings.Contains(plain(l.Msg).Text, want) {
+			if l.Kind == "system" && strings.Contains(plain(l.Msg).flat(), want) {
 				return true
 			}
 		}

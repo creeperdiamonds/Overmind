@@ -84,6 +84,11 @@ type Config struct {
 	// (internal/javafront/NOTES.md). Not vanilla for Java, whose client places
 	// only on a block face it aims at. On by default.
 	JavaBedrockBridging bool
+	// Operators may use /give, the one command players have: each entry a
+	// player name (either edition, any case), a Java account UUID or a Bedrock
+	// XUID. Empty by default, so nobody may. Others are told the command does not
+	// exist, and their clients are not shown it.
+	Operators []string
 	// Skins is how skins cross between the editions ([skins] in the file).
 	Skins Skins `toml:"skins"`
 	// FlatWorld, set by tests (never read from the file), makes the Overworld

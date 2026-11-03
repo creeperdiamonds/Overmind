@@ -8,7 +8,8 @@ Builds and starts the server from the settings. Starts the game, then the Java f
 - shows player chat to each member in its edition's format; Bedrock text going to Java loses section signs and control characters, as Java players may not send them;
 - lists every player in both editions' player lists (`javafront.Front.List`, and `session.List` for Java players in Bedrock's list);
 - counts players for `Server.Online`, the Java server list and the Bedrock server list (`statusProvider`);
-- saves every player online each `SaveSeconds` (a snapshot on its world goroutine; the store writes it).
+- saves every player online each `SaveSeconds` (a snapshot on its world goroutine; the store writes it);
+- tells `internal/give` of each player as it joins (`give.Join`: whether `Operators` includes it, and its edition) and leaves, and keeps each command line as typed for it (`HandleCommandExecution`, `give.Remember`). `Start` registers /give once per process (`give.Register`).
 
 One account UUID is one player across editions, since Dragonfly, the player lists and the stores key by UUID: `Allow` refuses a Bedrock join whose UUID is a Java player's, and the Java front end asks `OtherPlayerUUID` (a Bedrock reservation or a Bedrock player online). Each side writes its claim before it reads the other's, so two joins at once never both get in.
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,6 +65,25 @@ type Bot struct {
 	health  float32                            // our own, last sent
 	motion  []mgl32.Vec3                       // SetActorMotion for ourselves
 	rules   map[string]any                     // game rules from GameRulesChanged, by name
+	cmds    []string                           // command names in the last AvailableCommands
+	outputs []CommandOutput                    // every CommandOutput, in order
+	reqs    uint32                             // command requests sent
+}
+
+// CommandOutput is one message of a command's output: a translation key with
+// its parameters, or plain text.
+type CommandOutput struct {
+	Success bool
+	Message string
+	Params  []string
+}
+
+// Slot is an inventory slot as the bot was shown it.
+type Slot struct {
+	Name  string
+	Meta  int16
+	Count int
+	NBT   map[string]any
 }
 
 // Item is an item entity the bot was shown.
@@ -254,6 +274,15 @@ func (b *Bot) watch(pk packet.Packet) {
 	case *packet.MobArmourEquipment:
 		if s, ok := b.others[pk.EntityRuntimeID]; ok {
 			s.Helmet, s.Chestplate, s.Leggings, s.Boots = itemName(pk.Helmet), itemName(pk.Chestplate), itemName(pk.Leggings), itemName(pk.Boots)
+		}
+	case *packet.AvailableCommands:
+		b.cmds = b.cmds[:0]
+		for _, c := range pk.Commands {
+			b.cmds = append(b.cmds, c.Name)
+		}
+	case *packet.CommandOutput:
+		for _, m := range pk.OutputMessages {
+			b.outputs = append(b.outputs, CommandOutput{Success: m.Success, Message: m.Message, Params: m.Parameters})
 		}
 	case *packet.Text:
 		b.texts = append(b.texts, Text{Translation: pk.TextType == packet.TextTypeTranslation,
@@ -595,6 +624,44 @@ func (b *Bot) SubChunksReceived() int64 { return b.subs.Load() }
 
 // ChunksReceived is how many chunk packets the server has sent so far.
 func (b *Bot) ChunksReceived() int64 { return b.chunks.Load() }
+
+// Command runs a command as a client does from its chat box, with its slash.
+func (b *Bot) Command(line string) error {
+	b.mu.Lock()
+	b.reqs++
+	n := b.reqs
+	b.mu.Unlock()
+	return b.conn.WritePacket(&packet.CommandRequest{
+		CommandLine:   line,
+		CommandOrigin: protocol.CommandOrigin{Origin: protocol.CommandOriginPlayer, UUID: uuid.New(), RequestID: strconv.Itoa(int(n))},
+		Version:       protocol.CurrentVersion,
+	})
+}
+
+// Commands is the command names the server last said the bot may run.
+func (b *Bot) Commands() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.cmds...)
+}
+
+// CommandOutputs is every command output message so far.
+func (b *Bot) CommandOutputs() []CommandOutput {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]CommandOutput(nil), b.outputs...)
+}
+
+// Inventory is the bot's 36 inventory slots as the server last sent them.
+func (b *Bot) Inventory() []Slot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []Slot
+	for _, it := range b.windows[protocol.WindowIDInventory] {
+		out = append(out, Slot{Name: itemName(it), Meta: int16(it.Stack.MetadataValue), Count: int(it.Stack.Count), NBT: it.Stack.NBTData})
+	}
+	return out
+}
 
 // Say sends a chat message.
 func (b *Bot) Say(text string) {

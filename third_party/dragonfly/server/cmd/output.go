@@ -52,6 +52,13 @@ func (o *Output) Printt(t chat.Translation, a ...any) {
 	o.messages = append(o.messages, t.F(a...))
 }
 
+// PrintMessage adds a (success) message as it is, so that a Source may show its
+// own form of it (Overmind fork: the Java front end shows /give's reply as
+// Java's own translation).
+func (o *Output) PrintMessage(m fmt.Stringer) {
+	o.messages = append(o.messages, m)
+}
+
 // Errors returns a list of all errors added to the command output. Usually
 // only one error message is set: After one error message, execution of a
 // command typically terminates.

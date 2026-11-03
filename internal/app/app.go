@@ -26,6 +26,7 @@ import (
 
 	"github.com/creeperdiamonds/overmind/internal/bedrocknet"
 	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/give"
 	"github.com/creeperdiamonds/overmind/internal/javafront"
 	"github.com/creeperdiamonds/overmind/internal/javalogin"
 	"github.com/creeperdiamonds/overmind/internal/playerstore"
@@ -148,6 +149,8 @@ func Start(cfg config.Config) (*Server, error) {
 	h := newHub(log)
 	h.blockOddShapes = cfg.Skins.BlockOddShapes
 	h.showCoordinates = cfg.ShowCoordinates
+	h.operators = give.NewOperators(cfg.Operators)
+	give.Register()
 	if cfg.Skins.BlockOddShapes {
 		conf.JoinSkin = h.allowedSkin
 	}

@@ -440,6 +440,16 @@ type component struct {
 	Translate string      `json:"translate"`
 	Color     string      `json:"color"`
 	With      []component `json:"with"`
+	Extra     []component `json:"extra"`
+}
+
+// flat is a component's literal text with its children's.
+func (c component) flat() string {
+	s := c.Text
+	for _, e := range c.Extra {
+		s += e.flat()
+	}
+	return s
 }
 
 // plain reads a simplified component that may be a bare string.
