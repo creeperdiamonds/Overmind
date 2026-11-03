@@ -89,7 +89,7 @@ func (l *sessionList) sendSessionTo(s, to *Session) {
 			XUID:           s.conn.IdentityData().XUID,
 			PlayFabID:      s.conn.IdentityData().PlayFabID,
 			BuildPlatform:  int32(protocol.DeviceUnknown),
-			Skin:           skinToProtocol(s.joinSkin),
+			Skin:           s.protocolSkin(s.joinSkin), // Overmind fork
 		}},
 	})
 }

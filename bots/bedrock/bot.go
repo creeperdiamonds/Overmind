@@ -620,12 +620,13 @@ type SkinSeen struct {
 	Pix                 []byte // the image, RGBA
 	Geometry            string // the geometry data
 	Persona             bool
-	Changes             int // skin changes seen after the list's row
+	Changes             int           // skin changes seen after the list's row
+	Raw                 protocol.Skin // the skin as the packet carried it, every field
 }
 
 func skinSeen(s protocol.Skin) SkinSeen {
 	return SkinSeen{Width: int(s.SkinImageWidth), Height: int(s.SkinImageHeight), Data: len(s.SkinData), Patch: string(s.SkinResourcePatch),
-		Pix: append([]byte(nil), s.SkinData...), Geometry: string(s.SkinGeometry), Persona: s.PersonaSkin}
+		Pix: append([]byte(nil), s.SkinData...), Geometry: string(s.SkinGeometry), Persona: s.PersonaSkin, Raw: s}
 }
 
 // Skin is the skin the player list gave a player, by name, or the last skin

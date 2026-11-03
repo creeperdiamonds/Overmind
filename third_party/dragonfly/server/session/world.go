@@ -88,7 +88,7 @@ func (s *Session) ViewEntity(e world.Entity) {
 				EntityUniqueID: int64(runtimeID),
 				Username:       v.Name(),
 				BuildPlatform:  int32(protocol.DeviceUnknown),
-				Skin:           skinToProtocol(v.Skin()),
+				Skin:           skinOf(v), // Overmind fork
 			}}})
 		}
 
@@ -1350,7 +1350,7 @@ func (s *Session) ViewSkin(e world.Entity) {
 	if v, ok := e.(Controllable); ok {
 		s.writePacket(&packet.PlayerSkin{
 			UUID: v.UUID(),
-			Skin: skinToProtocol(v.Skin()),
+			Skin: skinOf(v), // Overmind fork
 		})
 	}
 }

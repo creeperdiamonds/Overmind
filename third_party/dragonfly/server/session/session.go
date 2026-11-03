@@ -69,6 +69,10 @@ type Session struct {
 	// spawn for the player list, but otherwise updated immediately when the
 	// player is viewed.
 	joinSkin skin.Skin
+	// clientSkins are the skins the client sent, as sent, that the player may
+	// still wear (Overmind fork, overmind_skin.go).
+	clientSkinMu sync.Mutex
+	clientSkins  []protocol.Skin
 
 	breakingPos cube.Pos
 
@@ -250,6 +254,7 @@ func (s *Session) SetHandle(handle *world.EntityHandle, skin skin.Skin) {
 	s.entities[selfEntityRuntimeID] = handle
 
 	s.joinSkin = skin
+	s.setClientSkins(clientSkin(s.conn.ClientData())) // Overmind fork
 	sessions.Add(s)
 }
 
