@@ -35,6 +35,12 @@ func Start(cfg config.Config) (*server.Server, error) {
 		return nil, err
 	}
 	log.Info("World seed", "seed", seed)
+	profile := worldgen.ProfileBedrock
+	if cfg.Profile != "" {
+		if profile = worldgen.ProfileByName(cfg.Profile); profile == nil {
+			return nil, fmt.Errorf("unknown world profile %q: want bedrock or overjava", cfg.Profile)
+		}
+	}
 
 	uc := server.DefaultConfig()
 	uc.Network.Address = cfg.BedrockAddr
@@ -54,7 +60,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build server config: %w", err)
 	}
-	gen := worldgen.New(seed)
+	gen := worldgen.NewWithProfile(seed, profile)
 	guard := &offTick{g: gen}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		if dim == world.Overworld {

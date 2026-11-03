@@ -39,6 +39,10 @@ type Config struct {
 	// Bedrock's tick-distance. It is held two under ViewDistance, so a ticked
 	// block's neighbours are always loaded. 0 means Bedrock's default, 4.
 	TickDistance int
+	// Profile is the world's placement rules: "bedrock" (the default), Java's
+	// algorithms with Bedrock's data, or "overjava", Java's throughout. A world
+	// keeps the profile it was made with only if this is left unchanged.
+	Profile string
 }
 
 // Default returns the settings used when a file leaves something out.
@@ -51,6 +55,7 @@ func Default() Config {
 		WorldFolder:     "world",
 		MaxPlayers:      50,
 		ResourcesFolder: "resources",
+		Profile:         "bedrock",
 	}
 }
 

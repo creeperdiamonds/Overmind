@@ -22,7 +22,7 @@ Explicit `float64()` and `float32()` conversions around products stop a platform
 
 1. `buildBase`: noise, surface, carvers, for a chunk and for each neighbour a feature reads. Exact against Java, as above.
 2. `runSource`: each of the 9 source chunks around the target is decorated **alone** against those carvers stages, by the owner's ruling. The driver follows the study's seeds and step and index order, and writes through a change log that is rolled back after the source.
-3. `keepChanges`: a source's changes that land in the target are applied in row-major source order, x then z. The same order as the fixtures, so it lands as near as a fixed order can.
+3. The merge (`merger` in `generator.go`): a source's changes that land in the target are applied in row-major source order, x then z, the same order as the fixtures. Where sources overlap, the later one is treated as Java's second feature, which sees the first's blocks: it replaces a block only if it would have replaced the block it saw (same block, both base stone, both air; tree blocks over leaves and plants); a plant is refused on ground another source changed to one it would not stand on, and a write is refused if it would change the ground under another source's plant or trunk; a trunk keeps its ground, and a double plant is kept or refused whole. Each decision reads only that cell or its column, so neighbouring chunks agree on what straddles their edge.
 
 Java itself has no single answer for step 3: two Java runs differ by 0.25 to 0.37% of blocks. See the task report for how far ours lands.
 

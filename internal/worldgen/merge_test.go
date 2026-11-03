@@ -82,3 +82,11 @@ func TestMergeKeepsPlantsOnTheirSoil(t *testing.T) {
 		t.Errorf("grass plant then dirt: %s", f[cellIndex(0, 62, 0)].name())
 	}
 }
+
+// TestAirIsStateZero: a new working space is all zero, which must read as air. A package-level table
+// that makes states can run before states.go's and take zero first unless it asks for air.
+func TestAirIsStateZero(t *testing.T) {
+	if sAir != 0 || bs(0).name() != "air" {
+		t.Fatalf("state zero is %q", bs(0).name())
+	}
+}

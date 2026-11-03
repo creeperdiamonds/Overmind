@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,12 +46,14 @@ func TestGoldenStateFlags(t *testing.T) {
 	}
 	stateLock.Unlock()
 	checked, bad := 0, 0
+	inList := map[string]bool{}
 	for _, r := range rows[1:] {
 		name := strings.TrimPrefix(r[0], "minecraft:")
 		s, ok := known[name]
 		if !ok {
 			continue
 		}
+		inList[name] = true
 		checked++
 		for _, fl := range flags {
 			want := r[col[fl.name]] == "1"
@@ -70,8 +73,16 @@ func TestGoldenStateFlags(t *testing.T) {
 			}
 		}
 	}
-	if checked == 0 {
-		t.Fatal("no state of ours is in the list")
+	var unchecked []string
+	for n := range known {
+		if !inList[n] {
+			unchecked = append(unchecked, n)
+		}
 	}
-	t.Logf("%d of our states checked, %d flags differ", checked, bad)
+	slices.Sort(unchecked)
+	t.Logf("%d of our %d states checked, %d flags differ; %d not in the list: %s", checked, len(known), bad, len(unchecked), strings.Join(unchecked[:min(len(unchecked), 30)], " "))
+	// The list covers the states the fixtures' chunks hold, so most of ours should be in it.
+	if checked < 400 {
+		t.Errorf("only %d of our states are in the game's list", checked)
+	}
 }

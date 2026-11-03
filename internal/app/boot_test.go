@@ -53,3 +53,12 @@ func TestAuthIsOnByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, cfg.AuthEnabled)
 }
+
+// A world profile is chosen by name; an unknown one is a start error, not a silent default.
+func TestWorldProfileSetting(t *testing.T) {
+	_, err := testserver.TryStartIn(t, t.TempDir(), func(c *config.Config) { c.Profile = "nether-only" })
+	require.ErrorContains(t, err, "unknown world profile")
+	srv, err := testserver.TryStartIn(t, t.TempDir(), func(c *config.Config) { c.Profile = "overjava" })
+	require.NoError(t, err)
+	require.NotNil(t, srv)
+}

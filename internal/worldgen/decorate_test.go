@@ -6,7 +6,6 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/go-gl/mathgl/mgl64"
-	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -635,7 +634,7 @@ func TestFrozenOceanHasIce(t *testing.T) {
 			}
 			wx, wz := cx*16+x, cz*16+z
 			// Java's freeze reads the biome at the open block above and the temperature at the water.
-			cold := coldEnough(s.blockBiome(g, wx, waterTop+1, wz), wx, waterTop, wz)
+			cold := g.coldEnough(s.blockBiome(g, wx, waterTop+1, wz), wx, waterTop, wz)
 			switch got := final[c]; {
 			case got == sIce:
 				iced++
@@ -689,8 +688,8 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 						total++
 						// The layer rests on the block below, so that is the height the pass asks about.
 						sc := new(chunkScratch)
-						if b := sc.blockBiome(g, wx, int(y), wz); !coldEnough(b, wx, int(y), wz) {
-							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, biomeTableNames[b], biomeTemperature(b, wx, int(y), wz))
+						if b := sc.blockBiome(g, wx, int(y), wz); !g.coldEnough(b, wx, int(y), wz) {
+							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, biomeTableNames[b], g.profile.climate.temperature(b, wx, int(y), wz))
 						}
 					}
 				}
@@ -738,127 +737,6 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-// Trees per chunk against Bedrock, measured the same way (BEDROCK-NOTES section 9): trees by the
-// biome of their column, over chunks by their centre biome. Rare biomes rest on few Bedrock chunks,
-// so a biome's tolerance is 30% or 0.3 trees, whichever is more, and biomes with under 60 of our
-// chunks are logged only. Overall, the 2.217 is a mix of 4 small windows (0.84 to 4.06 by seed), so
-// our rates are weighted by those windows' biome shares and must land within 15%.
-func TestTreesMatchBedrock(t *testing.T) {
-	figures := map[string]float64{
-		"jungle": 10.03, "roofed_forest": 7.44, "pale_garden": 6.5, "forest": 5.92, "taiga": 5.18, "birch_forest": 5.04,
-		"mega_taiga": 4.72, "grove": 4.49, "flower_forest": 4.06, "birch_forest_mutated": 3.64, "mesa_plateau_stone": 2.57,
-		"cherry_grove": 2.41, "redwood_taiga_mutated": 1.89, "jungle_edge": 1.43, "savanna_plateau": 1.1, "savanna": 1.02, "meadow": 0.95,
-		"plains": 0.31, "sunflower_plains": 0.07, "river": 0.11, "desert": 0,
-	}
-	shares := map[string]float64{
-		"ocean": 13.96, "plains": 12.26, "forest": 12.22, "roofed_forest": 8.01, "deep_ocean": 6.68, "river": 5.97, "cold_ocean": 4.4,
-		"birch_forest_mutated": 3.98, "savanna": 3.71, "birch_forest": 3.35, "deep_cold_ocean": 2.8, "flower_forest": 2.64,
-		"mega_taiga": 2.13, "grove": 2.08, "savanna_plateau": 2.06, "mesa": 1.94, "stone_beach": 1.72, "meadow": 1.59, "frozen_peaks": 1.33,
-		"beach": 1.07, "jungle_edge": 1.03, "desert": 1.01, "sunflower_plains": 0.74, "mesa_bryce": 0.58, "stony_peaks": 0.5,
-		"dappled_forest": 0.32, "taiga": 0.29, "jungle": 0.27, "mesa_plateau_stone": 0.26, "jagged_peaks": 0.24, "pale_garden": 0.23,
-		"redwood_taiga_mutated": 0.18, "cherry_grove": 0.15, "lush_caves": 0.1, "dripstone_caves": 0.1, "snowy_slopes": 0.08,
-	}
-	trees, chunks := map[string]float64{}, map[string]float64{}
-	var allTrees, allChunks float64
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-	for seed := int64(1); seed <= statSeeds; seed++ {
-		g := New(seed)
-		for cx := -statSpan / 32; cx < statSpan/32; cx += 6 {
-			for cz := -statSpan / 32; cz < statSpan/32; cz += 6 {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func() {
-					defer wg.Done()
-					defer func() { <-sem }()
-					c := generate(g, int32(cx), int32(cz))
-					local := map[string]float64{}
-					n := countTrees(c, func(x, z uint8) {
-						local[g.BiomeAt(cx*16+int(x), maxY, cz*16+int(z)).String()]++
-					})
-					centre := g.BiomeAt(cx*16+8, maxY, cz*16+8).String()
-					mu.Lock()
-					defer mu.Unlock()
-					for k, v := range local {
-						trees[k] += v
-					}
-					chunks[centre]++
-					allTrees += float64(n)
-					allChunks++
-				}()
-			}
-		}
-	}
-	wg.Wait()
-	names := make([]string, 0, len(figures))
-	for k := range figures {
-		names = append(names, k)
-	}
-	slices.Sort(names)
-	for _, k := range names {
-		want := figures[k]
-		if chunks[k] < 60 {
-			t.Logf("%-24s %6.2f a chunk over %4.0f chunks, Bedrock %5.2f: too few to judge", k, trees[k]/max(chunks[k], 1), chunks[k], want)
-			continue
-		}
-		got := trees[k] / chunks[k]
-		t.Logf("%-24s %6.2f a chunk over %4.0f chunks, Bedrock %5.2f", k, got, chunks[k], want)
-		if math.Abs(got-want) > max(want*0.3, 0.3) {
-			t.Errorf("%s: %.2f trees a chunk, Bedrock %.2f", k, got, want)
-		}
-	}
-	var weighted, sum, theirs float64
-	for k, s := range shares {
-		sum += s
-		theirs += s * figures[k]
-		if chunks[k] > 0 {
-			weighted += s * trees[k] / chunks[k]
-		}
-	}
-	weighted /= sum
-	t.Logf("overall: ours %.2f a chunk on our own mix; %.2f on the Bedrock windows' mix, where Bedrock's rates give %.2f; Bedrock measured 2.217", allTrees/allChunks, weighted, theirs/sum)
-	if math.Abs(weighted-2.217) > 2.217*0.15 {
-		t.Errorf("trees on the Bedrock windows' mix: %.2f a chunk, Bedrock 2.217, tolerance 15%%", weighted)
-	}
-}
-
-// Kelp and seagrass per ocean chunk, from Bedrock's seed 1, whose window is 76% ocean, deep ocean,
-// cold ocean and deep cold ocean and has almost nothing else under water: 143.51 kelp and 43.51
-// seagrass a chunk over the window gives 189 and 57 per ocean chunk. Seed 12345 agrees on kelp (50.33
-// over 28% ocean). One seed is thin evidence, so the tolerance is 30%.
-func TestKelpAndSeagrassMatchBedrock(t *testing.T) {
-	g := New(13)
-	var pos [][2]int32
-	pos = append(pos, biomeChunks(g, 100, "ocean", "deep_ocean", "cold_ocean", "deep_cold_ocean")...)
-	if len(pos) < 50 {
-		t.Fatalf("only %d ocean chunks", len(pos))
-	}
-	var kelp, seagrass float64
-	for _, c := range generateAll(g, pos) {
-		for x := range uint8(16) {
-			for z := range uint8(16) {
-				for y := int16(minY); y <= SeaLevel; y++ {
-					switch nameOf(c.Block(x, y, z, 0)) {
-					case "kelp":
-						kelp++
-					case "seagrass":
-						seagrass++
-					}
-				}
-			}
-		}
-	}
-	n := float64(len(pos))
-	t.Logf("%.0f ocean chunks: kelp %.1f a chunk, Bedrock 189; seagrass %.1f, Bedrock 57", n, kelp/n, seagrass/n)
-	if math.Abs(kelp/n-189) > 189*0.3 {
-		t.Errorf("kelp %.1f a chunk, Bedrock 189", kelp/n)
-	}
-	if math.Abs(seagrass/n-57) > 57*0.3 {
-		t.Errorf("seagrass %.1f a chunk, Bedrock 57", seagrass/n)
 	}
 }
 

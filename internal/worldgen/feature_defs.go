@@ -3,22 +3,16 @@ package worldgen
 import (
 	"fmt"
 	"strings"
-	"sync"
 )
 
 // The non-ore placed features. Parameters were transcribed from knowledge of the game and corrected
 // against the study's trace fixtures. Features the study does not write up are left out: see NOTES.md.
 
-var geodeNoises sync.Map
-
-// geodeNoise is the study's fresh noise for a geode, the same for every geode of a seed.
+// geodeNoise is the study's fresh noise for a geode, the same for every geode of a seed. It is made on
+// first use and kept by the generator, so it goes when the generator does.
 func (g *Generator) geodeNoise() *normalNoise {
-	if n, ok := geodeNoises.Load(g.seed); ok {
-		return n.(*normalNoise)
-	}
-	n := legacyNormal(g.seed, -4, []float64{1})
-	geodeNoises.Store(g.seed, n)
-	return n
+	g.geodeOnce.Do(func() { g.geode = legacyNormal(g.seed, -4, []float64{1}) })
+	return g.geode
 }
 
 func patch(n, xz, y int, filter predicate) []modifier {
@@ -171,7 +165,7 @@ func defineSteps(t *tableBuilder) {
 		}
 		return sGrass, true
 	}), diskMods(1)...)
-	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(44, 52)}, inSquareMod{}, heightRangeMod{uniHeight(minY, maxY)}, surfaceThresholdMod{hmOceanFloorWG, -2, 1 << 30}, biomeMod{})
+	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(t.prof.magmaCount[0], t.prof.magmaCount[1])}, inSquareMod{}, heightRangeMod{uniHeight(minY, maxY)}, surfaceThresholdMod{hmOceanFloorWG, -2, 1 << 30}, biomeMod{})
 	waterRock := blockSet("stone granite diorite andesite deepslate tuff calcite dirt snow_block powder_snow packed_ice")
 	lavaRock := blockSet("stone granite diorite andesite deepslate tuff")
 	frozenRock := blockSet("snow_block powder_snow packed_ice")
@@ -179,7 +173,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("spring_lava", springFeature(sLava, lavaRock, 4, 1, true), countMod{constInt(20)}, inSquareMod{}, heightRangeMod{veryBiasedHeight(minY, maxY-8, 8)}, biomeMod{})
 	t.def("spring_lava_frozen", springFeature(sLava, frozenRock, 4, 1, true), countMod{constInt(20)}, inSquareMod{}, heightRangeMod{veryBiasedHeight(minY, maxY-8, 8)}, biomeMod{})
 	t.def("glow_lichen", lichenFeature(blockSet("stone andesite diorite granite dripstone_block calcite tuff deepslate"), 20, 0.5),
-		countMod{uniInt(104, 157)}, heightRangeMod{uniHeight(minY, 256)}, inSquareMod{}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -13}, biomeMod{})
+		countMod{uniInt(t.prof.lichenCount[0], t.prof.lichenCount[1])}, heightRangeMod{uniHeight(minY, 256)}, inSquareMod{}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -13}, biomeMod{})
 	t.def("freeze_top_layer", freezeFeature, biomeMod{})
 
 	// Trees.
@@ -366,7 +360,7 @@ func init() {
 		}
 	}
 	add(tagLogs, logs)
-	add(tagHangs, "vine glow_lichen cave_vines cave_vines_plant hanging_roots spore_blossom pale_hanging_moss cocoa resin_clump weeping_vines weeping_vines_plant sculk_vein")
+	add(tagHangs, "vine glow_lichen cave_vines cave_vines_plant hanging_roots spore_blossom pale_hanging_moss cocoa resin_clump sculk_vein")
 	add(tagLeaves, leaves)
 	add(tagNoFeature, "bedrock spawner chest end_portal_frame reinforced_deepslate trial_spawner vault")
 	add(tagNoLavaPool, "bedrock spawner chest end_portal_frame reinforced_deepslate trial_spawner vault "+logs+" "+leaves)

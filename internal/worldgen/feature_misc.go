@@ -668,7 +668,7 @@ func kelpFeature(d *decoration, p pos) bool {
 	plant := stateOf("kelp_plant")
 	h := 1 + r.nextInt(10)
 	placed := false
-	age := func() bs { return stateOf("kelp[age=" + strconv.Itoa(r.nextInt(4)+20) + "]") }
+	age := func() bs { return kelpAges[r.nextInt(4)] }
 	for i := 0; i <= h; i++ {
 		if d.at(k) == sWater && d.at(k.step(dUp)) == sWater && canSurvive(d, plant, k) {
 			if i == h {
@@ -877,8 +877,38 @@ func bambooFeature(prob float32) feature {
 	}
 }
 
+// kelpAges are a kelp top's states for ages 20 to 23, the ones generation picks.
+var kelpAges = func() (a [4]bs) {
+	_ = sAir // Air is state zero, so it must be made first.
+	for i := range a {
+		a[i] = stateOf("kelp[age=" + strconv.Itoa(i+20) + "]")
+	}
+	return a
+}()
+
+// mushroomStates holds every face pattern of the three huge mushroom blocks, by faces as bits.
+var mushroomStates = func() map[string]*[64]bs {
+	_ = sAir // Air is state zero, so it must be made first.
+	m := map[string]*[64]bs{}
+	for _, name := range []string{"red_mushroom_block", "brown_mushroom_block", "mushroom_stem"} {
+		var t [64]bs
+		for i := range t {
+			f := func(b int) bool { return i>>b&1 != 0 }
+			t[i] = stateOf(fmt.Sprintf("%s[down=%v,east=%v,north=%v,south=%v,up=%v,west=%v]", name, f(1), f(4), f(2), f(3), f(0), f(5)))
+		}
+		m[name] = &t
+	}
+	return m
+}()
+
 func mushroomState(name string, up, down, north, south, east, west bool) bs {
-	return stateOf(fmt.Sprintf("%s[down=%v,east=%v,north=%v,south=%v,up=%v,west=%v]", name, down, east, north, south, up, west))
+	i := 0
+	for b, on := range [6]bool{up, down, north, south, east, west} {
+		if on {
+			i |= 1 << b
+		}
+	}
+	return mushroomStates[name][i]
 }
 
 // hugeMushroom is section 11's huge mushroom.
@@ -1082,12 +1112,12 @@ func freezeFeature(d *decoration, o pos) bool {
 			top := pos{x, y, z}
 			b := top.step(dDown)
 			biome := d.biomeAt(x, y, z)
-			if biomeTemperature(biome, b.x, b.y, b.z) < 0.15 {
+			if d.g.coldEnough(biome, b.x, b.y, b.z) {
 				if s := d.at(b); s == sWater || (s.has(fLiquid) && s.has(fWater)) {
 					d.set(b.x, b.y, b.z, sIce)
 				}
 			}
-			if biomeTemperature(biome, x, y, z) < 0.15 {
+			if d.g.coldEnough(biome, x, y, z) {
 				if s := d.at(top); s.isAir() && canSurvive(d, snow, top) {
 					d.set(x, y, z, snow)
 					if bb := d.at(b); strings.Contains(bb.name(), "snowy=false") {
@@ -1101,6 +1131,16 @@ func freezeFeature(d *decoration, o pos) bool {
 }
 
 // Multiface growth (glow lichen). The spreader is inferred from the game's rule and tested on traces.
+
+// lichenStates holds every glow lichen state, by its faces (bits in dir order) and water (bit 6).
+var lichenStates = func() (t [128]bs) {
+	_ = sAir // Air is state zero, so it must be made first.
+	for i := range t {
+		f := func(b int) bool { return i>>b&1 != 0 }
+		t[i] = stateOf(lichenName(f(int(dDown)), f(int(dUp)), f(int(dNorth)), f(int(dSouth)), f(int(dWest)), f(int(dEast)), f(6)))
+	}
+	return t
+}()
 
 func lichenName(down, up, north, south, west, east, water bool) string {
 	return fmt.Sprintf("glow_lichen[down=%v,east=%v,north=%v,south=%v,up=%v,waterlogged=%v,west=%v]", down, east, north, south, up, water, west)
@@ -1119,7 +1159,16 @@ func lichenWith(old bs, a dir) bs {
 		}
 	}
 	f[a] = true
-	return stateOf(lichenName(f[dDown], f[dUp], f[dNorth], f[dSouth], f[dWest], f[dEast], water))
+	i := 0
+	for q, on := range f {
+		if on {
+			i |= 1 << q
+		}
+	}
+	if water {
+		i |= 1 << 6
+	}
+	return lichenStates[i]
 }
 
 func sturdyFace(s bs, face dir) bool {

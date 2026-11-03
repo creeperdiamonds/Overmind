@@ -41,9 +41,12 @@ type biomeClimate struct {
 	frozen bool
 }
 
-// biomeClimates holds each biome's temperature. Numbers are the game's, tested through the surface
-// stage's ice and the freeze pass.
-var biomeClimates = func() (t [len(biomeTableNames)]biomeClimate) {
+// climateTable is every biome's climate, by biome table index.
+type climateTable [len(biomeTableNames)]biomeClimate
+
+// biomeClimates holds each biome's temperature: Java's values. Numbers are the game's, tested through
+// the surface stage's ice and the freeze pass.
+var biomeClimates = func() (t climateTable) {
 	for name, v := range map[string]float32{
 		"plains": 0.8, "sunflower_plains": 0.8, "snowy_plains": 0, "ice_spikes": 0, "desert": 2, "swamp": 0.8, "mangrove_swamp": 0.8,
 		"forest": 0.7, "flower_forest": 0.7, "birch_forest": 0.6, "dark_forest": 0.7, "pale_garden": 0.7, "old_growth_birch_forest": 0.6,
@@ -62,9 +65,21 @@ var biomeClimates = func() (t [len(biomeTableNames)]biomeClimate) {
 	return t
 }()
 
-// biomeTemperature is a biome's temperature at a block, section 12.
-func biomeTemperature(b uint8, x, y, z int) float32 {
-	c := biomeClimates[b]
+// bedrockClimates is Java's table with Bedrock's values where its data files differ (BEDROCK-NOTES
+// section 5 row 5): savanna 1.2, savanna plateau 1.0, meadow and cherry grove 0.3, lush caves 0.9,
+// dripstone caves 0.2. The name mapping to Java's biomes is the study's.
+var bedrockClimates = func() climateTable {
+	t := biomeClimates
+	for name, v := range map[string]float32{"savanna": 1.2, "savanna_plateau": 1.0, "meadow": 0.3, "cherry_grove": 0.3,
+		"lush_caves": 0.9, "dripstone_caves": 0.2} {
+		t[biomeIdx[name]].temp = v
+	}
+	return t
+}()
+
+// temperature is a biome's temperature at a block, from this table.
+func (t *climateTable) temperature(b uint8, x, y, z int) float32 {
+	c := t[b]
 	adj := c.temp
 	if c.frozen {
 		fx, fz := float64(x), float64(z)
@@ -82,7 +97,8 @@ func biomeTemperature(b uint8, x, y, z int) float32 {
 	return adj
 }
 
-func coldEnough(b uint8, x, y, z int) bool { return biomeTemperature(b, x, y, z) < 0.15 }
+// coldEnough says whether a biome freezes at a block under this generator's profile.
+func (g *Generator) coldEnough(b uint8, x, y, z int) bool { return g.profile.climate.temperature(b, x, y, z) < 0.15 }
 
 // quartColumn is one quart column's stored biomes, by table index. A pure function of the seed and
 // the position, it lives in pooled scratch and changes speed and nothing else.
@@ -620,7 +636,7 @@ func (c *ruleContext) surfaceAtBlock() bs {
 			if c.waterAt(0, 0, false) {
 				return sAir
 			}
-			if coldEnough(c.biomeHere(), c.x, c.y, c.z) {
+			if c.g.coldEnough(c.biomeHere(), c.x, c.y, c.z) {
 				return sIce
 			}
 			return sWater
@@ -734,7 +750,7 @@ func (g *Generator) frozenExtension(b *baseChunk, c *ruleContext, sb uint8, lx, 
 	}
 	roof := math.Abs(float64(n.bergCap.at(float64(fx*1.17), 0, float64(fz*1.17)) * 1.5))
 	top := min(float64(float64(ice*ice)*1.2), float64(math.Ceil(float64(roof*40.0)))+14.0)
-	if biomeTemperature(sb, x, 63, z) > 0.1 {
+	if g.profile.climate.temperature(sb, x, 63, z) > 0.1 {
 		top -= 2.0
 	}
 	var bot float64

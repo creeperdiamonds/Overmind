@@ -149,6 +149,13 @@ func buildPlacements(prof *Profile) []*placement {
 			pl.step, pl.idx = step, i
 			out = append(out, pl)
 		}
+		// A profile's own additions run at the end of their step, as Bedrock's extra mountain coal
+		// is one more ore. They take indexes past Java's, so Java's streams stay unchanged.
+		for _, pl := range t.extra {
+			if pl.step == step {
+				out = append(out, pl)
+			}
+		}
 	}
 	for biome, own := range biomeOwnFeatures {
 		id := biomeIdx[biome]
@@ -164,8 +171,7 @@ func buildPlacements(prof *Profile) []*placement {
 			}
 		}
 	}
-	// A profile's own additions sit past the Java indexes, so Java's streams stay unchanged.
-	return append(out, t.extra...)
+	return out
 }
 
 func common(n intProvider, h heightProvider) []modifier {

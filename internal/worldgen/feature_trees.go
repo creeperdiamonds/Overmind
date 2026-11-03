@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Trees follow Mojang's algorithms from the study (section 10), in our own Go. Java's hash set order
@@ -117,7 +118,26 @@ func weightedStates(list ...weightedState) stateProvider {
 }
 
 // withProp sets one property in a state's text and returns the state.
+// withProp gives a state with one property changed. Results are kept, so a hot write builds no text.
 func withProp(s bs, key, value string) bs {
+	k := propKey{s, key, value}
+	if v, ok := propMemo.Load(k); ok {
+		return v.(bs)
+	}
+	v := withPropSlow(s, key, value)
+	propMemo.Store(k, v)
+	return v
+}
+
+type propKey struct {
+	s          bs
+	key, value string
+}
+
+// propMemo holds withProp's results. States and property values are few, so it stays small.
+var propMemo sync.Map
+
+func withPropSlow(s bs, key, value string) bs {
 	name := s.name()
 	i := strings.Index(name, key+"=")
 	if i < 0 {
@@ -131,7 +151,23 @@ func withProp(s bs, key, value string) bs {
 	return stateOf(name[:j] + value + name[k:])
 }
 
-func logState(wood string, axis byte) bs { return stateOf(fmt.Sprintf("%s[axis=%c]", wood, axis)) }
+// logState is a log by wood and axis; the states are kept after the first ask.
+func logState(wood string, axis byte) bs {
+	k := logKey{wood, axis}
+	if v, ok := logMemo.Load(k); ok {
+		return v.(bs)
+	}
+	v := stateOf(fmt.Sprintf("%s[axis=%c]", wood, axis))
+	logMemo.Store(k, v)
+	return v
+}
+
+type logKey struct {
+	wood string
+	axis byte
+}
+
+var logMemo sync.Map
 
 func leafName(kind string) string {
 	return kind + "[distance=7,persistent=false,waterlogged=false]"

@@ -359,3 +359,53 @@ func TestOreRanges(t *testing.T) {
 		}
 	}
 }
+
+// TestVeinsCrossChunkEdges: ore, from the noise stage's ore veins (copper with granite, iron with tuff)
+// and from Java's ore features, runs on across chunk edges as it does inside a chunk. Each block is a
+// function of its position and the merge's per-cell rules, so a vein cut at an edge would show as ore
+// meeting ore less often across edges than inside.
+func TestVeinsCrossChunkEdges(t *testing.T) {
+	g := New(21)
+	b := newBlocks()
+	ore := map[uint32]bool{b.rawIron: true, b.rawCopper: true}
+	for _, p := range b.veins {
+		ore[p[0]], ore[p[1]] = true, true
+	}
+	var pos [][2]int32
+	for x := int32(0); x < 10; x++ {
+		for z := int32(0); z < 10; z++ {
+			pos = append(pos, [2]int32{x, z})
+		}
+	}
+	chunks := generateAll(g, pos)
+	var inner, innerOre, edge, edgeOre int
+	for p, c := range chunks {
+		next := chunks[[2]int32{p[0] + 1, p[1]}]
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				for y := int16(-60); y < 60; y++ {
+					if !ore[c.Block(x, y, z, 0)] {
+						continue
+					}
+					switch {
+					case x < 15:
+						inner++
+						if ore[c.Block(x+1, y, z, 0)] {
+							innerOre++
+						}
+					case next != nil:
+						edge++
+						if ore[next.Block(0, y, z, 0)] {
+							edgeOre++
+						}
+					}
+				}
+			}
+		}
+	}
+	in, ed := float64(innerOre)/float64(inner), float64(edgeOre)/float64(edge)
+	t.Logf("ore next to ore: inside chunks %.3f (%d), across edges %.3f (%d)", in, inner, ed, edge)
+	if edge < 100 || ed < in*0.7 {
+		t.Errorf("veins break at chunk edges: %.3f across edges against %.3f inside", ed, in)
+	}
+}

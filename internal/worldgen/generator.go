@@ -34,6 +34,8 @@ type Generator struct {
 	sf         surfaceFactories
 	oreFac     seedFactory
 	profile    *Profile
+	geodeOnce  sync.Once
+	geode      *normalNoise
 }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
