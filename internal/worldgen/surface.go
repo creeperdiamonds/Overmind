@@ -41,26 +41,24 @@ const (
 	surfFrozenOcean // Like surfOcean, with icebergs.
 )
 
-// surfaceNoises holds the noises the surface rules read. First octaves of the surface,
-// band offset and stony shore noises come from the study; the others are our own choice
-// at similar scales.
+// surfaceNoises holds the noises the surface rules read: the game's named noises, seeded as the game
+// seeds them. The rules that read them stay our own design.
 type surfaceNoises struct {
-	depth, bands, gravel, calcite, ice, puddle, hoodoo, hoodooCap, berg, bergCap *layered
+	depth, bands, gravel, calcite, ice, puddle, hoodoo, hoodooCap, berg, bergCap *normalNoise
 }
 
-func newSurfaceNoises(seed int64) surfaceNoises {
-	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
+func newSurfaceNoises(w seedFactory) surfaceNoises {
 	return surfaceNoises{
-		depth:     newGameLayered(sub(40), -6, []float64{1, 1, 1}),
-		bands:     newGameLayered(sub(41), -8, []float64{1}),
-		gravel:    newGameLayered(sub(42), -8, []float64{1, 1}),
-		calcite:   newGameLayered(sub(43), -9, []float64{1, 1}),
-		ice:       newGameLayered(sub(44), -7, []float64{1, 1}),
-		puddle:    newGameLayered(sub(45), -4, []float64{1, 1}),
-		hoodoo:    newGameLayered(sub(46), -4, []float64{1, 1}),
-		hoodooCap: newGameLayered(sub(47), -7, []float64{1}),
-		berg:      newGameLayered(sub(48), -6, []float64{1, 1, 1}),
-		bergCap:   newGameLayered(sub(49), -9, []float64{1, 1}),
+		depth:     newNamedNoise(w, "surface"),
+		bands:     newNamedNoise(w, "clay_bands_offset"),
+		gravel:    newNamedNoise(w, "gravel"),
+		calcite:   newNamedNoise(w, "calcite"),
+		ice:       newNamedNoise(w, "packed_ice"),
+		puddle:    newNamedNoise(w, "surface_swamp"),
+		hoodoo:    newNamedNoise(w, "badlands_pillar"),
+		hoodooCap: newNamedNoise(w, "badlands_pillar_roof"),
+		berg:      newNamedNoise(w, "iceberg_pillar"),
+		bergCap:   newNamedNoise(w, "iceberg_pillar_roof"),
 	}
 }
 
@@ -161,8 +159,11 @@ func (g *Generator) extensionAt(kind surfaceKind, x, z int) columnExtension {
 	return none
 }
 
+// puddleY is the height a swamp puddle sits at: the water's top.
+const puddleY = waterTop
+
 // puddled says whether a swamp column has a puddle: positive noise makes the ground at
-// sea level water (from the study).
+// puddleY water (from the study).
 func (g *Generator) puddled(kind surfaceKind, x, z int) bool {
 	return (kind == surfSwamp || kind == surfMangrove) && g.surface.puddle.at(float64(x), 0, float64(z)) > 0
 }
@@ -226,8 +227,8 @@ func (g *Generator) applySurface(c *chunk.Chunk, originX, originZ int, top *[16]
 				s.steep = slopes.steep(x, z)
 			}
 			s.walk(kind, int(top[x][z]), int(col.ground))
-			if top[x][z] == SeaLevel && g.puddled(kind, wx, wz) {
-				c.SetBlock(uint8(x), SeaLevel, uint8(z), 0, g.blocks.water)
+			if top[x][z] == puddleY && g.puddled(kind, wx, wz) {
+				c.SetBlock(uint8(x), puddleY, uint8(z), 0, g.blocks.water)
 				top[x][z]--
 			}
 		}
@@ -255,16 +256,15 @@ func (g *Generator) newSlopeGrid(originX, originZ int) *slopeGrid {
 // by going down its density nodes.
 func (g *Generator) gridHeight(x, z int) float64 {
 	shape := g.shapeAt(x, z)
-	fx, fz := float64(x), float64(z)
 	above := -1.0
 	for n := columnNodes - 1; n >= 0; n-- {
-		y := float64(minY + n*cellY)
-		if shape.ramp(y) < -maxBase {
+		y := minY + n*cellY
+		if shape.certainlyAir(y) {
 			continue
 		}
-		d := finishDensity(g.slopedDensity(&shape, fx, y, fz), y)
+		d := squeeze(float64(slides(g.slopedAt(&shape, x, y, z), y) * 0.64))
 		if d > 0 {
-			return y + cellY*d/(d-above)
+			return float64(y) + cellY*d/(d-above)
 		}
 		above = d
 	}
@@ -273,6 +273,7 @@ func (g *Generator) gridHeight(x, z int) float64 {
 
 // at blends the height at a block offset from the chunk's corner, -1 to 16.
 func (s *slopeGrid) at(x, z int) float64 {
+	bilerp := func(a, b, c, d, tx, tz float64) float64 { return lerp(lerp(a, b, tx), lerp(c, d, tx), tz) }
 	i, j := floorDiv(x, cellXZ), floorDiv(z, cellXZ)
 	tx, tz := float64(x-i*cellXZ)/cellXZ, float64(z-j*cellXZ)/cellXZ
 	return bilerp(s.height[i+1][j+1], s.height[i+2][j+1], s.height[i+1][j+2], s.height[i+2][j+2], tx, tz)

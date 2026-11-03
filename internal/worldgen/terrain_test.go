@@ -5,6 +5,55 @@ import (
 	"testing"
 )
 
+// Continentalness edges of the measured figures: under oceanBelow is ocean, at midBelow or over is
+// far inland.
+const (
+	oceanBelow = -0.19
+	midBelow   = 0.3
+)
+
+// highestSolid is the top of the terrain alone in a column, before caves and fluids: the blended
+// sloped density by the same order as the real pass. Tests use it to tell terrain from caves.
+func (g *Generator) highestSolid(x, z int) int {
+	gridX, gridZ := x&^(cellXZ-1), z&^(cellXZ-1)
+	fx, fz := float64(x-gridX)/4.0, float64(z-gridZ)/4.0
+	var shapes [2][2]columnShape
+	for i := range 2 {
+		for j := range 2 {
+			shapes[i][j] = g.shapeAt(gridX+i*cellXZ, gridZ+j*cellXZ)
+		}
+	}
+	at := func(i, j, y int) float64 {
+		if shapes[i][j].certainlyAir(y) {
+			return -1
+		}
+		return slides(g.slopedAt(&shapes[i][j], gridX+i*cellXZ, y, gridZ+j*cellXZ), y)
+	}
+	for layer := columnNodes - 2; layer >= 0; layer-- {
+		y0 := minY + layer*cellY
+		var c [2][2][2]float64
+		any := false
+		for i := range 2 {
+			for k := range 2 {
+				for j := range 2 {
+					c[i][k][j] = at(i, j, y0+k*cellY)
+					any = any || c[i][k][j] > 0
+				}
+			}
+		}
+		if !any {
+			continue
+		}
+		e := edges{lerp(c[0][0][0], c[1][0][0], fx), lerp(c[0][1][0], c[1][1][0], fx), lerp(c[0][0][1], c[1][0][1], fx), lerp(c[0][1][1], c[1][1][1], fx)}
+		for dy := cellY - 1; dy >= 0; dy-- {
+			if e.at(float64(dy)/8.0, fz) > 0 {
+				return y0 + dy
+			}
+		}
+	}
+	return minY - 1
+}
+
 func TestPeaksAndValleysFormula(t *testing.T) {
 	cases := map[float64]float64{0: -1, 1.0 / 3: 0, 2.0 / 3: 1, 1: 0, -2.0 / 3: 1}
 	for weirdness, want := range cases {
@@ -14,29 +63,32 @@ func TestPeaksAndValleysFormula(t *testing.T) {
 	}
 }
 
-func TestSplineHitsKnotsAndClampsEnds(t *testing.T) {
-	s := &spline{input: inputErosion, knots: []knot{{at: -1, value: 10}, {at: 0, value: 20}, {at: 1, value: 40}}}
-	for _, c := range []struct{ at, want float64 }{{-5, 10}, {-1, 10}, {0, 20}, {-0.5, 15}, {1, 40}, {9, 40}} {
-		if got := s.eval(splineInput{inputErosion: c.at}); math.Abs(got-c.want) > 1e-9 {
+// Past its ends a spline carries on along the end slope, and with no slope it holds its end value.
+func TestSplineEnds(t *testing.T) {
+	s := onCoord(coordE).c(-1, 10).c(0, 20).cd(1, 40, 2).s
+	for _, c := range []struct{ at, want float32 }{{-5, 10}, {-1, 10}, {0, 20}, {1, 40}, {2, 42}} {
+		in := splineCoords{coordE: c.at}
+		if got := s.eval(&in); got != c.want {
 			t.Errorf("eval(%v) = %v, want %v", c.at, got, c.want)
 		}
 	}
 }
 
 func TestSplineNests(t *testing.T) {
-	inner := &spline{input: inputErosion, knots: []knot{{at: 0, value: 100}, {at: 1, value: 200}}}
-	s := &spline{input: inputContinentalness, knots: []knot{{at: 0, value: 0}, {at: 1, child: inner}}}
-	got := s.eval(splineInput{inputContinentalness: 1, inputErosion: 1})
-	if got != 200 {
+	inner := onCoord(coordE).c(0, 100).c(1, 200).s
+	s := onCoord(coordC).c(0, 0).n(1, inner).s
+	in := splineCoords{coordC: 1, coordE: 1}
+	if got := s.eval(&in); got != 200 {
 		t.Fatalf("nested eval = %v, want 200", got)
 	}
 }
 
-// Larger continentalness raises terrain, higher erosion flattens it and high
-// peaks-and-valleys raises it, in the height table from the study.
-func TestHeightSplineDirections(t *testing.T) {
-	h := func(c, e, pv float64) float64 {
-		return heightSpline.eval(splineInput{inputContinentalness: c, inputErosion: e, inputPV: pv})
+// Larger continentalness raises terrain, higher erosion flattens it and high peaks-and-valleys raises
+// it, in the offset spline.
+func TestOffsetSplineDirections(t *testing.T) {
+	h := func(c, e, pv float32) float64 {
+		in := splineCoords{coordC: c, coordE: e, coordPV: pv}
+		return nominalGround(offsetFrom(&in))
 	}
 	if h(-0.8, 0, 0) >= h(-0.3, 0, 0) || h(-0.3, 0, 0) >= SeaLevel || h(0.5, 0, 0) <= h(0, 0, 0) {
 		t.Error("height does not rise with continentalness across the sea level")
@@ -93,32 +145,29 @@ search:
 	if overhung == 0 {
 		t.Fatal("no overhangs in a mountain range")
 	}
-	if share > 0.25 {
+	// The bound was 25%, our own guess. The noise stage alone, which matches the game bit for bit, has
+	// 27.2% in this patch, so that bound was wrong; carvers add the rest. Half still says mostly solid.
+	if share > 0.5 {
 		t.Fatalf("%.1f%% of mountain columns overhang; the ground should stay mostly solid", share*100)
 	}
 }
 
+// Climate values are not clamped: the golden fixtures hold temperature to -1.21 and continentalness
+// to 1.21, so the old clamps at +-1 are gone. This bounds them where the noise itself bounds them.
 func TestClimateValuesInRanges(t *testing.T) {
 	g := New(8)
 	for x := -20000; x < 20000; x += 97 {
 		c := g.Climate(x, x*3-1000)
-		for name, v := range map[string]float64{"temperature": c.Temperature, "humidity": c.Humidity, "erosion": c.Erosion} {
-			if v < -1 || v > 1 {
-				t.Fatalf("%s %v outside -1..1", name, v)
+		for name, v := range map[string]float64{"temperature": c.Temperature, "humidity": c.Humidity, "erosion": c.Erosion, "continentalness": c.Continentalness, "weirdness": c.Weirdness} {
+			if math.Abs(v) > 2 {
+				t.Fatalf("%s %v outside the range the game's noises reach", name, v)
 			}
-		}
-		// Weirdness is not clamped; the largest measured is 1.33 in the game and 1.49 in ours.
-		if math.Abs(c.Weirdness) > 1.6 {
-			t.Fatalf("weirdness %v far outside the measured range", c.Weirdness)
-		}
-		if c.Continentalness < -1.2 || c.Continentalness > 1 {
-			t.Fatalf("continentalness %v outside -1.2..1", c.Continentalness)
 		}
 	}
 }
 
 // The game's weirdness passes 1 on 0.25 to 0.42% of columns (4 seeds, 8192 square, 32-block grid),
-// and PV goes on falling there. A clamp at 1 flattens those humps into plateaus.
+// and PV goes on falling there.
 func TestWeirdnessIsNotClamped(t *testing.T) {
 	var over, total int
 	var largest float64
@@ -141,6 +190,38 @@ func TestWeirdnessIsNotClamped(t *testing.T) {
 		t.Errorf("|weirdness| over 1 on %.3f%% of columns, measured 0.25 to 0.42%%", share)
 	}
 	if largest > 1.6 {
-		t.Errorf("largest |weirdness| %.3f, measured 1.33 in the game and 1.49 in ours", largest)
+		t.Errorf("largest |weirdness| %.3f, measured 1.33 in the game", largest)
+	}
+}
+
+func TestNoiseIsDeterministicAndSeeded(t *testing.T) {
+	make := func(seed int64) *normalNoise {
+		r := xoroFromSeed(seed)
+		return newNamedNoise(r.forkFactory(), "erosion")
+	}
+	a, b, c := make(1), make(1), make(2)
+	var differs bool
+	for i := range 200 {
+		x, z := float64(i)*13.7-900, float64(i)*-9.1+40
+		if a.at(x, 5, z) != b.at(x, 5, z) {
+			t.Fatal("same seed gave different noise")
+		}
+		differs = differs || a.at(x, 5, z) != c.at(x, 5, z)
+	}
+	if !differs {
+		t.Fatal("different seeds gave the same noise")
+	}
+}
+
+func TestNoiseIsContinuous(t *testing.T) {
+	r := xoroFromSeed(4)
+	n := newNamedNoise(r.forkFactory(), "erosion")
+	prev := n.at(-500, 0, 0)
+	for x := -500.0; x < 500; x += 0.25 {
+		v := n.at(x, 0, 0)
+		if math.Abs(v-prev) > 0.2 {
+			t.Fatalf("jump of %.3f at x=%.2f", v-prev, x)
+		}
+		prev = v
 	}
 }

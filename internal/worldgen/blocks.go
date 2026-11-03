@@ -168,3 +168,23 @@ func newBlocks() blocks {
 	b.veins[veinInfested] = [2]uint32{id(block.InfestedStone{}), id(block.InfestedDeepslate{})}
 	return b
 }
+
+// GroundBlocks is the study's idea of ground, by runtime ID: not air, water, lava, plants, logs or
+// leaves. The list follows the study's measuring tool for Bedrock worlds, for the blocks we place, so
+// a height read with it can be compared with theirs.
+func GroundBlocks() map[uint32]bool {
+	b := newBlocks()
+	m := map[uint32]bool{}
+	for _, id := range []uint32{b.stone, b.granite, b.diorite, b.andesite, b.deepslate, b.tuff, b.calcite, b.dirt, b.coarseDirt,
+		b.grass, b.podzol, b.mycelium, b.mud, b.clay, b.sand, b.redSand, b.sandstone, b.redSandstone, b.gravel, b.bedrock,
+		b.packedIce, b.snow, b.amethyst, b.smoothBasalt, b.rawIron, b.rawCopper} {
+		m[id] = true
+	}
+	for _, id := range b.terracotta {
+		m[id] = true
+	}
+	for _, p := range b.veins {
+		m[p[0]], m[p[1]] = true, true
+	}
+	return m
+}

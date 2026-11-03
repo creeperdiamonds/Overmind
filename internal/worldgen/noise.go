@@ -1,258 +1,288 @@
 package worldgen
 
-import "math"
+import "strconv"
 
-// noiseSpread is the typical size (standard deviation) of one octave of gradient
-// noise, measured by TestNoiseSpreadFitsMinusOneToOne. Dividing by three times this
-// puts about 99.7% of values within -1 to 1.
-const noiseSpread = 0.27
+// Noise follows Mojang's algorithms exactly, per the owner's decision, in our own Go from the study's
+// notes (NOTES-exact-seed.md sections 3 to 5). Every product that meets a sum is wrapped in an
+// explicit float64 conversion so that no platform fuses it into a multiply-add, which would change
+// the low bits; Java never fuses.
 
-// mix64 is the SplitMix64 step. It turns a counter into a well-mixed number. We use
-// our own so a Go release can never change the world a seed produces.
+// mix64 is the SplitMix64 step, used for our own position-based chances (ores, carvers, trees). It
+// has no part in the game's noises.
 func mix64(v uint64) uint64 {
-	v += 0x9E3779B97F4A7C15
+	v += seedGolden
 	v = (v ^ (v >> 30)) * 0xBF58476D1CE4E5B9
 	v = (v ^ (v >> 27)) * 0x94D049BB133111EB
 	return v ^ (v >> 31)
 }
 
-// gradientNoise is one layer of seeded 3D gradient noise. It never changes after it
-// is built, so workers can share it.
-type gradientNoise struct {
-	perm    [512]uint8
-	x, y, z float64 // Random shift, so layers do not line up on whole numbers.
-}
-
-func newGradientNoise(seed uint64) *gradientNoise {
-	n := &gradientNoise{}
-	for i := range 256 {
-		n.perm[i] = uint8(i)
-	}
-	for i := 255; i > 0; i-- {
-		seed = mix64(seed)
-		j := seed % uint64(i+1)
-		n.perm[i], n.perm[j] = n.perm[j], n.perm[i]
-	}
-	copy(n.perm[256:], n.perm[:256])
-	shift := func() float64 {
-		seed = mix64(seed)
-		return float64(seed%(1<<32)) / (1 << 16)
-	}
-	n.x, n.y, n.z = shift(), shift(), shift()
-	return n
-}
-
-func fade(t float64) float64 {
-	return t * t * t * (t*(t*6-15) + 10)
-}
-
 func lerp(a, b, t float64) float64 {
-	return a + (b-a)*t
-}
-
-// gradient takes the dot product of the offset with one of 12 cube-edge directions.
-func gradient(hash uint8, x, y, z float64) float64 {
-	switch hash % 12 {
-	case 0:
-		return x + y
-	case 1:
-		return y - x
-	case 2:
-		return x - y
-	case 3:
-		return -x - y
-	case 4:
-		return x + z
-	case 5:
-		return z - x
-	case 6:
-		return x - z
-	case 7:
-		return -x - z
-	case 8:
-		return y + z
-	case 9:
-		return z - y
-	case 10:
-		return y - z
-	default:
-		return -y - z
-	}
-}
-
-func (n *gradientNoise) at(x, y, z float64) float64 {
-	x, y, z = x+n.x, y+n.y, z+n.z
-	fx, fy, fz := math.Floor(x), math.Floor(y), math.Floor(z)
-	ix, iy, iz := int(fx)&255, int(fy)&255, int(fz)&255
-	x, y, z = x-fx, y-fy, z-fz
-	u, v, w := fade(x), fade(y), fade(z)
-
-	p := &n.perm
-	a, b := int(p[ix])+iy, int(p[ix+1])+iy
-	aa, ab, ba, bb := int(p[a])+iz, int(p[a+1])+iz, int(p[b])+iz, int(p[b+1])+iz
-
-	return lerp(
-		lerp(
-			lerp(gradient(p[aa], x, y, z), gradient(p[ba], x-1, y, z), u),
-			lerp(gradient(p[ab], x, y-1, z), gradient(p[bb], x-1, y-1, z), u), v),
-		lerp(
-			lerp(gradient(p[aa+1], x, y, z-1), gradient(p[ba+1], x-1, y, z-1), u),
-			lerp(gradient(p[ab+1], x, y-1, z-1), gradient(p[bb+1], x-1, y-1, z-1), u), v),
-		w)
-}
-
-// fractal adds octaves of noise. Each octave has half the wavelength and half the
-// strength of the one before it. Values mostly fall within -1 to 1 but can go a little outside.
-type fractal struct {
-	octaves       []*gradientNoise
-	freqXZ, freqY float64
-	gain          float64
-}
-
-// newFractal builds a fractal whose first octave has the given wavelengths in blocks.
-func newFractal(seed uint64, wavelengthXZ, wavelengthY float64, octaves int) *fractal {
-	f := &fractal{freqXZ: 1 / wavelengthXZ, freqY: 1 / wavelengthY}
-	var power, strength float64 = 0, 1
-	for i := range octaves {
-		f.octaves = append(f.octaves, newGradientNoise(mix64(seed+uint64(i)*0x51ED27)))
-		power += strength * strength
-		strength /= 2
-	}
-	f.gain = 1 / (3 * noiseSpread * math.Sqrt(power))
-	return f
-}
-
-// newFractalSpread builds a fractal in unit coordinates with a set standard deviation.
-func newFractalSpread(seed uint64, octaves int, spread float64) *fractal {
-	f := newFractal(seed, 1, 1, octaves)
-	f.gain *= spread * 3
-	return f
-}
-
-// at samples the fractal at a block position.
-func (f *fractal) at(x, y, z float64) float64 {
-	x, y, z = x*f.freqXZ, y*f.freqY, z*f.freqXZ
-	var sum float64
-	strength := 1.0
-	for _, o := range f.octaves {
-		sum += o.at(x, y, z) * strength
-		x, y, z = x*2, y*2, z*2
-		strength /= 2
-	}
-	return sum * f.gain
-}
-
-// layer is one octave of a layered noise: a gradient noise, how many wavelengths it fits
-// into one noise unit, and its weight.
-type layer struct {
-	noise        *gradientNoise
-	freq, weight float64
-}
-
-// layered is our double noise: two octave stacks added together, the second read at
-// 1.01813 times the coordinates so that the lattice of one never lines up with the other.
-// Octave i has a wavelength of 2^(-first-i) noise units and a weight of amps[i]*2^-i, and
-// the sum is scaled so its standard deviation is about target. The shape of this noise
-// and the octave lists passed to it come from studying the Java 26.1 generator; the code
-// is our own.
-type layered struct {
-	first, second []layer
-	gain          float64
-}
-
-// secondStackScale is the coordinate scale of the second stack, from the same study.
-const secondStackScale = 1.01813
-
-// newLayered builds a layered noise. Octaves with amplitude zero cost nothing.
-func newLayered(seed uint64, first int, amps []float64, target float64) *layered {
-	l := &layered{}
-	var power float64
-	freq, strength := math.Pow(2, float64(first)), 1.0
-	for i, amp := range amps {
-		if amp != 0 {
-			w := amp * strength
-			power += w * w
-			l.first = append(l.first, layer{newGradientNoise(mix64(seed + uint64(i)*2 + 1)), freq, w})
-			l.second = append(l.second, layer{newGradientNoise(mix64(seed + uint64(i)*2 + 2)), freq, w})
-		}
-		freq, strength = freq*2, strength/2
-	}
-	l.gain = target / (noiseSpread * math.Sqrt(2*power))
-	return l
-}
-
-// spreadRatios gives the share of its natural spread (that of the plain sum of its octaves,
-// weights amplitude * 2^-i) that a noise keeps in the game, by the number of octaves from its
-// first to its last non-zero amplitude. Measured: the study measured the five climate spreads
-// (notes section 2) and TestSpreadRatios samples our noises to get their natural spreads; the
-// ratios are 0.59 at 2 octaves, 0.65 at 3, 0.72 at 5, 0.775 at 9. A single octave has no
-// measured point; 0.83 there is tuned by us to the air shares (TestCaveSharesMatchMeasuredFigures).
-var spreadRatios = [...]struct {
-	span  int
-	ratio float64
-}{{1, 0.83}, {2, 0.59}, {3, 0.65}, {5, 0.72}, {9, 0.775}}
-
-// spreadRatio reads spreadRatios, interpolating between points and holding the last one beyond.
-func spreadRatio(span int) float64 {
-	r := spreadRatios[:]
-	if span >= r[len(r)-1].span {
-		return r[len(r)-1].ratio
-	}
-	for i := 1; i < len(r); i++ {
-		if span <= r[i].span {
-			t := float64(span-r[i-1].span) / float64(r[i].span-r[i-1].span)
-			return lerp(r[i-1].ratio, r[i].ratio, t)
-		}
-	}
-	return r[0].ratio
-}
-
-// naturalSpread is the standard deviation of the plain sum of an octave list in our gradient noise.
-func naturalSpread(amps []float64) float64 {
-	var power float64
-	strength := 1.0
-	for _, a := range amps {
-		power += a * strength * a * strength
-		strength /= 2
-	}
-	return noiseSpread * math.Sqrt(2*power)
-}
-
-// gameSpread is the standard deviation of a noise other than the five climate ones: its natural
-// spread times the ratio for its span. Measured by us, see spreadRatios.
-func gameSpread(amps []float64) float64 {
-	first, last := -1, -1
-	for i, a := range amps {
-		if a != 0 {
-			if first < 0 {
-				first = i
-			}
-			last = i
-		}
-	}
-	return naturalSpread(amps) * spreadRatio(last-first+1)
-}
-
-// newGameLayered builds a layered noise with the spread gameSpread gives its octave list.
-func newGameLayered(seed uint64, first int, amps []float64) *layered {
-	return newLayered(seed, first, amps, gameSpread(amps))
-}
-
-// at samples the noise at a point in noise units.
-func (l *layered) at(x, y, z float64) float64 {
-	var sum float64
-	for i := range l.first {
-		o := &l.first[i]
-		sum += o.noise.at(x*o.freq, y*o.freq, z*o.freq) * o.weight
-	}
-	x, y, z = x*secondStackScale, y*secondStackScale, z*secondStackScale
-	for i := range l.second {
-		o := &l.second[i]
-		sum += o.noise.at(x*o.freq, y*o.freq, z*o.freq) * o.weight
-	}
-	return sum * l.gain
+	return a + float64(t*(b-a))
 }
 
 func clamp(v, low, high float64) float64 {
-	return math.Max(low, math.Min(high, v))
+	if v < low {
+		return low
+	}
+	return min(v, high)
 }
+
+func floorInt32(v float64) int32 {
+	i := int32(v)
+	if float64(i) > v {
+		i--
+	}
+	return i
+}
+
+func floorInt64(v float64) int64 {
+	i := int64(v)
+	if float64(i) > v {
+		i--
+	}
+	return i
+}
+
+func fade(t float64) float64 {
+	inner := float64(t*6) - 15
+	inner = float64(t*inner) + 10
+	return float64(float64(float64(t*t)*t) * inner)
+}
+
+// Gradient directions by hash & 15. Entries 12 to 15 repeat others, as in the game.
+var gradients = [16][3]float64{
+	{1, 1, 0}, {-1, 1, 0}, {1, -1, 0}, {-1, -1, 0}, {1, 0, 1}, {-1, 0, 1}, {1, 0, -1}, {-1, 0, -1},
+	{0, 1, 1}, {0, -1, 1}, {0, 1, -1}, {0, -1, -1}, {1, 1, 0}, {0, -1, 1}, {-1, 1, 0}, {0, -1, -1},
+}
+
+func gradDot(hash uint8, x, y, z float64) float64 {
+	d := &gradients[hash&15]
+	return float64(d[0]*x) + float64(d[1]*y) + float64(d[2]*z)
+}
+
+// octave is one layer of gradient noise. It never changes after it is built.
+type octave struct {
+	perm       [256]uint8
+	xo, yo, zo float64
+}
+
+func (o *octave) init(r *xoro) {
+	o.xo = float64(r.nextDouble() * 256)
+	o.yo = float64(r.nextDouble() * 256)
+	o.zo = float64(r.nextDouble() * 256)
+	for i := range o.perm {
+		o.perm[i] = uint8(i)
+	}
+	for i := range 256 {
+		j := i + r.nextInt(uint32(256-i))
+		o.perm[i], o.perm[j] = o.perm[j], o.perm[i]
+	}
+}
+
+// sample reads the octave at a wrapped point, with no vertical smear.
+func (o *octave) sample(ix, iy, iz float64) float64 {
+	x, y, z := ix+o.xo, iy+o.yo, iz+o.zo
+	fx, fy, fz := floorInt32(x), floorInt32(y), floorInt32(z)
+	ry := y - float64(fy)
+	return o.corners(fx, fy, fz, x-float64(fx), ry, z-float64(fz), ry)
+}
+
+// smearEpsilon is 1e-7 as a single, widened.
+const smearEpsilon = float64(float32(1e-7))
+
+// sampleSmeared is sample with the old-style vertical smear the terrain noise uses. The fade still
+// reads the true fraction; only the gradients read the smeared one.
+func (o *octave) sampleSmeared(ix, iy, iz, smear, fudge float64) float64 {
+	x, y, z := ix+o.xo, iy+o.yo, iz+o.zo
+	fx, fy, fz := floorInt32(x), floorInt32(y), floorInt32(z)
+	ry := y - float64(fy)
+	limit := ry
+	if fudge >= 0 && fudge < ry {
+		limit = fudge
+	}
+	drop := float64(float64(floorInt32(limit/smear+smearEpsilon)) * smear)
+	return o.corners(fx, fy, fz, x-float64(fx), ry-drop, z-float64(fz), ry)
+}
+
+func (o *octave) corners(fx, fy, fz int32, rx, ryUsed, rz, ry float64) float64 {
+	p := &o.perm
+	a, b := int32(p[uint8(fx)]), int32(p[uint8(fx+1)])
+	aa, ab := int32(p[uint8(a+fy)]), int32(p[uint8(a+fy+1)])
+	ba, bb := int32(p[uint8(b+fy)]), int32(p[uint8(b+fy+1)])
+	x1, y1, z1 := rx-1, ryUsed-1, rz-1
+	d000 := gradDot(p[uint8(aa+fz)], rx, ryUsed, rz)
+	d100 := gradDot(p[uint8(ba+fz)], x1, ryUsed, rz)
+	d010 := gradDot(p[uint8(ab+fz)], rx, y1, rz)
+	d110 := gradDot(p[uint8(bb+fz)], x1, y1, rz)
+	d001 := gradDot(p[uint8(aa+fz+1)], rx, ryUsed, z1)
+	d101 := gradDot(p[uint8(ba+fz+1)], x1, ryUsed, z1)
+	d011 := gradDot(p[uint8(ab+fz+1)], rx, y1, z1)
+	d111 := gradDot(p[uint8(bb+fz+1)], x1, y1, z1)
+	u, v, w := fade(rx), fade(ry), fade(rz)
+	return lerp(
+		lerp(lerp(d000, d100, u), lerp(d010, d110, u), v),
+		lerp(lerp(d001, d101, u), lerp(d011, d111, u), v),
+		w)
+}
+
+// wrapCoord keeps a coordinate in the range the game's octaves read, leaving small ones as they are.
+func wrapCoord(v float64) float64 {
+	const span = 33554432.0
+	if v > -span/2 && v < span/2 {
+		return v
+	}
+	return v - float64(float64(floorInt64(v/span+0.5))*span)
+}
+
+// stackLevel is one octave of a stack, with what the stack multiplies it by.
+type stackLevel struct {
+	o          *octave
+	inFactor   float64
+	amplitude  float64
+	valueScale float64
+}
+
+// octaveStack adds octaves whose wavelengths halve. Levels with amplitude 0 have no octave, but
+// they still count towards the weights.
+type octaveStack struct {
+	levels []stackLevel
+}
+
+func newOctaveStack(r *xoro, first int, amps []float64) octaveStack {
+	pf := r.forkFactory()
+	n := len(amps)
+	inFactor := pow2(first)
+	valueScale := pow2(n-1) / (pow2(n) - 1)
+	s := octaveStack{levels: make([]stackLevel, 0, n)}
+	for i, a := range amps {
+		if a != 0 {
+			g := pf.named("octave_" + strconv.Itoa(first+i))
+			o := new(octave)
+			o.init(&g)
+			s.levels = append(s.levels, stackLevel{o, inFactor, a, valueScale})
+		}
+		inFactor *= 2
+		valueScale /= 2
+	}
+	return s
+}
+
+func (s *octaveStack) value(x, y, z float64) float64 {
+	var sum float64
+	for i := range s.levels {
+		l := &s.levels[i]
+		v := l.o.sample(wrapCoord(float64(x*l.inFactor)), wrapCoord(float64(y*l.inFactor)), wrapCoord(float64(z*l.inFactor)))
+		sum += float64(float64(l.amplitude*v) * l.valueScale)
+	}
+	return sum
+}
+
+func pow2(e int) float64 {
+	v := 1.0
+	for ; e > 0; e-- {
+		v *= 2
+	}
+	for ; e < 0; e++ {
+		v /= 2
+	}
+	return v
+}
+
+// secondStackFactor is how much further along the second stack of a normal noise reads.
+const secondStackFactor = 1.0181268882175227
+
+// normalNoise is two octave stacks added and rescaled.
+type normalNoise struct {
+	first, second octaveStack
+	scale         float64
+}
+
+func newNormalNoise(r *xoro, first int, amps []float64) *normalNoise {
+	n := &normalNoise{first: newOctaveStack(r, first, amps)}
+	n.second = newOctaveStack(r, first, amps)
+	lo, hi := len(amps), -1
+	for i, a := range amps {
+		if a != 0 {
+			lo, hi = min(lo, i), max(hi, i)
+		}
+	}
+	deviation := 0.1
+	deviation *= 1.0 + 1.0/float64(hi-lo+1)
+	n.scale = 0.16666666666666666 / deviation
+	return n
+}
+
+// at samples the noise at a point in noise units.
+func (n *normalNoise) at(x, y, z float64) float64 {
+	a := n.first.value(x, y, z)
+	b := n.second.value(float64(x*secondStackFactor), float64(y*secondStackFactor), float64(z*secondStackFactor))
+	return float64((a + b) * n.scale)
+}
+
+// blendedNoise is the terrain's 3D noise: a main stack chooses between two limit stacks.
+type blendedNoise struct {
+	minLimit, maxLimit [16]octave
+	main               [8]octave
+	// Scales, worked out at run time in double precision as the game does.
+	xz, y, limitSmear, mainSmear float64
+}
+
+func newBlendedNoise(r *xoro) *blendedNoise {
+	b := new(blendedNoise)
+	for i := range b.minLimit {
+		b.minLimit[i].init(r)
+	}
+	for i := range b.maxLimit {
+		b.maxLimit[i].init(r)
+	}
+	for i := range b.main {
+		b.main[i].init(r)
+	}
+	base := 684.412
+	b.xz, b.y = float64(base*0.25), float64(base*0.125)
+	b.limitSmear = float64(b.y * 8.0)
+	b.mainSmear = b.limitSmear / 160.0
+	return b
+}
+
+// at is the noise at a block position.
+func (b *blendedNoise) at(bx, by, bz int) float64 {
+	lx, ly, lz := float64(float64(bx)*b.xz), float64(float64(by)*b.y), float64(float64(bz)*b.xz)
+	mx, my, mz := lx/80.0, ly/160.0, lz/80.0
+
+	var m float64
+	pow := 1.0
+	for i := range b.main {
+		m += b.main[i].sampleSmeared(wrapCoord(float64(mx*pow)), wrapCoord(float64(my*pow)), wrapCoord(float64(mz*pow)),
+			float64(b.mainSmear*pow), float64(my*pow)) / pow
+		pow /= 2
+	}
+	t := (m/10.0 + 1.0) / 2.0
+
+	var low, high float64
+	pow = 1.0
+	for i := range b.minLimit {
+		wx, wy, wz := wrapCoord(float64(lx*pow)), wrapCoord(float64(ly*pow)), wrapCoord(float64(lz*pow))
+		smear, fudge := float64(b.limitSmear*pow), float64(ly*pow)
+		if t < 1.0 {
+			low += b.minLimit[i].sampleSmeared(wx, wy, wz, smear, fudge) / pow
+		}
+		if t > 0.0 {
+			high += b.maxLimit[i].sampleSmeared(wx, wy, wz, smear, fudge) / pow
+		}
+		pow /= 2
+	}
+	switch {
+	case t < 0:
+		return low / 512.0 / 128.0
+	case t > 1:
+		return high / 512.0 / 128.0
+	}
+	return lerp(low/512.0, high/512.0, t) / 128.0
+}
+
+// base3DLimit bounds the size of blendedNoise.at. Its octave sums are weighted to at most 65535/65536
+// of the largest octave value, and a value is a blend of gradient dots, none over 2. It is a safe
+// bound for skipping the noise where the answer cannot depend on it, and much wider than the 0.9 the
+// study measured.
+const base3DLimit = 2.0

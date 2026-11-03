@@ -1,7 +1,11 @@
 package worldgen
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"math"
+	"slices"
+	"sync"
 
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/biome"
@@ -65,605 +69,367 @@ var (
 	lushCaves      = def{biome.LushCaves{}, surfNone}
 	deepDark       = def{biome.DeepDark{}, surfNone}
 
-	// Oceans by temperature level 0 to 4. Level 2 is the plain ocean.
-	oceans = [5]def{
-		{biome.FrozenOcean{}, surfFrozenOcean}, {biome.ColdOcean{}, surfOcean},
-		{biome.Ocean{}, surfOcean}, {biome.LukewarmOcean{}, surfWarmFloor}, {biome.WarmOcean{}, surfBeach},
+	frozenOcean       = def{biome.FrozenOcean{}, surfFrozenOcean}
+	coldOcean         = def{biome.ColdOcean{}, surfOcean}
+	ocean             = def{biome.Ocean{}, surfOcean}
+	lukewarmOcean     = def{biome.LukewarmOcean{}, surfWarmFloor}
+	warmOcean         = def{biome.WarmOcean{}, surfBeach}
+	deepFrozenOcean   = def{biome.DeepFrozenOcean{}, surfFrozenOcean}
+	deepColdOcean     = def{biome.DeepColdOcean{}, surfOcean}
+	deepOcean         = def{biome.DeepOcean{}, surfOcean}
+	deepLukewarmOcean = def{biome.DeepLukewarmOcean{}, surfWarmFloor}
+)
+
+// biomeDefs maps the parameter table's names to our biomes. The table has no deep warm ocean, though
+// Dragonfly lists one.
+var biomeDefs = map[string]def{
+	"plains": plains, "sunflower_plains": sunflower, "forest": forest, "flower_forest": flowerForest,
+	"birch_forest": birchForest, "old_growth_birch_forest": oldBirch, "dark_forest": darkForest, "pale_garden": paleGarden,
+	"taiga": taiga, "old_growth_spruce_taiga": oldSpruce, "old_growth_pine_taiga": oldPine, "snowy_taiga": snowyTaiga,
+	"snowy_plains": snowyPlains, "ice_spikes": iceSpikes, "desert": desert, "savanna": savanna,
+	"savanna_plateau": savannaPlateau, "windswept_savanna": windSavanna, "jungle": jungle, "sparse_jungle": sparseJungle,
+	"bamboo_jungle": bambooJungle, "swamp": swamp, "mangrove_swamp": mangrove, "badlands": badlands,
+	"eroded_badlands": erodedBadlands, "wooded_badlands": woodedBadlands, "meadow": meadow, "cherry_grove": cherryGrove,
+	"grove": grove, "snowy_slopes": snowySlopes, "jagged_peaks": jaggedPeaks, "frozen_peaks": frozenPeaks,
+	"stony_peaks": stonyPeaks, "windswept_hills": windsweptHills, "windswept_forest": windsweptForest,
+	"windswept_gravelly_hills": gravellyHills, "beach": beach, "snowy_beach": snowyBeach, "stony_shore": stonyShore,
+	"river": river, "frozen_river": frozenRiver, "mushroom_fields": mushroom, "dripstone_caves": dripstoneCaves,
+	"lush_caves": lushCaves, "deep_dark": deepDark, "frozen_ocean": frozenOcean, "cold_ocean": coldOcean, "ocean": ocean,
+	"lukewarm_ocean": lukewarmOcean, "warm_ocean": warmOcean, "deep_frozen_ocean": deepFrozenOcean,
+	"deep_cold_ocean": deepColdOcean, "deep_ocean": deepOcean, "deep_lukewarm_ocean": deepLukewarmOcean,
+}
+
+// Biome lookup follows Mojang's algorithm, per the owner's decision: the nearest box of a parameter
+// table, found with an R-tree built in the game's order (NOTES-exact-seed.md section 12). The table is
+// biome_table.go.
+
+// biomeTarget is a climate point, quantized. The seventh dimension of the game's tree, a box's
+// offset, is 0 on every row of the table and for every target.
+type biomeTarget [6]int64
+
+func quantize(v float64) int64 { return int64(float32(float32(v) * 10000.0)) }
+
+// biomeDims counts the offset dimension: its center is always 0, yet the build's cyclic sort keys and
+// its choice among dimensions still go through it.
+const biomeDims = 7
+
+// biomeNode is a leaf (one table row) or a group of nodes. Bounds fit 16 bits, which keeps the
+// tree small, since every generator shares it.
+type biomeNode struct {
+	bounds [6][2]int16
+	kids   []*biomeNode
+	row    int32
+}
+
+func (n *biomeNode) center(d int) int64 {
+	if d == 6 {
+		return 0
 	}
-	// Java has no deep warm ocean: its hottest deep row is the plain warm ocean. Dragonfly
-	// does list DeepWarmOcean, but we follow what was measured from Java.
-	deepOceans = [5]def{
-		{biome.DeepFrozenOcean{}, surfFrozenOcean}, {biome.DeepColdOcean{}, surfOcean},
-		{biome.DeepOcean{}, surfOcean}, {biome.DeepLukewarmOcean{}, surfWarmFloor}, {biome.WarmOcean{}, surfBeach},
+	return (int64(n.bounds[d][0]) + int64(n.bounds[d][1])) / 2
+}
+
+func (n *biomeNode) def() def { return biomeRowDefs[biomeRows[n.row][0]] }
+
+// biomeRowDefs gives a def by index into biomeTableNames.
+var biomeRowDefs = func() (out [len(biomeTableNames)]def) {
+	for i, name := range biomeTableNames {
+		out[i] = biomeDefs[name]
 	}
-)
+	return out
+}()
 
-// Band edges and the tables below come from studying the Java 26.1 generator (see
-// NOTES.md). A value's level is how many edges are at or below it.
-var (
-	temperatureEdges = []float64{-0.45, -0.15, 0.2, 0.55}
-	humidityEdges    = []float64{-0.35, -0.1, 0.1, 0.3}
-	erosionEdges     = []float64{-0.78, -0.375, -0.2225, 0.05, 0.45, 0.55}
-)
-
-// Continentalness bands: mushroom fields, deep ocean, ocean, coast, near, mid, far inland.
-const (
-	mushroomBelow = -1.05
-	deepBelow     = -0.455
-	oceanBelow    = -0.19
-	coastBelow    = -0.11
-	nearBelow     = 0.03
-	midBelow      = 0.3
-)
-
-// Cave biome boxes: dripstone needs continentalness 0.8 up, lush humidity 0.7 up, both in
-// the depth range below. Deep dark needs erosion under -0.375 at the depth point 1.1.
-const (
-	dripstoneContinentalness = 0.8
-	lushHumidity             = 0.7
-	deepDarkErosion          = -0.375
-	caveDepthMin             = 0.2
-	caveDepthMax             = 0.9
-	deepDarkDepth            = 1.1
-)
-
-func level(v float64, edges []float64) int {
-	n := 0
-	for _, e := range edges {
-		if v >= e {
-			n++
+// dist is the squared distance from a target to a node's box. It stops early once past limit, since
+// its only use is to compare with limit.
+func (n *biomeNode) dist(t *biomeTarget, limit int64) int64 {
+	var sum int64
+	for d := range t {
+		v, b := t[d], &n.bounds[d]
+		var e int64
+		if hi := int64(b[1]); v > hi {
+			e = v - hi
+		} else if lo := int64(b[0]); v < lo {
+			e = lo - v
+		}
+		sum += e * e
+		if sum >= limit {
+			return sum
 		}
 	}
+	return sum
+}
+
+// search is the game's descent: a child is opened only if it could beat the best so far, so at equal
+// distance the first leaf reached stays.
+func (n *biomeNode) search(t *biomeTarget, best *biomeNode, bestD int64) (*biomeNode, int64) {
+	for _, k := range n.kids {
+		d := k.dist(t, bestD)
+		if bestD <= d {
+			continue
+		}
+		if k.kids == nil {
+			best, bestD = k, d
+		} else {
+			best, bestD = k.search(t, best, bestD)
+		}
+	}
+	return best, bestD
+}
+
+func unionBounds(list []*biomeNode) (b [6][2]int16) {
+	b = list[0].bounds
+	for _, n := range list[1:] {
+		for d := range b {
+			b[d][0], b[d][1] = min(b[d][0], n.bounds[d][0]), max(b[d][1], n.bounds[d][1])
+		}
+	}
+	return b
+}
+
+func abs64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// buildBiomeTree builds the tree in the game's order. Sorts are stable, and one choice of dimension
+// starts from the order the last one left.
+func buildBiomeTree(list []*biomeNode) *biomeNode {
+	if len(list) == 1 {
+		return list[0]
+	}
+	if len(list) <= 6 {
+		sum := func(n *biomeNode) int64 {
+			var s int64
+			for d := range biomeDims {
+				s += abs64(n.center(d))
+			}
+			return s
+		}
+		slices.SortStableFunc(list, func(a, b *biomeNode) int { return cmpInt64(sum(a), sum(b)) })
+		return &biomeNode{bounds: unionBounds(list), kids: list}
+	}
+	size := int(math.Pow(6, math.Floor(math.Log(float64(len(list))-0.01)/math.Log(6))))
+	var bestBuckets []*biomeNode
+	bestDim := 0
+	bestCost := int64(math.MaxInt64)
+	for d := range biomeDims {
+		slices.SortStableFunc(list, func(a, b *biomeNode) int {
+			for i := range biomeDims {
+				if c := cmpInt64(a.center((d+i)%biomeDims), b.center((d+i)%biomeDims)); c != 0 {
+					return c
+				}
+			}
+			return 0
+		})
+		var buckets []*biomeNode
+		var cost int64
+		for at := 0; at < len(list); at += size {
+			kids := slices.Clone(list[at:min(at+size, len(list))])
+			b := &biomeNode{bounds: unionBounds(kids), kids: kids}
+			buckets = append(buckets, b)
+			for e := range b.bounds {
+				cost += abs64(int64(b.bounds[e][1]) - int64(b.bounds[e][0]))
+			}
+		}
+		if bestCost > cost {
+			bestCost, bestDim, bestBuckets = cost, d, buckets
+		}
+	}
+	slices.SortStableFunc(bestBuckets, func(a, b *biomeNode) int {
+		for i := range biomeDims {
+			e := (bestDim + i) % biomeDims
+			if c := cmpInt64(abs64(a.center(e)), abs64(b.center(e))); c != 0 {
+				return c
+			}
+		}
+		return 0
+	})
+	kids := make([]*biomeNode, len(bestBuckets))
+	for i, b := range bestBuckets {
+		kids[i] = buildBiomeTree(b.kids)
+	}
+	return &biomeNode{bounds: unionBounds(kids), kids: kids}
+}
+
+func cmpInt64(a, b int64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+// biomeTree is shared by every generator: it depends on no seed. It is built the first time it is
+// needed, and a process holds one however many worlds it has.
+var biomeTree = sync.OnceValue(func() *biomeNode {
+	list := make([]*biomeNode, len(biomeRows))
+	for i, row := range biomeRows {
+		n := &biomeNode{row: int32(i)}
+		for d := range n.bounds {
+			n.bounds[d] = biomeIntervals[row[d+1]]
+		}
+		list[i] = n
+	}
+	return buildBiomeTree(list)
+})
+
+// nearestBiome finds a target's biome from scratch, with no remembered result. The game remembers a
+// thread's last leaf, which can change the answer at an exact tie (about 0.05% of lookups); a world
+// here must not depend on which worker asked or what it asked last, so this is always the cold search.
+func nearestBiome(t *biomeTarget) *biomeNode {
+	n, _ := biomeTree().search(t, nil, math.MaxInt64)
 	return n
 }
 
-// Weirdness slices, by |weirdness|.
-const (
-	sliceValley = iota
-	sliceLow
-	sliceMid
-	sliceHigh
-	slicePeak
-)
-
-func weirdnessSlice(w float64) int {
-	switch w = math.Abs(w); {
-	case w < 0.05:
-		return sliceValley
-	case w < 0.26666667:
-		return sliceLow
-	case w < 0.4:
-		return sliceMid
-	case w < 0.56666667:
-		return sliceHigh
-	case w < 0.76666667:
-		return slicePeak
-	case w < 0.93333333:
-		return sliceHigh
-	}
-	return sliceMid
+// nearestBiomeFrom is nearestBiome with a leaf known to be close, which prunes most of the tree. The
+// answer is the same: the search's answer is the first nearest leaf in tree order, and a limit just
+// over a leaf's distance can never prune a subtree holding a nearest leaf.
+func nearestBiomeFrom(t *biomeTarget, near *biomeNode) *biomeNode {
+	n, _ := biomeTree().search(t, nil, near.dist(t, math.MaxInt64)+1)
+	return n
 }
 
-// pick returns b when weird is set (weirdness 0 or higher), otherwise a.
-func pick(weird bool, a, b def) def {
-	if weird {
-		return b
-	}
-	return a
-}
-
-// middle is the biome of ordinary ground. Rows are temperature, columns humidity.
-func middle(t, h int, weird bool) def {
-	switch t {
-	case 0:
-		switch h {
-		case 0:
-			return pick(weird, snowyPlains, iceSpikes)
-		case 1:
-			return snowyPlains
-		case 2:
-			return pick(weird, snowyPlains, snowyTaiga)
-		case 3:
-			return snowyTaiga
-		}
-		return taiga
-	case 1:
-		switch h {
-		case 0, 1:
-			return plains
-		case 2:
-			return forest
-		case 3:
-			return taiga
-		}
-		return pick(weird, oldSpruce, oldPine)
-	case 2:
-		switch h {
-		case 0:
-			return pick(weird, flowerForest, sunflower)
-		case 1:
-			return plains
-		case 2:
-			return forest
-		case 3:
-			return pick(weird, birchForest, oldBirch)
-		}
-		return darkForest
-	case 3:
-		switch h {
-		case 0, 1:
-			return savanna
-		case 2:
-			return pick(weird, forest, plains)
-		case 3:
-			return pick(weird, jungle, sparseJungle)
-		}
-		return pick(weird, jungle, bambooJungle)
-	}
-	return desert
-}
-
-// plateau is the biome of flat high ground.
-func plateau(t, h int, weird bool) def {
-	switch t {
-	case 0:
-		switch h {
-		case 0:
-			return pick(weird, snowyPlains, iceSpikes)
-		case 1, 2:
-			return snowyPlains
-		}
-		return snowyTaiga
-	case 1:
-		switch h {
-		case 0:
-			return pick(weird, meadow, cherryGrove)
-		case 1:
-			return meadow
-		case 2:
-			return pick(weird, forest, meadow)
-		case 3:
-			return pick(weird, taiga, meadow)
-		}
-		return pick(weird, oldSpruce, oldPine)
-	case 2:
-		switch h {
-		case 0, 1:
-			return pick(weird, meadow, cherryGrove)
-		case 2:
-			return pick(weird, meadow, forest)
-		case 3:
-			return pick(weird, meadow, birchForest)
-		}
-		return paleGarden
-	case 3:
-		switch h {
-		case 0, 1:
-			return savannaPlateau
-		case 2, 3:
-			return forest
-		}
-		return jungle
-	}
-	return badlandsPick(h, weird)
-}
-
-// badlandsPick is the badlands biome by humidity.
-func badlandsPick(h int, weird bool) def {
-	switch h {
-	case 0, 1:
-		return pick(weird, badlands, erodedBadlands)
-	case 2:
-		return badlands
-	}
-	return woodedBadlands
-}
-
-// shattered is broken windswept ground. Temperature 3 and 4 fall back to middle.
-func shattered(t, h int, weird bool) def {
-	switch t {
-	case 0, 1:
-		switch h {
-		case 0, 1:
-			return gravellyHills
-		case 2:
-			return windsweptHills
-		}
-		return windsweptForest
-	case 2:
-		if h <= 2 {
-			return windsweptHills
-		}
-		return windsweptForest
-	}
-	return middle(t, h, weird)
-}
-
-// peak is the biome of the highest ground.
-func peak(t, h int, weird bool) def {
-	switch {
-	case t <= 2:
-		return pick(weird, jaggedPeaks, frozenPeaks)
-	case t == 3:
-		return stonyPeaks
-	}
-	return badlandsPick(h, weird)
-}
-
-// slope is the biome of high steep ground.
-func slope(t, h int, weird bool) def {
-	switch {
-	case t > 2:
-		return plateau(t, h, weird)
-	case h <= 1:
-		return snowySlopes
-	}
-	return grove
-}
-
-// middleOrBadlands is the middle biome, or badlands when hottest.
-func middleOrBadlands(t, h int, weird bool) def {
-	if t == 4 {
-		return badlandsPick(h, weird)
-	}
-	return middle(t, h, weird)
-}
-
-// middleBadlandsOrSlope also gives a slope when coldest.
-func middleBadlandsOrSlope(t, h int, weird bool) def {
-	if t == 0 {
-		return slope(t, h, weird)
-	}
-	return middleOrBadlands(t, h, weird)
-}
-
-// savannaSwap gives windswept savanna when warm, not wettest and weirdness is 0 or
-// higher, otherwise the fallback.
-func savannaSwap(t, h int, weird bool, fallback def) def {
-	if t >= 2 && h < 4 && weird {
-		return windSavanna
-	}
-	return fallback
-}
-
-func riverFor(t int) def {
-	if t == 0 {
-		return frozenRiver
-	}
-	return river
-}
-
-func beachFor(t int) def {
-	switch t {
-	case 0:
-		return snowyBeach
-	case 4:
-		return desert
-	}
-	return beach
-}
-
-// wetlandFor is the wettest erosion level inland: swamp when mild, mangrove when hot.
-func wetlandFor(t, h int, weird bool) def {
-	switch t {
-	case 1, 2:
-		return swamp
-	case 3, 4:
-		return mangrove
-	}
-	return middle(t, h, weird)
-}
-
-// Inland bands.
-const (
-	bandCoast = iota
-	bandNear
-	bandMid
-	bandFar
-)
-
-// surfaceBiome picks the surface biome for a climate sample. Rivers are not a separate
-// system: a river is the valley slice of weirdness, wherever this table says so.
-func surfaceBiome(cl Climate) def {
-	t, h := level(cl.Temperature, temperatureEdges), level(cl.Humidity, humidityEdges)
-	c := cl.Continentalness
-	switch {
-	case c < mushroomBelow:
-		return mushroom
-	case c < deepBelow:
-		return deepOceans[t]
-	case c < oceanBelow:
-		return oceans[t]
-	}
-	band := bandFar
-	switch {
-	case c < coastBelow:
-		band = bandCoast
-	case c < nearBelow:
-		band = bandNear
-	case c < midBelow:
-		band = bandMid
-	}
-	e := level(cl.Erosion, erosionEdges)
-	weird := cl.Weirdness >= 0
-	switch weirdnessSlice(cl.Weirdness) {
-	case slicePeak:
-		return peaksSlice(t, h, e, band, weird)
-	case sliceHigh:
-		return highSlice(t, h, e, band, weird)
-	case sliceMid:
-		return midSlice(t, h, e, band, weird)
-	case sliceLow:
-		return lowSlice(t, h, e, band, weird)
-	}
-	return valleySlice(t, h, e, band, weird)
-}
-
-func peaksSlice(t, h, e, band int, weird bool) def {
-	inner := band <= bandNear // Coast or near inland.
-	switch e {
-	case 0:
-		return peak(t, h, weird)
-	case 1:
-		if inner {
-			return middleBadlandsOrSlope(t, h, weird)
-		}
-		return peak(t, h, weird)
-	case 2:
-		if inner {
-			return middle(t, h, weird)
-		}
-		return plateau(t, h, weird)
-	case 3:
-		switch band {
-		case bandCoast, bandNear:
-			return middle(t, h, weird)
-		case bandMid:
-			return middleOrBadlands(t, h, weird)
-		}
-		return plateau(t, h, weird)
-	case 5:
-		if inner {
-			return savannaSwap(t, h, weird, shattered(t, h, weird))
-		}
-		return shattered(t, h, weird)
-	}
-	return middle(t, h, weird)
-}
-
-func highSlice(t, h, e, band int, weird bool) def {
-	inner := band <= bandNear
-	switch e {
-	case 0:
-		switch band {
-		case bandCoast:
-			return middle(t, h, weird)
-		case bandNear:
-			return slope(t, h, weird)
-		}
-		return peak(t, h, weird)
-	case 1:
-		switch band {
-		case bandCoast:
-			return middle(t, h, weird)
-		case bandNear:
-			return middleBadlandsOrSlope(t, h, weird)
-		}
-		return slope(t, h, weird)
-	case 2, 3:
-		return peaksSlice(t, h, e, band, weird)
-	case 5:
-		if inner {
-			return savannaSwap(t, h, weird, middle(t, h, weird))
-		}
-		return shattered(t, h, weird)
-	}
-	return middle(t, h, weird)
-}
-
-func midSlice(t, h, e, band int, weird bool) def {
-	switch e {
-	case 0:
-		if band == bandCoast {
-			return stonyShore
-		}
-		return slope(t, h, weird)
-	case 1:
-		switch band {
-		case bandCoast:
-			return stonyShore
-		case bandNear, bandMid:
-			return middleBadlandsOrSlope(t, h, weird)
-		}
-		if t == 0 {
-			return slope(t, h, weird)
-		}
-		return plateau(t, h, weird)
-	case 2:
-		switch band {
-		case bandCoast:
-			return stonyShore
-		case bandNear:
-			return middle(t, h, weird)
-		case bandMid:
-			return middleOrBadlands(t, h, weird)
-		}
-		return plateau(t, h, weird)
-	case 3:
-		if band <= bandNear {
-			return middle(t, h, weird)
-		}
-		return middleOrBadlands(t, h, weird)
-	case 4:
-		if band == bandCoast && !weird {
-			return beachFor(t)
-		}
-		return middle(t, h, weird)
-	case 5:
-		return coastSwap(t, h, band, weird, shattered(t, h, weird))
-	}
-	if band == bandCoast {
-		if !weird {
-			return beachFor(t)
-		}
-		return middle(t, h, weird)
-	}
-	return wetlandFor(t, h, weird)
-}
-
-// coastSwap is erosion level 5 in the mid and low slices: a beach at negative weirdness
-// on the coast, the savanna swap on the coast and near inland, and inland otherwise.
-func coastSwap(t, h, band int, weird bool, inland def) def {
-	switch band {
-	case bandCoast:
-		if !weird {
-			return beachFor(t)
-		}
-		return savannaSwap(t, h, weird, middle(t, h, weird))
-	case bandNear:
-		return savannaSwap(t, h, weird, middle(t, h, weird))
-	}
-	return inland
-}
-
-func lowSlice(t, h, e, band int, weird bool) def {
-	switch e {
-	case 0, 1:
-		switch band {
-		case bandCoast:
-			return stonyShore
-		case bandNear:
-			return middleOrBadlands(t, h, weird)
-		}
-		return middleBadlandsOrSlope(t, h, weird)
-	case 2:
-		switch band {
-		case bandCoast:
-			return stonyShore
-		case bandNear:
-			return middle(t, h, weird)
-		}
-		return middleOrBadlands(t, h, weird)
-	case 3:
-		switch band {
-		case bandCoast:
-			return beachFor(t)
-		case bandNear:
-			return middle(t, h, weird)
-		}
-		return middleOrBadlands(t, h, weird)
-	case 4:
-		if band == bandCoast {
-			return beachFor(t)
-		}
-		return middle(t, h, weird)
-	case 5:
-		return coastSwap(t, h, band, weird, middle(t, h, weird))
-	}
-	if band == bandCoast {
-		return beachFor(t)
-	}
-	return wetlandFor(t, h, weird)
-}
-
-func valleySlice(t, h, e, band int, weird bool) def {
-	switch e {
-	case 0, 1:
-		switch band {
-		case bandCoast:
-			if weird {
-				return riverFor(t)
-			}
-			return stonyShore
-		case bandNear:
-			return riverFor(t)
-		}
-		return middleOrBadlands(t, h, weird)
-	case 6:
-		if band == bandCoast {
-			return riverFor(t)
-		}
-		if t == 0 {
-			return frozenRiver
-		}
-		return wetlandFor(t, h, weird)
-	}
-	return riverFor(t)
-}
-
-// biomeColumn is what one 4x4 block column holds: its surface biome, and what is needed
-// to tell whether a cave biome is nearer at a given height.
+// biomeColumn is one quart column's climate, from which any height's biome follows.
 type biomeColumn struct {
-	surface def
+	target  biomeTarget // The depth entry is filled in per lookup.
+	offset  float64
 	ground  float64 // Nominal ground Y, from the offset spline.
-	drip    float64 // Climate distance to the dripstone box.
-	lush    float64 // Climate distance to the lush box.
-	dark    float64 // Climate distance to the deep dark box.
+	surface def     // The biome over the ground, which surface rules and decoration read.
+	sky     *biomeNode
 }
 
-// biomeColumnAt works out a column from its climate. No 3D noise is involved: depth is
-// the distance under the nominal ground, as in the game.
-func (g *Generator) biomeColumnAt(cx, cz int) biomeColumn {
-	cl := g.Climate(cx, cz)
-	return biomeColumn{
-		surface: surfaceBiome(cl),
-		ground:  nominalGround(cl.Continentalness, cl.Erosion, cl.Weirdness),
-		drip:    max(dripstoneContinentalness-cl.Continentalness, 0),
-		lush:    max(lushHumidity-cl.Humidity, 0),
-		dark:    max(cl.Erosion-deepDarkErosion, 0),
-	}
+const biomeTargetDepth = 4
+
+// biomeColumnAt works out the column of the quart holding a block.
+func (g *Generator) biomeColumnAt(x, z int) biomeColumn {
+	bx, bz := (x>>2)*4, (z>>2)*4
+	cl := g.Climate(bx, bz)
+	in := coordsOf(cl.Continentalness, cl.Erosion, cl.Weirdness)
+	c := biomeColumn{offset: offsetFrom(&in)}
+	c.ground = nominalGround(c.offset)
+	c.target = biomeTarget{quantize(cl.Temperature), quantize(cl.Humidity), quantize(cl.Continentalness), quantize(cl.Erosion), 0, quantize(cl.Weirdness)}
+	t := c.target
+	t[biomeTargetDepth] = quantize(depthAt((maxY>>2)*4, c.offset))
+	c.sky = nearestBiome(&t)
+	c.surface = c.sky.def()
+	return c
 }
 
-// at returns the biome at height cy. The game takes the nearest parameter box, measuring
-// squared distance over climate and depth. Surface boxes always match on climate and sit
-// at depth 0 and depth 1, so only depth counts for them. This is the same rule cut down
-// to the boxes that can win here.
-func (c *biomeColumn) at(cy int) def {
-	depth := (c.ground - float64(cy)) / 128
-	if depth <= 0 {
-		return c.surface
-	}
-	best := min(depth*depth, (depth-1)*(depth-1))
-	out := c.surface
-	bandOut := max(caveDepthMin-depth, depth-caveDepthMax, 0)
-	if v := c.drip*c.drip + bandOut*bandOut; v < best {
-		best, out = v, dripstoneCaves
-	}
-	if v := c.lush*c.lush + bandOut*bandOut; v < best {
-		best, out = v, lushCaves
-	}
-	if d := depth - deepDarkDepth; c.dark*c.dark+d*d < best {
-		out = deepDark
-	}
-	return out
+// at returns the biome at a height. Depth is taken at the quart's own Y.
+func (c *biomeColumn) at(y int) def {
+	t := c.target
+	t[biomeTargetDepth] = quantize(depthAt((y>>2)*4, c.offset))
+	return nearestBiomeFrom(&t, c.sky).def()
 }
 
-// cellCentre returns the centre of the 4-block cell holding v. Biomes are stored per
-// 4x4x4 cell, and BiomeAt answers for the cell, so it matches the stored chunk.
-func cellCentre(v int) int { return (v>>2)*4 + 2 }
-
-// BiomeAt returns the biome at a block. Biomes change on a 4-block grid, as they are
-// stored, so every block in a cell gets the same answer. A y at or above the nominal
-// ground gives the surface biome.
+// BiomeAt returns the biome at a block, by its 4 x 4 x 4 quart, as chunks store it.
 func (g *Generator) BiomeAt(x, y, z int) world.Biome {
-	col := g.biomeColumnAt(cellCentre(x), cellCentre(z))
-	return col.at(cellCentre(y)).Biome
+	col := g.biomeColumnAt(x, z)
+	if y>>2 == maxY>>2 {
+		return col.surface.Biome
+	}
+	return col.at(y).Biome
+}
+
+// biomeZoomSeed is the world seed's hash as the game's block-level lookup uses it.
+func biomeZoomSeed(seed int64) int64 {
+	var in [8]byte
+	binary.LittleEndian.PutUint64(in[:], uint64(seed))
+	d := sha256.Sum256(in[:])
+	return int64(binary.LittleEndian.Uint64(d[:8]))
+}
+
+func zoomLCG(r, c int64) int64 { return r*(r*6364136223846793005+1442695040888963407) + c }
+
+func zoomFiddle(r int64) float64 {
+	m := (r >> 24) % 1024
+	if m < 0 {
+		m += 1024
+	}
+	return float64((float64(m)/1024.0 - 0.5) * 0.9)
+}
+
+// BlockBiomeAt is the game's block-level biome: a jittered choice among the 8 quarts around a block.
+// Chunks store quarts, and surface rules read quarts, so this is for callers that want the game's
+// answer for one block.
+func (g *Generator) BlockBiomeAt(x, y, z int) world.Biome {
+	qx, qy, qz := g.zoomQuart(x, y, z)
+	col := g.biomeColumnAt(qx*4, qz*4)
+	return col.at(qy * 4).Biome
+}
+
+// zoomQuart picks the quart a block's biome comes from.
+func (g *Generator) zoomQuart(x, y, z int) (qx, qy, qz int) {
+	ax, ay, az := x-2, y-2, z-2
+	px, py, pz := ax>>2, ay>>2, az>>2
+	fx, fy, fz := float64(ax&3)/4.0, float64(ay&3)/4.0, float64(az&3)/4.0
+	best := -1
+	bestV := math.Inf(1)
+	for i := range 8 {
+		b2, b1, b0 := (i>>2)&1, (i>>1)&1, i&1
+		cx, cy, cz := int64(px+b2), int64(py+b1), int64(pz+b0)
+		dx, dy, dz := fx-float64(b2), fy-float64(b1), fz-float64(b0)
+		r := g.zoomSeed
+		for _, c := range [6]int64{cx, cy, cz, cx, cy, cz} {
+			r = zoomLCG(r, c)
+		}
+		jx := zoomFiddle(r)
+		r = zoomLCG(r, g.zoomSeed)
+		jy := zoomFiddle(r)
+		r = zoomLCG(r, g.zoomSeed)
+		jz := zoomFiddle(r)
+		sz, sy, sx := dz+jz, dy+jy, dx+jx
+		v := float64(sz*sz) + float64(sy*sy) + float64(sx*sx)
+		if v < bestV {
+			best, bestV = i, v
+		}
+	}
+	return px + (best>>2)&1, py + (best>>1)&1, pz + best&1
+}
+
+// heights fills a column's biome ids from the bottom up, with a lookup per quart until the rest are
+// known. Above the ground (depth under zero), every box's depth term grows as depth falls, by the same
+// for a box whose range starts at 0 and by more for any other. So once a lookup above the ground lands
+// on a box starting at 0, it stays the nearest all the way up, and the search would return that same
+// leaf: the first nearest leaf in tree order is unchanged, ties included.
+func (c *biomeColumn) heights(ids *[(maxY - minY + 1) / 4]uint32) {
+	t := c.target
+	n := c.sky
+	for i := range ids {
+		d := quantize(depthAt(minY+i*4, c.offset))
+		t[biomeTargetDepth] = d
+		n = nearestBiomeFrom(&t, n)
+		id := uint32(n.def().EncodeBiome())
+		ids[i] = id
+		if d < 0 && n.bounds[biomeTargetDepth][0] == 0 {
+			for j := i + 1; j < len(ids); j++ {
+				ids[j] = id
+			}
+			return
+		}
+	}
 }
 
 // fillBiomes stores a chunk's biomes, one 4x4x4 cell at a time. It fills cols so the
 // surface pass uses the same biomes.
 func (g *Generator) fillBiomes(c *chunk.Chunk, originX, originZ int, cols *[4][4]biomeColumn) {
+	var ids [4][4][(maxY - minY + 1) / 4]uint32
 	for i := range cols {
 		for j := range cols[i] {
-			cols[i][j] = g.biomeColumnAt(originX+i*4+2, originZ+j*4+2)
+			cols[i][j] = g.biomeColumnAt(originX+i*4, originZ+j*4)
+			cols[i][j].heights(&ids[i][j])
 		}
 	}
 	for y := minY; y <= maxY; y += 16 {
 		var section [4][4][4]uint32
+		base := (y - minY) / 4
 		for i := range section {
-			for k := range section[i][0] {
-				for j := range section[i] {
-					section[i][j][k] = uint32(cols[i][k].at(y + j*4 + 2).EncodeBiome())
+			for j := range section[i] {
+				for k := range section[i][j] {
+					section[i][j][k] = ids[i][k][base+j]
 				}
 			}
 		}

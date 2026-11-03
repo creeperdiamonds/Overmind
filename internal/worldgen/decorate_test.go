@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/item"
@@ -496,7 +497,7 @@ func TestFrozenOceanHasIce(t *testing.T) {
 	for _, c := range generateAll(g, frozen) {
 		for x := range uint8(16) {
 			for z := range uint8(16) {
-				switch nameOf(c.Block(x, SeaLevel, z, 0)) {
+				switch nameOf(c.Block(x, waterTop, z, 0)) {
 				case "ice":
 					iced++
 					wet++
@@ -513,7 +514,7 @@ func TestFrozenOceanHasIce(t *testing.T) {
 	for p, c := range generateAll(g, warm) {
 		for x := range uint8(16) {
 			for z := range uint8(16) {
-				if nameOf(c.Block(x, SeaLevel, z, 0)) == "ice" {
+				if nameOf(c.Block(x, waterTop, z, 0)) == "ice" {
 					t.Fatalf("chunk %v: ice on a warmer ocean", p)
 				}
 			}
@@ -720,34 +721,42 @@ func TestKelpAndSeagrassMatchBedrock(t *testing.T) {
 // The cheap answer for columns around a chunk must equal SurfaceHeight, on every margin column.
 func TestChunkGroundMatchesSurfaceHeight(t *testing.T) {
 	g := New(14)
-	var checked, opened int
-	var spots [][2]int
+	var checked, opened atomic.Int64
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
 	for i := range 80 {
-		spots = append(spots, [2]int{i*23 - 900, 700 - i*31})
-	}
-	for _, p := range spots {
-		ox, oz := p[0]*16, p[1]*16
-		s := new(chunkScratch)
-		g.cutCarvers(s, ox, oz)
-		cg := chunkGround{g: g, s: s, originX: ox, originZ: oz}
-		for x := ox - treeMargin; x <= ox+15+treeMargin; x++ {
-			for z := oz - treeMargin; z <= oz+15+treeMargin; z++ {
-				if x >= ox && x < ox+16 && z >= oz && z < oz+16 {
-					continue
-				}
-				top, untouched, _ := cg.ground(x, z)
-				if want := g.SurfaceHeight(x, z); top != want {
-					t.Fatalf("(%d,%d) from chunk %v: ground %d, SurfaceHeight %d", x, z, p, top, want)
-				}
-				checked++
-				if !untouched {
-					opened++
+		p := [2]int{i*23 - 900, 700 - i*31}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ox, oz := p[0]*16, p[1]*16
+			s := new(chunkScratch)
+			s.startChunk(g, ox, oz)
+			g.cutCarvers(s, ox, oz)
+			cg := chunkGround{g: g, s: s, originX: ox, originZ: oz}
+			for x := ox - treeMargin; x <= ox+15+treeMargin; x++ {
+				for z := oz - treeMargin; z <= oz+15+treeMargin; z++ {
+					if x >= ox && x < ox+16 && z >= oz && z < oz+16 {
+						continue
+					}
+					top, untouched, _ := cg.ground(x, z)
+					if want := g.SurfaceHeight(x, z); top != want {
+						t.Errorf("(%d,%d) from chunk %v: ground %d, SurfaceHeight %d", x, z, p, top, want)
+						return
+					}
+					checked.Add(1)
+					if !untouched {
+						opened.Add(1)
+					}
 				}
 			}
-		}
+		}()
 	}
-	t.Logf("%d columns agree, %d of them opened by carvers or lakes", checked, opened)
-	if opened == 0 {
+	wg.Wait()
+	t.Logf("%d columns agree, %d of them opened by carvers or lakes", checked.Load(), opened.Load())
+	if opened.Load() == 0 {
 		t.Fatal("no column opened by a carver or lake; the test would prove little")
 	}
 }
@@ -757,7 +766,7 @@ func TestSurfaceDefAtMatchesTables(t *testing.T) {
 	g := New(15)
 	for x := -4096; x < 4096; x += 37 {
 		for z := -4096; z < 4096; z += 41 {
-			if got, want := g.surfaceDefAt(x, z), g.biomeColumnAt(cellCentre(x), cellCentre(z)).surface; got != want {
+			if got, want := g.surfaceDefAt(x, z), func() def { col := g.biomeColumnAt(x, z); return col.surface }(); got != want {
 				// Hottest deep ocean and warm ocean share a biome and a surface, so this is exact.
 				t.Fatalf("(%d,%d): %v, want %v", x, z, got, want)
 			}

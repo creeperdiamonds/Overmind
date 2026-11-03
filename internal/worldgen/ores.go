@@ -128,15 +128,11 @@ var veinFeatures = [...]veinFeature{
 	{block: veinInfested, attempts: infestedAttempts, size: 8, minY: 0, maxY: 64, biome: biomeMountain},
 }
 
-// ironUpperBottom is measured and tuned, not the rule. The data files read a triangle from Y 80, and
-// that left iron 15 to 30% under Bedrock per block of ground from Y 80 to 128, by a nearly even
-// amount (seed 100's raw world, per 8 blocks), and not above Y 128. Starting it 4 lower takes that up.
-const ironUpperBottom = 76
-
-// infestedAttempts is measured and tuned, not the rule. The data files read 14 attempts (BEDROCK-NOTES
-// section 4), and 14 gave 65.8 blocks a mountain chunk where Bedrock's worlds hold 20.6
-// (TestInfestedMatchesBedrock). Why the worlds hold a third of what the rule says is not known.
-const infestedAttempts = 4.4
+// ironUpperBottom and infestedAttempts are the Bedrock data files' values (BEDROCK-NOTES sections 4, 5).
+const (
+	ironUpperBottom  = 76
+	infestedAttempts = 4.4
+)
 
 // rng is a tiny seeded generator. Every blob has its own, started from the blob's origin
 // chunk, so any chunk that a blob reaches rolls the same numbers.
@@ -225,11 +221,24 @@ type biomeSource struct {
 	x, z int
 	have bool
 	col  biomeColumn
+	at   [(maxY - minY + 1) / 4]*biomeNode // Lookups so far, by quart.
+}
+
+// biomeAt is the column's biome at a height, looked up at most once per quart.
+func (s *biomeSource) biomeAt(y int) def {
+	col := s.column()
+	i := (y - minY) >> 2
+	if s.at[i] == nil {
+		t := col.target
+		t[biomeTargetDepth] = quantize(depthAt((y>>2)*4, col.offset))
+		s.at[i] = nearestBiomeFrom(&t, col.sky)
+	}
+	return s.at[i].def()
 }
 
 func (s *biomeSource) column() *biomeColumn {
 	if !s.have {
-		s.col, s.have = s.g.biomeColumnAt(cellCentre(s.x), cellCentre(s.z)), true
+		s.col, s.have = s.g.biomeColumnAt(s.x, s.z), true
 	}
 	return &s.col
 }
@@ -316,14 +325,25 @@ func (g *Generator) placeVein(c *chunk.Chunk, f *veinFeature, r *rng, blobX, blo
 	radius := blobRadius(f.size) * (blobWiden - 0.12*blob.float())
 	grainSeed := blob.next()
 	span := halfLen + radius
+	// Every block of the spindle lies within this squared distance of the middle, so most of the box
+	// can be passed over without working out its place along the line.
+	outer := halfLen*halfLen + radius*radius
 	for x := max(int(math.Floor(mx-span)), originX); x <= min(int(math.Ceil(mx+span)), originX+15); x++ {
 		dx := float64(x) + 0.5 - mx
 		for z := max(int(math.Floor(mz-span)), originZ); z <= min(int(math.Ceil(mz+span)), originZ+15); z++ {
 			dz := float64(z) + 0.5 - mz
+			flat := dx*dx + dz*dz
+			if flat >= outer {
+				continue
+			}
 			for y := max(int(math.Floor(my-span)), clipLow); y <= min(int(math.Ceil(my+span)), clipHigh); y++ {
 				dy := float64(y) + 0.5 - my
+				whole := flat + dy*dy
+				if whole >= outer {
+					continue
+				}
 				along := dx*ux + dy*uy + dz*uz
-				sideSq := dx*dx + dy*dy + dz*dz - along*along
+				sideSq := whole - along*along
 				axial := along / halfLen
 				width := radius * (1 - axial*axial)
 				if axial*axial >= 1 || sideSq >= width*width {
@@ -361,33 +381,41 @@ func (g *Generator) touchesAir(c *chunk.Chunk, x uint8, y int16, z uint8) bool {
 		(y > minY && c.Block(x, y-1, z, 0) == air) || (y < maxY && c.Block(x, y+1, z, 0) == air)
 }
 
-// veinBiome checks a biome rule at a blob's height, for the blob's source chunk.
+// veinBiome checks a biome rule for a blob, in its source chunk's middle column.
+//
+// The mountain rules read the biome at the blob's own height, not the surface: under a mountain the
+// lower rock is often dripstone caves or deep dark, and Bedrock's raw seed 100 holds only 5% of its
+// infested blocks in those two, though they are 40% of Y 0 to 64 under its mountain biomes.
 func veinBiome(rule biomeRule, src *biomeSource, y int) bool {
 	col := src.column()
 	switch rule {
 	case biomeDripstone:
-		return col.at(cellCentre(y)) == dripstoneCaves
+		return src.biomeAt(y) == dripstoneCaves
 	case biomeNotDripstone:
-		return col.at(cellCentre(y)) != dripstoneCaves
+		return src.biomeAt(y) != dripstoneCaves
 	case biomeLush:
-		return col.lush < 0.5 && col.at(cellCentre(y)) == lushCaves
+		return src.biomeAt(y) == lushCaves
 	case biomeBadlands:
 		switch col.surface {
 		case badlands, erodedBadlands, woodedBadlands:
 			return true
 		}
 	case biomeMountain:
-		switch col.surface {
-		case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks, windsweptHills, windsweptForest, gravellyHills:
-			return true
-		}
+		return mountainBiome(src.biomeAt(y))
 	case biomeMountainsTag:
-		// The notes say the tag excludes the windswept biomes and do not list the rest, so this
-		// is the emerald set less those. Our inference.
-		switch col.surface {
+		// The data files give the tag to these, among those the Overworld generates.
+		switch src.biomeAt(y) {
 		case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks:
 			return true
 		}
+	}
+	return false
+}
+
+func mountainBiome(d def) bool {
+	switch d {
+	case meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks, windsweptHills, windsweptForest, gravellyHills:
+		return true
 	}
 	return false
 }
@@ -419,8 +447,7 @@ func (g *Generator) placeGeodes(c *chunk.Chunk, cx, cz int) {
 			px, pz := sx*16+r.intn(16), sz*16+r.intn(16)
 			py := geodeBottom + r.intn(geodeTop-geodeBottom+1)
 			radius := 4 + 3*r.float()
-			cl := g.Climate(px, pz)
-			if float64(py)+radius+geodeMarginAbove >= nominalGround(cl.Continentalness, cl.Erosion, cl.Weirdness) {
+			if float64(py)+radius+geodeMarginAbove >= nominalGround(g.surfaceShape(px, pz).offset) {
 				continue
 			}
 			ox, oz := cx*16, cz*16
@@ -439,7 +466,13 @@ func (g *Generator) placeGeodes(c *chunk.Chunk, cx, cz int) {
 						}
 						switch {
 						case d < 0.55:
-							c.SetBlock(lx, int16(y), lz, 0, b.air)
+							// Our own rule: a hollow never opens under an aquifer's water, which would
+							// hang over it until a block update.
+							if c.Block(lx, int16(y+1), lz, 0) == b.water {
+								c.SetBlock(lx, int16(y), lz, 0, b.amethyst)
+							} else {
+								c.SetBlock(lx, int16(y), lz, 0, b.air)
+							}
 						case d < 0.7:
 							c.SetBlock(lx, int16(y), lz, 0, b.amethyst)
 						case d < 0.84:

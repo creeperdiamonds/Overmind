@@ -148,7 +148,7 @@ type chunkGround struct {
 }
 
 func (c *chunkGround) ground(x, z int) (top int, untouched, dry bool) {
-	w := c.g.newColumnWalk(x, z)
+	w := c.g.startWalk(c.s, x, z)
 	h := w.top(nil, nil)
 	dry = !w.topUnderWater
 	mask := &c.s.carved[x-c.originX+treeMargin][z-c.originZ+treeMargin]
@@ -177,8 +177,7 @@ func allDefs() []def {
 		snowyTaiga, snowyPlains, iceSpikes, desert, savanna, savannaPlateau, windSavanna, jungle, sparseJungle, bambooJungle, swamp,
 		mangrove, badlands, erodedBadlands, woodedBadlands, meadow, cherryGrove, grove, snowySlopes, jaggedPeaks, frozenPeaks, stonyPeaks,
 		windsweptHills, windsweptForest, gravellyHills, beach, snowyBeach, stonyShore, river, frozenRiver, mushroom}
-	list = append(list, oceans[:]...)
-	return append(list, deepOceans[:]...)
+	return append(list, frozenOcean, coldOcean, ocean, lukewarmOcean, warmOcean, deepFrozenOcean, deepColdOcean, deepOcean, deepLukewarmOcean)
 }
 
 var defsByBiome = func() map[int]def {
@@ -278,12 +277,12 @@ func (d *decorator) site(kind surfaceKind, x, z int) (int, bool) {
 	var h int
 	if lx, lz := x-d.originX, z-d.oz; lx >= 0 && lx < 16 && lz >= 0 && lz < 16 {
 		h = int(d.final[lx][lz])
-		if h != int(d.top[lx][lz]) || h < SeaLevel || d.c.Block(uint8(lx), int16(h+1), uint8(lz), 0) == d.g.blocks.water {
+		if h != int(d.top[lx][lz]) || h < waterTop || d.c.Block(uint8(lx), int16(h+1), uint8(lz), 0) == d.g.blocks.water {
 			return 0, false
 		}
 	} else {
 		top, untouched, dry := d.ground.ground(x, z)
-		if !untouched || !dry || top < SeaLevel {
+		if !untouched || !dry || top < waterTop {
 			return 0, false
 		}
 		h = top
@@ -741,7 +740,7 @@ func (d *decorator) placePlants() {
 // there yet, and soil to grow from.
 func (d *decorator) openTop(x, z int) (int, bool) {
 	y := int(d.cover[x][z])
-	if y < SeaLevel || y >= maxY-3 || y != int(d.final[x][z]) {
+	if y < waterTop || y >= maxY-3 || y != int(d.final[x][z]) {
 		return y, false
 	}
 	return y, d.c.Block(uint8(x), int16(y+1), uint8(z), 0) == d.g.blocks.air
@@ -807,7 +806,7 @@ func (d *decorator) deadBush(x, z int) {
 func (d *decorator) cane(x, z, height int) {
 	y, ok := d.openTop(x, z)
 	b := &d.g.blocks
-	if !ok || y != SeaLevel && y != SeaLevel+1 || x < 1 || x > 14 || z < 1 || z > 14 {
+	if !ok || y != waterTop && y != waterTop+1 || x < 1 || x > 14 || z < 1 || z > 14 {
 		return
 	}
 	switch d.c.Block(uint8(x), int16(y), uint8(z), 0) {
@@ -831,11 +830,11 @@ func (d *decorator) cane(x, z, height int) {
 // waterAbove reports a column whose top is under open water up to sea level, and how deep.
 func (d *decorator) waterAbove(x, z int) (floor, depth int, ok bool) {
 	floor = int(d.cover[x][z])
-	if floor >= SeaLevel || floor < minY {
+	if floor >= waterTop || floor < minY {
 		return 0, 0, false
 	}
 	b := &d.g.blocks
-	for y := floor + 1; y <= SeaLevel; y++ {
+	for y := floor + 1; y <= waterTop; y++ {
 		if d.c.Block(uint8(x), int16(y), uint8(z), 0) != b.water {
 			return 0, 0, false
 		}
@@ -848,10 +847,10 @@ func (d *decorator) waterAbove(x, z int) (floor, depth int, ok bool) {
 func (d *decorator) lily(x, z int) {
 	_, depth, ok := d.waterAbove(x, z)
 	b := &d.g.blocks
-	if !ok || depth < 1 || d.c.Block(uint8(x), SeaLevel+1, uint8(z), 0) != b.air {
+	if !ok || depth < 1 || d.c.Block(uint8(x), waterTop+1, uint8(z), 0) != b.air {
 		return
 	}
-	d.c.SetBlock(uint8(x), SeaLevel+1, uint8(z), 0, b.lilyPad)
+	d.c.SetBlock(uint8(x), waterTop+1, uint8(z), 0, b.lilyPad)
 }
 
 // kelpGrows says whether a biome holds kelp and seagrass: oceans that are not frozen or warm and,

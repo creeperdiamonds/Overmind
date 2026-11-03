@@ -38,6 +38,10 @@ const (
 	statSeeds = 3
 )
 
+// studySeeds are the seeds the study's 8192 square measures are from. Biomes and terrain now follow
+// the seed, so measuring on them compares like for like.
+var studySeeds = [statSeeds]int64{1, 12345, 987654321}
+
 func measureWorld() *worldStats {
 	const n = statSpan/statStep + 1
 	type sample struct {
@@ -50,7 +54,7 @@ func measureWorld() *worldStats {
 	all := make([]sample, 0, statSeeds*n*n)
 	s := &worldStats{share: map[string]float64{}, patchOf: map[string]float64{}}
 	areas := map[string][]int{}
-	for seed := int64(1); seed <= statSeeds; seed++ {
+	for _, seed := range studySeeds {
 		g := New(seed)
 		grid := make([]sample, n*n)
 		rows := make(chan int)
@@ -224,13 +228,11 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 		{"continentalness median", s.contMedian, 0.04, 0.12},
 		{"far inland %", s.farInland, 25, 7},
 	}
-	// Under Y 63: the row is over 12 seeds, because 3 seeds alone move this figure by about 8
-	// points (42 to 50 across groups of 3). The game's figure is from its own 3 seeds.
 	below, inland := measureBelowSea()
-	t.Logf("below Y 63: first 3 seeds %.1f%%, 12 seeds %.1f%%; inland not river or swamp %.1f%%", s.below63, below, inland)
+	t.Logf("below Y 63 %.1f%%; inland not river or swamp %.1f%%", below, inland)
 	rows = append(rows,
-		row{"below Y 63 %, 12 seeds", below, 45, 3},
-		row{"inland under Y 63 %, 12 seeds", inland, inlandBelowSeaFigure, 2})
+		row{"below Y 63 %", below, 45, 3},
+		row{"inland under Y 63 %", inland, inlandBelowSeaFigure, 2})
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n%-30s %9s %9s %7s\n", "measure", "ours", "mojang", "tol")
 	for _, r := range rows {
@@ -257,14 +259,14 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 // of the study's raw probe grid (mojang-grid.csv) gives 12.8%.
 const inlandBelowSeaFigure = 14.0
 
-// measureBelowSea gives the share of all columns under Y 63, and the inland share above, over
-// 12 seeds on the study's sampling grid.
+// measureBelowSea gives the share of all columns under Y 63, and the inland share above, on the
+// study's seeds and sampling grid.
 func measureBelowSea() (below, inland float64) {
 	const n = statSpan/statStep + 1
 	var total, under, inlandTotal, inlandUnder atomic.Int64
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, runtime.NumCPU())
-	for seed := int64(1); seed <= 12; seed++ {
+	for _, seed := range studySeeds {
 		g := New(seed)
 		for i := range n {
 			wg.Add(1)
@@ -327,7 +329,7 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, runtime.NumCPU())
-	for seed := int64(1); seed <= statSeeds; seed++ {
+	for _, seed := range studySeeds {
 		g := New(seed)
 		for cx := -statSpan / 32; cx < statSpan/32; cx += 8 {
 			for cz := -statSpan / 32; cz < statSpan/32; cz += 8 {
@@ -339,7 +341,7 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 					c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 					s := scratchPool.Get().(*chunkScratch)
 					defer scratchPool.Put(s)
-					s.aq.reset(cx*16, cz*16)
+					s.startChunk(g, cx*16, cz*16)
 					var top [16][16]int16
 					g.fillNoise(c, s, cx*16, cz*16, &top)
 					var a, w, l, n [9]float64
@@ -412,7 +414,7 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 				for b := range 2 {
 					chunks[a][b] = chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 					s := new(chunkScratch)
-					s.aq.reset((cx+a)*16, (cz+b)*16)
+					s.startChunk(g, (cx+a)*16, (cz+b)*16)
 					g.fillNoise(chunks[a][b], s, (cx+a)*16, (cz+b)*16, &tops[a][b])
 				}
 			}
@@ -578,8 +580,8 @@ func TestSteepStoneIgnoresChunkEdges(t *testing.T) {
 func TestSteepFlagAgreesAcrossChunkEdges(t *testing.T) {
 	g := New(4)
 	var checked, steepCols, wrong int
-	for x := -8192; x < 8192 && checked < 4000; x += 160 {
-		for z := -8192; z < 8192 && checked < 4000; z += 160 {
+	for x := -8192; x < 8192 && steepCols < 1000; x += 80 {
+		for z := -8192; z < 8192 && steepCols < 1000; z += 80 {
 			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "snowy_slopes" && name != "jagged_peaks" {
 				continue
 			}

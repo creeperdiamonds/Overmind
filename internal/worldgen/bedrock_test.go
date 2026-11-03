@@ -16,10 +16,11 @@ import (
 // Figures measured from Bedrock worlds: BDS 1.26.60.6, seeds 100, 1, 12345 and 987654321, each
 // 1120 x 1120 blocks, with features and carvers (BEDROCK-NOTES.md section 9, aggregate.json).
 //
-// Four windows of 4900 chunks are a small sample: seed 1 is 82% sea and seed 100 is 13%. So a
-// tolerance here is never tighter than two standard errors of the mean of the 4 seeds, worked out
-// from the by-seed figures below. On figures the seeds agree on, a floor of 10% of the figure
-// (ores) or 1 point (air) stands in for what those windows cannot show.
+// Terrain and biomes now follow the same seed, so these tests measure ours on those same seeds and
+// windows: like for like, which the earlier comparison on other seeds could not be. A tolerance is
+// still never tighter than two standard errors of the mean of the 4 seeds, worked out from the
+// by-seed figures below; on figures the seeds agree on, a floor of 10% of the figure (ores) or 1 point
+// (air) stands in for what remains our own design, the carvers and the blob shape.
 
 // seedTwoSE gives two standard errors of the mean of by-seed figures.
 func seedTwoSE(bySeed []float64) float64 {
@@ -35,14 +36,14 @@ func seedTwoSE(bySeed []float64) float64 {
 	return 2 * math.Sqrt(sq/(n-1)/n)
 }
 
-// bedrockSample visits chunks spread over an area of statSeeds worlds, in parallel.
+// bedrockSample visits every step-th chunk of the 4 Bedrock windows (chunks -35 to 34), in parallel.
 func bedrockSample(step int, visit func(g *Generator, c *chunk.Chunk, cx, cz int)) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, runtime.NumCPU())
-	for seed := int64(1); seed <= statSeeds; seed++ {
+	for _, seed := range goldenSeeds {
 		g := New(seed)
-		for cx := -statSpan / 32; cx < statSpan/32; cx += step {
-			for cz := -statSpan / 32; cz < statSpan/32; cz += step {
+		for cx := -35; cx < 35; cx += step {
+			for cz := -35; cz < 35; cz += step {
 				wg.Add(1)
 				sem <- struct{}{}
 				go func() {
@@ -54,25 +55,6 @@ func bedrockSample(step int, visit func(g *Generator, c *chunk.Chunk, cx, cz int
 		}
 	}
 	wg.Wait()
-}
-
-// groundIDs is the study's idea of ground: not air, water, lava, plants, logs or leaves. The list
-// follows the study's measuring tool, for the blocks we place.
-func groundIDs() map[uint32]bool {
-	b := newBlocks()
-	m := map[uint32]bool{}
-	for _, id := range []uint32{b.stone, b.granite, b.diorite, b.andesite, b.deepslate, b.tuff, b.calcite, b.dirt, b.coarseDirt,
-		b.grass, b.podzol, b.mycelium, b.mud, b.clay, b.sand, b.redSand, b.sandstone, b.redSandstone, b.gravel, b.bedrock,
-		b.packedIce, b.snow, b.amethyst, b.smoothBasalt, b.rawIron, b.rawCopper} {
-		m[id] = true
-	}
-	for _, id := range b.terracotta {
-		m[id] = true
-	}
-	for _, p := range b.veins {
-		m[p[0]], m[p[1]] = true, true
-	}
-	return m
 }
 
 // groundTop is the study's column top: the highest ground block.
@@ -105,9 +87,9 @@ func TestCaveAirMatchesBedrock(t *testing.T) {
 		{100, 160, 5.11, []float64{5.67, 5.33, 2.14}},
 	}
 	air, total := make([]float64, len(bands)), make([]float64, len(bands))
-	ground := groundIDs()
+	ground := GroundBlocks()
 	var mu sync.Mutex
-	bedrockSample(8, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(1, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		a, n := make([]float64, len(bands)), make([]float64, len(bands))
 		for x := uint8(0); x < 16; x += 3 {
 			for z := uint8(0); z < 16; z += 3 {
@@ -177,7 +159,7 @@ func TestOresMatchBedrock(t *testing.T) {
 	}
 	var chunks float64
 	var mu sync.Mutex
-	bedrockSample(16, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(2, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		local := map[string]*counts{}
 		for name := range totals {
 			local[name] = &counts{}
@@ -229,7 +211,7 @@ func TestOresMatchBedrock(t *testing.T) {
 // Rock patches per chunk, from the same worlds. They follow how much land and how deep the windows
 // are, and the notes give no by-seed split, so the tolerance is 30%. Two rows are logged only. Dirt
 // (700) mixes patches with the soil under every surface, so it does not measure the patch rule.
-// Infested stone (1.23) rests on the few mountain chunks in the windows, none on seed 1.
+// Infested stone has its own test.
 func TestRockPatchesMatchBedrock(t *testing.T) {
 	b := newBlocks()
 	rows := []struct {
@@ -244,7 +226,7 @@ func TestRockPatchesMatchBedrock(t *testing.T) {
 	counts := make([]float64, len(rows))
 	var chunks, infested float64
 	var mu sync.Mutex
-	bedrockSample(16, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(2, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		l := make([]float64, len(rows))
 		var inf, d float64
 		for x := range uint8(16) {
@@ -291,7 +273,7 @@ func TestDeepslateBlendMatchesBedrock(t *testing.T) {
 	want := []float64{0.9021, 0.8008, 0.6914, 0.5736, 0.4462, 0.3093, 0.1613}
 	var deep, stone [7]float64
 	var mu sync.Mutex
-	bedrockSample(16, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(2, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		var d, s [7]float64
 		for x := range uint8(16) {
 			for z := range uint8(16) {
@@ -364,11 +346,11 @@ func TestOreDensityMatchesBedrock(t *testing.T) {
 	for name, p := range oreIDs() {
 		byID[p[0]], byID[p[1]] = name, name
 	}
-	ground := groundIDs()
+	ground := GroundBlocks()
 	blocks := map[string]*[128]float64{"coal": {}, "iron": {}, "copper": {}}
 	var volume [128]float64
 	var mu sync.Mutex
-	bedrockSample(8, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(1, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		local := map[string]*[128]float64{"coal": {}, "iron": {}, "copper": {}}
 		var vol [128]float64
 		for x := range uint8(16) {
@@ -423,10 +405,10 @@ func TestOreDensityMatchesBedrock(t *testing.T) {
 // 342.7 such dirt a chunk over 21,485 blocks, so 15.95. One seed, so 20%. Soil, the rest, is logged:
 // seed 100 has 516 a chunk over a window 87% land, about 2.3 a land column.
 func TestDirtPatchesMatchBedrock(t *testing.T) {
-	ground := groundIDs()
+	ground := GroundBlocks()
 	var deep, soil, volume, land float64
 	var mu sync.Mutex
-	bedrockSample(16, func(g *Generator, c *chunk.Chunk, _, _ int) {
+	bedrockSample(2, func(g *Generator, c *chunk.Chunk, _, _ int) {
 		var d, s, v, l float64
 		for x := range uint8(16) {
 			for z := range uint8(16) {
@@ -461,39 +443,66 @@ func TestDirtPatchesMatchBedrock(t *testing.T) {
 	}
 }
 
-// Infested blocks per chunk of a mountain biome. Bedrock by seed, stone and deepslate together over
-// the share of the emerald biome set in the window: 30.7, 19.1, 18.5 (seed 1 has none); pooled by
-// blocks, 20.6. The tolerance is 30%, for the few mountain chunks those windows hold.
-func TestInfestedMatchesBedrock(t *testing.T) {
+// Rare mountain ores per chunk in the same 4 windows, by seed (aggregate.json; infested is stone plus
+// deepslate). This replaces two tests. One asked for 20.6 infested blocks per chunk of a mountain
+// biome on other seeds, a figure made by dividing Bedrock's count by the mountain share at the surface.
+// The other asked for the study's addendum A5 emerald figures, which assumed a whole region in one
+// biome and no biome change with height. Real counts in the same windows need neither assumption, and
+// both biome rules read the blob's own height to meet them. Tolerance 30% a seed, the wider of the
+// old two, plus 0.01 so a seed with none can hold a stray blob's edge at most.
+func TestMountainOresMatchBedrock(t *testing.T) {
 	b := newBlocks()
-	var blocks, chunks float64
-	var mu sync.Mutex
-	for _, seed := range []int64{1, 2, 3} {
+	emerald := oreIDs()["emerald"]
+	rows := []struct {
+		name string
+		ids  [2]uint32
+		want map[int64]float64
+	}{
+		{"infested", b.veins[veinInfested], map[int64]float64{100: 1.05, 1: 0, 12345: 2.79, 987654321: 1.10}},
+		{"emerald", emerald, map[int64]float64{100: 0.171, 1: 0, 12345: 0.412, 987654321: 0.162}},
+	}
+	for _, seed := range goldenSeeds {
 		g := New(seed)
-		pos := biomeChunks(g, 150, "meadow", "cherry_grove", "grove", "snowy_slopes", "jagged_peaks", "frozen_peaks", "stony_peaks", "extreme_hills", "extreme_hills_plus_trees", "extreme_hills_mutated")
-		for _, c := range generateAll(g, pos) {
-			var n float64
-			for x := range uint8(16) {
-				for z := range uint8(16) {
-					for y := int16(minY); y <= maxY; y++ {
-						if r := c.Block(x, y, z, 0); r == b.veins[veinInfested][0] || r == b.veins[veinInfested][1] {
-							n++
+		var mu sync.Mutex
+		counts := make([]float64, len(rows))
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.NumCPU())
+		for cx := -35; cx < 35; cx++ {
+			for cz := -35; cz < 35; cz++ {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+					c := generate(g, int32(cx), int32(cz))
+					n := make([]float64, len(rows))
+					for x := range uint8(16) {
+						for z := range uint8(16) {
+							for y := int16(-16); y <= maxY; y++ {
+								r := c.Block(x, y, z, 0)
+								for i := range rows {
+									if r == rows[i].ids[0] || r == rows[i].ids[1] {
+										n[i]++
+									}
+								}
+							}
 						}
 					}
-				}
+					mu.Lock()
+					for i := range n {
+						counts[i] += n[i]
+					}
+					mu.Unlock()
+				}()
 			}
-			mu.Lock()
-			blocks += n
-			chunks++
-			mu.Unlock()
 		}
-	}
-	got := blocks / chunks
-	t.Logf("infested %.1f a mountain chunk over %.0f chunks, Bedrock 20.6", got, chunks)
-	if chunks < 100 {
-		t.Fatalf("only %.0f mountain chunks", chunks)
-	}
-	if math.Abs(got-20.6) > 20.6*0.3 {
-		t.Errorf("infested %.1f a mountain chunk, Bedrock 20.6, tolerance 30%%", got)
+		wg.Wait()
+		for i, r := range rows {
+			got := counts[i] / (70 * 70)
+			t.Logf("seed %d: %s %.3f a chunk, Bedrock %.3f", seed, r.name, got, r.want[seed])
+			if math.Abs(got-r.want[seed]) > r.want[seed]*0.3+0.01 {
+				t.Errorf("seed %d: %s %.3f a chunk, Bedrock %.3f, tolerance 30%%", seed, r.name, got, r.want[seed])
+			}
+		}
 	}
 }

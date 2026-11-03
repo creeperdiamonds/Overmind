@@ -2,258 +2,323 @@ package worldgen
 
 import "math"
 
-// Noise caves are part of the density, not cut afterwards. The build below comes from the
-// study's notes (section 7); the octave lists, sample scales, rarity tables and thickness
-// ranges from its addendum (A2, A3). The code is our own.
-//
-//	underground = max(min(cheese part, entrances, spaghetti2d + roughness), pillars above 0.03)
-//
-// Near the ground the density is min(sloped, 5 * entrances), which folds the ground into
-// tunnel mouths rather than opening holes where a 2D noise is high.
+// Noise caves are part of the density. Everything from the sloped ground to the final value follows
+// Mojang's algorithm exactly, per the owner's decision, in our own Go from the study's notes
+// (NOTES-exact-seed.md section 8). The copper and iron veins are not from those notes: they are our
+// own, on the game's vein noises, and they only choose which solid block appears.
 type caveNoises struct {
-	cheese, layer, entrance                     *layered
-	rarity3d, spagA, spagB, thick3d             *layered
-	rarity2d, spag2d, elevation2d, thick2d      *layered
-	roughMod, rough                             *layered
-	pillar, pillarRare, pillarThick             *layered
-	noodleToggle, noodleThick, noodleA, noodleB *layered
-	veinToggle, veinA, veinB, veinGap           *layered
-	flood, spread, lavaCell, barrier            *layered
+	base3D                                      *blendedNoise
+	jagged                                      *normalNoise
+	cheese, layer, entrance                     *normalNoise
+	rarity3d, spagA, spagB, thick3d             *normalNoise
+	rarity2d, spag2d, elevation2d, thick2d      *normalNoise
+	roughMod, rough                             *normalNoise
+	pillar, pillarRare, pillarThick             *normalNoise
+	noodleToggle, noodleThick, noodleA, noodleB *normalNoise
+	veinToggle, veinA, veinB, veinGap           *normalNoise
+	flood, spread, lavaCell, barrier            *normalNoise
 }
 
-func newCaveNoises(seed int64) caveNoises {
-	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
-	one := []float64{1}
+func newCaveNoises(w seedFactory) caveNoises {
+	terrain := w.named("minecraft:terrain")
+	n := func(name string) *normalNoise { return newNamedNoise(w, name) }
 	return caveNoises{
-		cheese:      newGameLayered(sub(50), -8, []float64{0.5, 1, 2, 1, 2, 1, 0, 2, 0}),
-		layer:       newGameLayered(sub(51), -8, one),
-		entrance:    newGameLayered(sub(52), -7, []float64{0.4, 0.5, 1}),
-		rarity3d:    newGameLayered(sub(53), -11, one),
-		spagA:       newLayered(sub(54), -7, one, gameSpread(one)*tunnelNoiseScale),
-		spagB:       newLayered(sub(55), -7, one, gameSpread(one)*tunnelNoiseScale),
-		thick3d:     newGameLayered(sub(56), -8, one),
-		rarity2d:    newGameLayered(sub(57), -11, one),
-		spag2d:      newLayered(sub(58), -7, one, gameSpread(one)*tunnelNoiseScale),
-		elevation2d: newGameLayered(sub(59), -8, one),
-		thick2d:     newGameLayered(sub(60), -11, one),
-		roughMod:    newGameLayered(sub(61), -8, one),
-		rough:       newGameLayered(sub(62), -5, one),
-		pillar:      newGameLayered(sub(63), -7, []float64{1, 1}),
-		pillarRare:  newGameLayered(sub(64), -8, one),
-		pillarThick: newGameLayered(sub(65), -8, one),
-		// Fluid and vein octaves: addendum A3.
-		noodleToggle: newGameLayered(sub(66), -8, one),
-		noodleThick:  newGameLayered(sub(67), -8, one),
-		noodleA:      newGameLayered(sub(68), -7, one),
-		noodleB:      newGameLayered(sub(69), -7, one),
-		veinToggle:   newGameLayered(sub(70), -8, one),
-		veinA:        newGameLayered(sub(71), -7, one),
-		veinB:        newGameLayered(sub(72), -7, one),
-		veinGap:      newGameLayered(sub(73), -5, one),
-		flood:        newGameLayered(sub(74), -7, one),
-		spread:       newGameLayered(sub(75), -5, one),
-		lavaCell:     newGameLayered(sub(76), -1, one),
-		barrier:      newGameLayered(sub(77), -3, one),
+		base3D:       newBlendedNoise(&terrain),
+		jagged:       n("jagged"),
+		cheese:       n("cave_cheese"),
+		layer:        n("cave_layer"),
+		entrance:     n("cave_entrance"),
+		rarity3d:     n("spaghetti_3d_rarity"),
+		spagA:        n("spaghetti_3d_1"),
+		spagB:        n("spaghetti_3d_2"),
+		thick3d:      n("spaghetti_3d_thickness"),
+		rarity2d:     n("spaghetti_2d_modulator"),
+		spag2d:       n("spaghetti_2d"),
+		elevation2d:  n("spaghetti_2d_elevation"),
+		thick2d:      n("spaghetti_2d_thickness"),
+		roughMod:     n("spaghetti_roughness_modulator"),
+		rough:        n("spaghetti_roughness"),
+		pillar:       n("pillar"),
+		pillarRare:   n("pillar_rareness"),
+		pillarThick:  n("pillar_thickness"),
+		noodleToggle: n("noodle"),
+		noodleThick:  n("noodle_thickness"),
+		noodleA:      n("noodle_ridge_a"),
+		noodleB:      n("noodle_ridge_b"),
+		veinToggle:   n("ore_veininess"),
+		veinA:        n("ore_vein_a"),
+		veinB:        n("ore_vein_b"),
+		veinGap:      n("ore_gap"),
+		flood:        n("aquifer_fluid_level_floodedness"),
+		spread:       n("aquifer_fluid_level_spread"),
+		lavaCell:     n("aquifer_lava"),
+		barrier:      n("aquifer_barrier"),
 	}
 }
 
-// Cave limits and scales from the study.
-const (
-	undergroundFrom = 1.5625 // Sloped density from which the full underground function applies.
-	noodleMinY      = -60
-	noodleOff       = 64.0 // Noodle value where the toggle says there is none.
-	noodleScale     = 2.6666667
-	cheeseYScale    = 2.0 / 3
-	layerYScale     = 8.0
-	pillarXZScale   = 25.0
-	pillarYScale    = 0.3
-)
-
-// tunnelNoiseScale widens the spread of the tunnel noises, which narrows tunnels. The study
-// gives their octaves and thickness but no spread, so this is measured and tuned by us against
-// the air shares (TestCaveSharesMatchMeasuredFigures), on top of gameSpread.
-const tunnelNoiseScale = 1.16
-
-// noodleGate: noodle and vein parts are worked out only where the density is above this, to
-// save time; further into open air the blend cannot turn solid. Our own choice.
-const noodleGate = -0.4
-
-// mapUnit maps a noise value from -1..1 onto low..high, clamped.
-func mapUnit(n, low, high float64) float64 {
-	return lerp(low, high, clamp((n+1)/2, 0, 1))
+// mapped puts a noise value onto a range, in the game's form.
+func mapped(n, a, b float64) float64 {
+	centre := float64((a + b) * 0.5)
+	half := float64((b - a) * 0.5)
+	return centre + float64(half*n)
 }
 
-// spaghettiRoughness is (modulator 0 to -0.1) * (|noise| - 0.4).
-func (g *Generator) spaghettiRoughness(x, y, z float64) float64 {
-	mod := mapUnit(g.caves.roughMod.at(x, y, z), 0, -0.1)
-	return mod * (math.Abs(g.caves.rough.at(x, y, z)) - 0.4)
+// plain reads a noise at a block with its xz and y scales.
+func plain(n *normalNoise, x, y, z int, sxz, sy float64) float64 {
+	return n.at(float64(float64(x)*sxz), float64(float64(y)*sy), float64(float64(z)*sxz))
 }
 
-// spaghetti3d is max(a, b) + thickness: tunnels where two noises are both near zero. A rarity
-// noise picks a stretch, and the tunnel noises are read at coordinates divided by it, so a
-// bigger stretch is fatter and sparser. Thresholds, stretches and thickness: addendum A2.
-func (g *Generator) spaghetti3d(x, y, z float64) float64 {
-	r := 2.0
-	switch n := g.caves.rarity3d.at(x*2, y, z*2); {
-	case n < -0.5:
-		r = 0.75
-	case n < 0:
-		r = 1
-	case n < 0.5:
-		r = 1.5
+// scaledTunnel reads a tunnel noise stretched by a rarity.
+func scaledTunnel(n *normalNoise, x, y, z int, r float64) float64 {
+	return float64(r * math.Abs(n.at(float64(x)/r, float64(y)/r, float64(z)/r)))
+}
+
+func rarity3D(v float64) float64 {
+	switch {
+	case v < -0.5:
+		return 0.75
+	case v < 0:
+		return 1.0
+	case v < 0.5:
+		return 1.5
 	}
-	a := math.Abs(g.caves.spagA.at(x/r, y/r, z/r))
-	b := math.Abs(g.caves.spagB.at(x/r, y/r, z/r))
-	thick := mapUnit(g.caves.thick3d.at(x, y, z), -0.065, -0.088)
-	return clamp(math.Max(a, b)+thick, -1, 1)
+	return 2.0
 }
 
-// spaghetti2d makes flat winding tunnels around an elevation that wanders across the world.
-// Rarity table, thicknesses, elevation, gradient and the 0.083 weight: addendum A2.
-func (g *Generator) spaghetti2d(x, y, z float64) float64 {
-	r := 3.0
-	switch n := g.caves.rarity2d.at(x*2, y, z*2); {
-	case n < -0.75:
-		r = 0.5
-	case n < -0.5:
-		r = 0.75
-	case n < 0.5:
-		r = 1
-	case n < 0.75:
-		r = 2
+func rarity2D(v float64) float64 {
+	switch {
+	case v < -0.75:
+		return 0.5
+	case v < -0.5:
+		return 0.75
+	case v < 0.5:
+		return 1.0
+	case v < 0.75:
+		return 2.0
 	}
-	rare := math.Abs(g.caves.spag2d.at(x/r, y/r, z/r))
-	thick := mapUnit(g.caves.thick2d.at(x*2, y, z*2), -0.6, -1.3)
-	elevation := mapUnit(g.caves.elevation2d.at(x, 0, z), -8, 8)
-	gradient := lerp(8, -40, (y-minY)/(maxY+1-minY))
-	band := math.Abs(elevation+gradient) + thick
-	return clamp(math.Max(rare+0.083*thick, band*band*band), -1, 1)
+	return 3.0
 }
 
-// entrances is min(cave entrance + 0.37 + gradient, roughness + spaghetti3d).
-func (g *Generator) entrances(x, y, z, roughness float64) float64 {
-	n := g.caves.entrance.at(x*0.75, y*0.5, z*0.75)
-	gradient := 0.3 * clamp((30-y)/40, 0, 1)
-	return math.Min(n+0.37+gradient, roughness+g.spaghetti3d(x, y, z))
+func (g *Generator) roughnessAt(x, y, z int) float64 {
+	n := &g.caves
+	return float64(mapped(plain(n.roughMod, x, y, z, 1, 1), 0, -0.1) * (math.Abs(plain(n.rough, x, y, z, 1, 1)) - 0.4))
 }
 
-// pillarsAt gives the thin columns inside large caverns, kept only above 0.03.
-func (g *Generator) pillarsAt(x, y, z float64) float64 {
-	thick := mapUnit(g.caves.pillarThick.at(x, y, z), 0, 1.1)
-	rare := mapUnit(g.caves.pillarRare.at(x, y, z), 0, -2)
-	n := g.caves.pillar.at(x*pillarXZScale, y*pillarYScale, z*pillarXZScale)
-	v := (2*n + rare) * thick * thick * thick
-	if v > 0.03 {
-		return v
+func (g *Generator) entrancesAt(x, y, z int, roughness float64) float64 {
+	n := &g.caves
+	r := rarity3D(plain(n.rarity3d, x, y, z, 2, 1))
+	a := scaledTunnel(n.spagA, x, y, z, r)
+	b := scaledTunnel(n.spagB, x, y, z, r)
+	sp := clamp(max(a, b)+mapped(plain(n.thick3d, x, y, z, 1, 1), -0.065, -0.088), -1, 1)
+	mouth := (plain(n.entrance, x, y, z, 0.75, 0.5) + 0.37) + yGrad(y, -10, 30, 0.3, 0)
+	return min(mouth, roughness+sp)
+}
+
+// thickness2D is the thickness of the flat tunnels.
+func (g *Generator) thickness2D(x, y, z int) float64 {
+	return mapped(plain(g.caves.thick2d, x, y, z, 2, 1), -0.6, -1.3)
+}
+
+func (g *Generator) spaghetti2DAt(x, y, z int) float64 {
+	n := &g.caves
+	th := g.thickness2D(x, y, z)
+	r := rarity2D(plain(n.rarity2d, x, y, z, 2, 1))
+	flat := scaledTunnel(n.spag2d, x, y, z, r) + float64(0.083*th)
+	band := math.Abs(mapped(plain(n.elevation2d, x, y, z, 1, 0), -8, 8)+yGrad(y, -64, 320, 8, -40)) + th
+	return clamp(max(flat, cubed(band)), -1, 1)
+}
+
+// pillarsAt is the raw pillar value; cutPillars drops it where it is too weak to make a pillar.
+func (g *Generator) pillarsAt(x, y, z int) float64 {
+	n := &g.caves
+	pil := float64(float64(plain(n.pillar, x, y, z, 25, 0.3)*2.0)+mapped(plain(n.pillarRare, x, y, z, 1, 1), 0, -2)) *
+		cubed(mapped(plain(n.pillarThick, x, y, z, 1, 1), 0, 1.1))
+	return float64(pil)
+}
+
+func cutPillars(pil float64) float64 {
+	if pil >= -1000000 && pil < 0.03 {
+		return -1000000
 	}
-	return math.Inf(-1)
+	return pil
 }
 
-// underground is the full cave function for a point well inside the ground.
-func (g *Generator) underground(sloped, x, y, z float64) float64 {
-	l := g.caves.layer.at(x, y*layerYScale, z)
-	cheese := 4*l*l + clamp(0.27+g.caves.cheese.at(x, y*cheeseYScale, z), -1, 1) + clamp(1.5-0.64*sloped, 0, 0.5)
-	rough := g.spaghettiRoughness(x, y, z)
-	v := min(cheese, g.entrances(x, y, z, rough), g.spaghetti2d(x, y, z)+rough)
-	return math.Max(v, g.pillarsAt(x, y, z))
+// slopedKeepNoise: from this sloped value the caves read no sloped term at all, so where even the
+// lowest possible value is above it the 3D noise can be left out with no change to the result. The
+// exact limit is 2.34375; this keeps clear of rounding at it.
+const slopedKeepNoise = 2.35
+
+// coreAt is the density before squeeze and noodle caves: the function the game blends between cell
+// corners. Parts that cannot change the result are not read.
+func (g *Generator) coreAt(s *columnShape, x, y, z int) float64 {
+	var caves float64
+	switch {
+	case y >= 256 || y <= -64:
+		// A slide is at its end, so what it fades is multiplied by zero.
+	default:
+		caves = g.cavesAt(s, x, y, z)
+	}
+	return slides(caves, y)
+}
+
+func (g *Generator) cavesAt(s *columnShape, x, y, z int) float64 {
+	ramp := s.ramp(y)
+	var fill float64 // clamp(1.5 - 0.64*sloped, 0, 0.5)
+	if ramp-base3DLimit < slopedKeepNoise {
+		sloped := ramp + g.caves.base3D.at(x, y, z)
+		if sloped < 1.5625 {
+			return min(sloped, float64(5.0*g.entrancesAt(x, y, z, g.roughnessAt(x, y, z))))
+		}
+		fill = clamp(1.5+float64(-0.64*sloped), 0, 0.5)
+	}
+	n := &g.caves
+	roughness := g.roughnessAt(x, y, z)
+	ent := g.entrancesAt(x, y, z, roughness)
+	l := plain(n.layer, x, y, z, 1, 8)
+	layer := float64(4.0 * float64(l*l))
+	base := layer + (clamp(0.27+plain(n.cheese, x, y, z, 1, 0.6666666666666666), -1, 1) + fill)
+	under := min(min(base, ent), g.spaghetti2DAt(x, y, z)+roughness)
+	return max(under, cutPillars(g.pillarsAt(x, y, z)))
+}
+
+// yFn is the block Y passed through the game's rounding.
+func yFn(y int) float64 { return yGrad(y, -4064, 4062, -4064, 4062) }
+
+func noodleInRange(y int) bool {
+	v := yFn(y)
+	return v >= -60 && v < 321
+}
+
+// noodleToggleAt is outside the band -1, where it says no noodle.
+func (g *Generator) noodleToggleAt(x, y, z int) float64 {
+	if !noodleInRange(y) {
+		return -1
+	}
+	return plain(g.caves.noodleToggle, x, y, z, 1, 1)
+}
+
+func (g *Generator) noodleParts(x, y, z int) (thick, a, b float64) {
+	if !noodleInRange(y) {
+		return 0, 0, 0
+	}
+	const ridge = 2.6666666666666665
+	n := &g.caves
+	return mapped(plain(n.noodleThick, x, y, z, 1, 1), -0.05, -0.1), plain(n.noodleA, x, y, z, ridge, ridge), plain(n.noodleB, x, y, z, ridge, ridge)
+}
+
+func noodleValue(toggle, thick, a, b float64) float64 {
+	if toggle >= -1000000 && toggle < 0 {
+		return 64
+	}
+	return thick + float64(1.5*max(math.Abs(a), math.Abs(b)))
 }
 
 // node holds what the block loop blends at one grid point.
 type node struct {
-	density             float64
-	toggle, a, b, thick float64 // Noodle cave parts; toggle at or under 0 means none here.
-	vein                float64 // Ore vein toggle, in the bands where veins can be.
+	core, toggle float64
+	thick, a, b  float64
+	vein         float64
+	haveCore     bool
+	haveNoodle   bool
+	haveVein     bool
 }
 
-// nodeAt works out a grid point.
-func (g *Generator) nodeAt(s *columnShape, xi, yi, zi int) node {
-	x, y, z := float64(xi), float64(yi), float64(zi)
-	sloped := g.slopedDensity(s, x, y, z)
-	v := sloped
-	switch {
-	case sloped <= 0:
-	case sloped < undergroundFrom:
-		v = math.Min(sloped, 5*g.entrances(x, y, z, g.spaghettiRoughness(x, y, z)))
-	default:
-		v = g.underground(sloped, x, y, z)
+func (n *node) needCore(g *Generator, s *columnShape, x, y, z int) {
+	if !n.haveCore {
+		n.core, n.toggle, n.haveCore = g.coreAt(s, x, y, z), g.noodleToggleAt(x, y, z), true
 	}
-	n := node{density: finishDensity(v, y), thick: noodleOff}
-	if n.density > noodleGate {
-		if yi >= noodleMinY {
-			// The toggle noise below 0 turns noodles on (addendum A2).
-			if t := -g.caves.noodleToggle.at(x, y, z); t > 0 {
-				n.toggle = t
-				n.thick = mapUnit(g.caves.noodleThick.at(x, y, z), -0.05, -0.1)
-				n.a = g.caves.noodleA.at(x*noodleScale, y*noodleScale, z*noodleScale)
-				n.b = g.caves.noodleB.at(x*noodleScale, y*noodleScale, z*noodleScale)
-			}
-		}
-		if yi >= veinIronBottom-cellY && yi <= veinCopperTop+cellY {
-			n.vein = g.caves.veinToggle.at(x*1.5, y*1.5, z*1.5)
-		}
+}
+
+func (n *node) needNoodle(g *Generator, x, y, z int) {
+	if !n.haveNoodle {
+		n.thick, n.a, n.b = g.noodleParts(x, y, z)
+		n.haveNoodle = true
 	}
-	return n
 }
 
-// layerBlend is a column's values at the bottom and top of one grid cell, blended on x and
-// z, so that a value at any height in the cell takes one more lerp.
-type layerBlend struct {
-	d0, d1   float64
-	noodle   bool
-	t0, t1   float64
-	a0, a1   float64
-	b0, b1   float64
-	th0, th1 float64
-	v0, v1   float64
-}
-
-// cellNodes holds the corners of a cell: [x][z], lower then upper.
-type cellNodes struct {
-	lo, hi [2][2]*node
-}
-
-func bilerp(a, b, c, d, tx, tz float64) float64 {
-	return lerp(lerp(a, b, tx), lerp(c, d, tx), tz)
-}
-
-// blend fills a layerBlend for a block column inside the cell.
-func (c *cellNodes) blend(tx, tz float64) layerBlend {
-	lo, hi := &c.lo, &c.hi
-	l := layerBlend{
-		d0: bilerp(lo[0][0].density, lo[1][0].density, lo[0][1].density, lo[1][1].density, tx, tz),
-		d1: bilerp(hi[0][0].density, hi[1][0].density, hi[0][1].density, hi[1][1].density, tx, tz),
-		v0: bilerp(lo[0][0].vein, lo[1][0].vein, lo[0][1].vein, lo[1][1].vein, tx, tz),
-		v1: bilerp(hi[0][0].vein, hi[1][0].vein, hi[0][1].vein, hi[1][1].vein, tx, tz),
+func (n *node) needVein(g *Generator, x, y, z int) {
+	if !n.haveVein {
+		n.vein, n.haveVein = plain(g.caves.veinToggle, x, y, z, 1.5, 1.5), true
 	}
-	for i := range 2 {
-		for j := range 2 {
-			if lo[i][j].toggle > 0 || hi[i][j].toggle > 0 {
-				l.noodle = true
+}
+
+// edges holds one value of a cell blended on x, at the four edges that run along x. Blending x first,
+// then y, then z is the game's order, and changing it would change the low bits.
+type edges struct{ y0z0, y1z0, y0z1, y1z1 float64 }
+
+func (e *edges) at(fy, fz float64) float64 {
+	return lerp(lerp(e.y0z0, e.y1z0, fy), lerp(e.y0z1, e.y1z1, fy), fz)
+}
+
+// cellCorners points at a cell's corners: x, y, z.
+type cellCorners [2][2][2]*node
+
+func (c *cellCorners) blendX(fx float64, read func(*node) float64) edges {
+	return edges{
+		lerp(read(c[0][0][0]), read(c[1][0][0]), fx),
+		lerp(read(c[0][1][0]), read(c[1][1][0]), fx),
+		lerp(read(c[0][0][1]), read(c[1][0][1]), fx),
+		lerp(read(c[0][1][1]), read(c[1][1][1]), fx),
+	}
+}
+
+func readCore(n *node) float64   { return n.core }
+func readToggle(n *node) float64 { return n.toggle }
+func readThick(n *node) float64  { return n.thick }
+func readA(n *node) float64      { return n.a }
+func readB(n *node) float64      { return n.b }
+func readVein(n *node) float64   { return n.vein }
+
+// noodleLive says whether a cell can hold a noodle cave. If every corner's toggle is under zero then
+// so is every blend of them.
+func (c *cellCorners) noodleLive() bool {
+	for i := range c {
+		for j := range c[i] {
+			for k := range c[i][j] {
+				if !(c[i][j][k].toggle < 0) {
+					return true
+				}
 			}
 		}
 	}
-	if l.noodle {
-		l.t0 = bilerp(lo[0][0].toggle, lo[1][0].toggle, lo[0][1].toggle, lo[1][1].toggle, tx, tz)
-		l.t1 = bilerp(hi[0][0].toggle, hi[1][0].toggle, hi[0][1].toggle, hi[1][1].toggle, tx, tz)
-		l.a0 = bilerp(lo[0][0].a, lo[1][0].a, lo[0][1].a, lo[1][1].a, tx, tz)
-		l.a1 = bilerp(hi[0][0].a, hi[1][0].a, hi[0][1].a, hi[1][1].a, tx, tz)
-		l.b0 = bilerp(lo[0][0].b, lo[1][0].b, lo[0][1].b, lo[1][1].b, tx, tz)
-		l.b1 = bilerp(hi[0][0].b, hi[1][0].b, hi[0][1].b, hi[1][1].b, tx, tz)
-		l.th0 = bilerp(lo[0][0].thick, lo[1][0].thick, lo[0][1].thick, lo[1][1].thick, tx, tz)
-		l.th1 = bilerp(hi[0][0].thick, hi[1][0].thick, hi[0][1].thick, hi[1][1].thick, tx, tz)
-	}
-	return l
+	return false
 }
 
-// solidAt says whether the density and noodle caves leave a block solid at ty in the cell.
-func (l *layerBlend) solidAt(ty float64) bool {
-	if lerp(l.d0, l.d1, ty) <= 0 {
-		return false
+// columnBlend is a block column's blended values inside one cell.
+type columnBlend struct {
+	core, toggle, thick, a, b, vein edges
+	noodle, veins                   bool
+	fz                              float64
+}
+
+func (c *cellCorners) blend(fx, fz float64, noodle, veins bool) columnBlend {
+	b := columnBlend{core: c.blendX(fx, readCore), noodle: noodle, veins: veins, fz: fz}
+	if noodle {
+		b.toggle, b.thick = c.blendX(fx, readToggle), c.blendX(fx, readThick)
+		b.a, b.b = c.blendX(fx, readA), c.blendX(fx, readB)
 	}
-	if !l.noodle || lerp(l.t0, l.t1, ty) <= 0 {
-		return true
+	if veins {
+		b.vein = c.blendX(fx, readVein)
 	}
-	return lerp(l.th0, l.th1, ty)+1.5*math.Max(math.Abs(lerp(l.a0, l.a1, ty)), math.Abs(lerp(l.b0, l.b1, ty))) >= 0
+	return b
+}
+
+// final is the density of a block: squeeze, min and the noodle choice come after blending.
+func (b *columnBlend) final(fy float64) float64 {
+	v := squeeze(float64(b.core.at(fy, b.fz) * 0.64))
+	if b.noodle {
+		v = min(v, noodleValue(b.toggle.at(fy, b.fz), b.thick.at(fy, b.fz), b.a.at(fy, b.fz), b.b.at(fy, b.fz)))
+	} else {
+		v = min(v, 64)
+	}
+	return v + 0.0
+}
+
+func (b *columnBlend) veinAt(fy float64) float64 {
+	if !b.veins {
+		return 0
+	}
+	return b.vein.at(fy, b.fz)
 }
 
 // Block kinds the noise pass produces.
@@ -266,34 +331,19 @@ const (
 	fillSolid
 )
 
-// surfaceFluidMargin: blocks within this many of the nominal ground, or above it, take the
-// global fluid without asking the aquifer. Own choice: rivers and shallows are too thin for
-// the aquifer's coarse surface sampling to see.
-const surfaceFluidMargin = 4
-
-// openSkyFluidDepth: a column with nothing solid above takes the global fluid down to this
-// far under the nominal ground, so a dip in the land is never dry below sea level. Own.
-const openSkyFluidDepth = 16
-
-// fillAt says what a block that is not solid in the density becomes, by the aquifer's
-// rules. ground is the column's nominal ground Y, open that nothing solid lies above.
-func (g *Generator) fillAt(a *aquiferCache, x, y, z int, ground float64, open bool) fillKind {
-	if y < lavaLevel {
-		return fillLava // Open space below Y -54 is lava: the study measured no air there.
-	}
-	if fy := float64(y); fy > ground-surfaceFluidMargin || (open && fy > ground-openSkyFluidDepth) {
-		return globalFluid(y).kindAt(y)
-	}
-	return g.aquiferAt(a, x, y, z)
-}
-
 // Ore vein bands, from the study.
 const (
 	veinCopperBottom = 0
 	veinCopperTop    = 50
 	veinIronBottom   = -60
 	veinIronTop      = -8
+	veinStrength     = 0.4 // A blended toggle under this makes no vein block.
 )
+
+// cellHasVeins says whether a cell at a layer's base Y can hold a vein.
+func cellHasVeins(baseY int) bool {
+	return baseY+cellY > veinIronBottom && baseY <= veinCopperTop
+}
 
 // veinBlockAt gives the block an ore vein makes of solid rock, or zero for none. Rules and
 // numbers from the study: copper in granite, iron in tuff.
@@ -308,21 +358,20 @@ func (g *Generator) veinBlockAt(x, y, z int, toggle float64) uint32 {
 	}
 	t := math.Abs(toggle)
 	margin := float64(min(y-lo, hi-y))
-	if t < 0.4+0.2*clamp(1-margin/20, 0, 1) {
+	if t < veinStrength+0.2*clamp(1-margin/20, 0, 1) {
 		return 0
 	}
 	if unit(posHash(g.veinSeed^1, x, y, z)) >= 0.7 {
 		return 0
 	}
-	fx, fy, fz := float64(x), float64(y), float64(z)
-	a := g.caves.veinA.at(fx*4, fy*4, fz*4)
-	b := g.caves.veinB.at(fx*4, fy*4, fz*4)
-	if math.Max(math.Abs(a), math.Abs(b)) >= 0.08 {
+	a := plain(g.caves.veinA, x, y, z, 4, 4)
+	b := plain(g.caves.veinB, x, y, z, 4, 4)
+	if max(math.Abs(a), math.Abs(b)) >= 0.08 {
 		return 0
 	}
 	ids := &g.blocks
 	rich := lerp(0.1, 0.3, clamp((t-0.4)/0.2, 0, 1))
-	if unit(posHash(g.veinSeed^2, x, y, z)) < rich && g.caves.veinGap.at(fx, fy, fz) > -0.3 {
+	if unit(posHash(g.veinSeed^2, x, y, z)) < rich && plain(g.caves.veinGap, x, y, z, 1, 1) > -0.3 {
 		h := unit(posHash(g.veinSeed^3, x, y, z))
 		switch {
 		case !copperVein && h < 0.02:
@@ -364,35 +413,65 @@ func floorDiv(a, b int) int {
 	return q
 }
 
-// columnWalk works out one column from the top down without a chunk, by the same rules as
-// the chunk pass. Grid points are worked out only when reached.
+// columnWalk works out one column from the top down without a chunk, by the same rules as the chunk
+// pass. Grid points are worked out only when reached. It lives in a chunk's scratch.
 type columnWalk struct {
 	g            *Generator
 	x, z         int
 	gridX, gridZ int
-	tx, tz       float64
-	shapes       [2][2]columnShape
-	ground       float64
+	fx, fz       float64
+	corners      [2][2]*walkCorner
+	aq           *aquiferCache
 	kind         surfaceKind
 	ext          columnExtension
 	puddle       bool
-	nodes        [2][2][columnNodes]node
-	have         [columnNodes]bool
-	aq           aquiferCache
 	// topUnderWater says whether the top found by the last call of top has water directly above.
 	topUnderWater bool
 }
 
-func (g *Generator) newColumnWalk(x, z int) *columnWalk {
-	w := &columnWalk{g: g, x: x, z: z, gridX: x &^ (cellXZ - 1), gridZ: z &^ (cellXZ - 1)}
-	w.tx, w.tz = float64(x-w.gridX)/cellXZ, float64(z-w.gridZ)/cellXZ
-	for i := range 2 {
-		for j := range 2 {
-			w.shapes[i][j] = g.shapeAt(w.gridX+i*cellXZ, w.gridZ+j*cellXZ)
+// walkCorner is one grid column a walk has read. Neighbouring walks share them, and an entry is a pure
+// function of the generator and its position.
+type walkCorner struct {
+	owner *Generator
+	x, z  int
+	shape columnShape
+	nodes [columnNodes]node
+}
+
+const walkCornerSlots = 1 << 5
+
+// cornerAt finds or starts a grid column in the scratch's small direct-mapped store. A walk's four
+// corners are neighbours, so they fall in four different slots.
+func (s *chunkScratch) cornerAt(g *Generator, x, z int) *walkCorner {
+	gx, gz := x>>2, z>>2
+	k := &s.walkCorners[(gx&7)|(gz&3)<<3]
+	if k.owner != g || k.x != x || k.z != z {
+		k.owner, k.x, k.z = g, x, z
+		k.shape = g.shapeAt(x, z)
+		for i := range k.nodes {
+			k.nodes[i].haveCore, k.nodes[i].haveNoodle, k.nodes[i].haveVein = false, false, false
 		}
 	}
-	w.ground = blendGround(&w.shapes[0][0], &w.shapes[1][0], &w.shapes[0][1], &w.shapes[1][1], w.tx, w.tz)
-	col := g.biomeColumnAt(cellCentre(x), cellCentre(z))
+	return k
+}
+
+// startWalk prepares s.walk for a column. Its aquifer cache follows the chunk the column is in.
+func (g *Generator) startWalk(s *chunkScratch, x, z int) *columnWalk {
+	if !s.walkAqReady || s.walkAq.chunkX != x>>4 || s.walkAq.chunkZ != z>>4 {
+		s.walkAq.reset(x, z, &s.prelims)
+		s.walkAqReady = true
+	}
+	w := &s.walk
+	w.g, w.x, w.z = g, x, z
+	w.gridX, w.gridZ = x&^(cellXZ-1), z&^(cellXZ-1)
+	w.fx, w.fz = float64(x-w.gridX)/4.0, float64(z-w.gridZ)/4.0
+	w.aq = &s.walkAq
+	for i := range 2 {
+		for j := range 2 {
+			w.corners[i][j] = s.cornerAt(g, w.gridX+i*cellXZ, w.gridZ+j*cellXZ)
+		}
+	}
+	col := g.biomeColumnAt(x, z)
 	w.kind = col.surface.surface
 	w.ext = g.extensionAt(w.kind, x, z)
 	w.puddle = g.puddled(w.kind, x, z)
@@ -400,43 +479,83 @@ func (g *Generator) newColumnWalk(x, z int) *columnWalk {
 }
 
 // layerBlendAt works out the grid points of a cell layer if needed, and blends them.
-func (w *columnWalk) layerBlendAt(layer int) layerBlend {
-	for _, n := range [2]int{layer, layer + 1} {
-		if w.have[n] {
-			continue
-		}
-		w.have[n] = true
-		for i := range 2 {
-			for j := range 2 {
-				w.nodes[i][j][n] = w.g.nodeAt(&w.shapes[i][j], w.gridX+i*cellXZ, minY+n*cellY, w.gridZ+j*cellXZ)
+func (w *columnWalk) layerBlendAt(layer int) columnBlend {
+	g := w.g
+	var c cellCorners
+	for i := range 2 {
+		for j := range 2 {
+			k := w.corners[i][j]
+			for up := range 2 {
+				n := &k.nodes[layer+up]
+				n.needCore(g, &k.shape, w.gridX+i*cellXZ, minY+(layer+up)*cellY, w.gridZ+j*cellXZ)
+				c[i][up][j] = n
 			}
 		}
 	}
-	var c cellNodes
-	for i := range 2 {
-		for j := range 2 {
-			c.lo[i][j], c.hi[i][j] = &w.nodes[i][j][layer], &w.nodes[i][j][layer+1]
+	noodle := c.noodleLive()
+	if noodle {
+		for i := range 2 {
+			for k := range 2 {
+				for j := range 2 {
+					c[i][k][j].needNoodle(g, w.gridX+i*cellXZ, minY+(layer+k)*cellY, w.gridZ+j*cellXZ)
+				}
+			}
 		}
 	}
-	return c.blend(w.tx, w.tz)
+	return c.blend(w.fx, w.fz, noodle, false)
 }
 
-// layerSkyFast says whether a whole cell layer is above sea level and too far above every
-// corner's ground for the 3D noise to reach, so it is air with no noise at all.
-func (w *columnWalk) layerSkyFast(layer int) bool {
-	yLow := float64(minY + layer*cellY)
-	if yLow <= SeaLevel {
+// layerCertainAir says whether no block of a whole cell layer can be solid or need its density,
+// without reading any 3D noise: every corner is far above the ground and the layer is over the
+// chunk's skip height.
+func (w *columnWalk) layerCertainAir(layer int) bool {
+	yLow := minY + layer*cellY
+	if yLow <= w.g.skipAbove(w.aq) {
 		return false
 	}
 	for i := range 2 {
 		for j := range 2 {
-			s := &w.shapes[i][j]
-			if s.ramp(yLow) >= -maxBase {
+			if s := &w.corners[i][j].shape; !s.certainlyAir(yLow) || !s.certainlyAir(yLow+cellY) {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+// rawKind is the noise stage's answer for a block: density and aquifer, nothing later.
+func (w *columnWalk) rawKind(blend *columnBlend, y, dy int) fillKind {
+	f := blend.final(float64(dy) / 8.0)
+	if f > 0 {
+		return fillSolid
+	}
+	return w.g.fluidAt(w.aq, w.x, y, w.z, f)
+}
+
+// rawTops are the highest solid block and the highest block that is not air, at the noise stage.
+func (w *columnWalk) rawTops() (solid, nonAir int) {
+	solid, nonAir = minY-1, minY-1
+	for layer := columnNodes - 2; layer >= 0; layer-- {
+		baseY := minY + layer*cellY
+		if w.layerCertainAir(layer) {
+			if nonAir < minY && baseY < seaFluidTop {
+				nonAir = min(baseY+cellY-1, seaFluidTop-1)
+			}
+			continue
+		}
+		blend := w.layerBlendAt(layer)
+		for dy := cellY - 1; dy >= 0; dy-- {
+			y := baseY + dy
+			k := w.rawKind(&blend, y, dy)
+			if k != fillAir && nonAir < minY {
+				nonAir = y
+			}
+			if k == fillSolid {
+				return y, nonAir
+			}
+		}
+	}
+	return solid, nonAir
 }
 
 // top finds the highest block that is not air or water, by the order of the chunk pass:
@@ -446,19 +565,19 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 	noiseSolid := false // A solid noise block has been met above.
 	prevWater := false  // The block above is water in the noise pass.
 	aboveWater := false // The block above is water in the final column.
-	// final decides a block's final kind from what the noise pass left there.
 	w.topUnderWater = false
+	// final decides a block's final kind from what the noise pass left there.
 	final := func(y int, k fillKind) fillKind {
 		if !noiseSolid && y <= w.ext.top && (!w.ext.iceberg || y >= w.ext.bottom) && k != fillSolid {
 			k = fillSolid // An extension block; it is not carved.
 		} else if k == fillSolid {
 			first := !noiseSolid
 			noiseSolid = true
-			if first && y == SeaLevel && w.puddle && w.ext.top < minY {
+			if first && y == puddleY && w.puddle && w.ext.top < minY {
 				return fillWater
 			}
 			if carved != nil && carved.has(y) && y > minY {
-				f := g.carveFill(&w.aq, w.x, y, w.z, w.ground)
+				f := g.carveFill(w.aq, w.x, y, w.z)
 				if f != fillSolid && !(f == fillAir && aboveWater) {
 					return f
 				}
@@ -477,15 +596,23 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 		return k
 	}
 	for layer := columnNodes - 2; layer >= 0; layer-- {
-		if w.layerSkyFast(layer) && w.ext.top < minY+layer*cellY {
+		baseY := minY + layer*cellY
+		if w.ext.top < baseY && baseY >= seaFluidTop && w.layerCertainAir(layer) {
+			prevWater = false
 			continue
 		}
-		blend := w.layerBlendAt(layer)
+		var blend columnBlend
+		certain := w.layerCertainAir(layer)
+		if !certain {
+			blend = w.layerBlendAt(layer)
+		}
 		for dy := cellY - 1; dy >= 0; dy-- {
-			y := minY + layer*cellY + dy
-			kind := fillSolid
-			if !blend.solidAt(float64(dy) / cellY) {
-				kind = g.fillAt(&w.aq, w.x, y, w.z, w.ground, !noiseSolid)
+			y := baseY + dy
+			var kind fillKind
+			if certain {
+				kind = globalFluid(y).at(y)
+			} else {
+				kind = w.rawKind(&blend, y, dy)
 			}
 			if kind == fillAir && prevWater {
 				// The water above is sealed with stone, as in the chunk pass.
@@ -509,7 +636,10 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 // noiseHeight is the top of the ground with noise caves but without carvers or lakes. It is
 // what the study measured, and much cheaper than SurfaceHeight because no tunnels are walked.
 func (g *Generator) noiseHeight(x, z int) int {
-	return g.newColumnWalk(x, z).top(nil, nil)
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	s.startColumnOnly(g)
+	return g.startWalk(s, x, z).top(nil, nil)
 }
 
 // NoiseHeight is noiseHeight for tools that draw maps.

@@ -147,7 +147,7 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 	starts := min(int(-math.Log(1-r.float())*startScale), maxStarts)
 	for range starts {
 		x := float64(sx*16 + r.intn(16))
-		y := float64(caveBottom) + math.Floor(math.Pow(r.float(), caveHeightBias)*float64(top-caveBottom+1))
+		y := float64(caveBottom) + math.Floor(r.float()*float64(top-caveBottom+1))
 		z := float64(sz*16 + r.intn(16))
 		hScale := 0.7 + 0.7*r.float()
 		vScale := 0.8 + 0.5*r.float()
@@ -168,13 +168,12 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 }
 
 // Our own start count: the floor of an exponential draw, so most systems have one or two starts
-// and a few have many, capped at the notes' 15. Start heights fill the notes' range but lean high: a
-// power of an even draw. Bedrock has more air than noise caves alone at Y 40 to 100 and not much
-// more at Y -20 to 0. Both numbers are measured and tuned by us (TestCaveAirMatchesBedrock).
+// and a few have many, capped at the notes' 15. Start heights are even over the notes' range. Both
+// were tuned by us to Bedrock's air by band (TestCaveAirMatchesBedrock); an earlier lean to high
+// starts is gone, because its cause was the old noise caves, and the noise layer is now exact.
 const (
-	maxStarts      = 15
-	startScale     = 3.6
-	caveHeightBias = 0.5
+	maxStarts  = 15
+	startScale = 3.6
 )
 
 // Own numbers: how far a cave tunnel tilts, its lowest ceiling, and its radius at the middle.
@@ -227,7 +226,7 @@ func newTunnelPath(seed uint64, x, y, z, halfMax, bendMax, tilt float64) tunnelP
 	return p
 }
 
-func cubed(v float64) float64 { return v * v * v }
+func cubed(v float64) float64 { return float64(float64(v*v) * v) }
 
 // at gives the point on the path at t.
 func (p *tunnelPath) at(t float64) (x, y, z float64) {
@@ -299,11 +298,11 @@ const (
 
 // carveFill says what a carved block becomes. Tunnels avoid water by asking the aquifer (notes
 // section 8): where it says water, or a wall, the block stays as it is.
-func (g *Generator) carveFill(a *aquiferCache, x, y, z int, ground float64) fillKind {
+func (g *Generator) carveFill(a *aquiferCache, x, y, z int) fillKind {
 	if y <= carverLavaY {
 		return fillLava
 	}
-	if f := g.fillAt(a, x, y, z, ground, false); f != fillWater {
+	if f := g.fluidAt(a, x, y, z, 0); f != fillWater {
 		return f
 	}
 	return fillSolid
@@ -328,9 +327,6 @@ func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, origi
 			if !m.any() {
 				continue
 			}
-			i, j := lx/cellXZ, lz/cellXZ
-			tx, tz := float64(lx-i*cellXZ)/cellXZ, float64(lz-j*cellXZ)/cellXZ
-			ground := s.groundAt(i, j, tx, tz)
 			wx, wz := originX+lx, originZ+lz
 			x, z := uint8(lx), uint8(lz)
 			lost := uint32(0) // A grass-like top block removed just above.
@@ -347,7 +343,7 @@ func (g *Generator) applyCarvers(c *chunk.Chunk, s *chunkScratch, originX, origi
 					lost = 0
 					continue
 				}
-				f := g.carveFill(&s.aq, wx, y, wz, ground)
+				f := g.carveFill(&s.aq, wx, y, wz)
 				if f == fillSolid || (f == fillAir && c.Block(x, int16(y+1), z, 0) == b.water) {
 					lost = 0
 					continue
@@ -405,8 +401,7 @@ func (g *Generator) lakesNear(cx, cz int, buf []lake) []lake {
 			l := lake{x: float64(x) + 0.5, z: float64(z) + 0.5, rx: 3 + 4*r.float(), ry: 2 + r.float(), rz: 3 + 4*r.float()}
 			y := lakeUnderBottom + r.intn(lakeUnderTop-lakeUnderBottom+1)
 			if under {
-				cl := g.Climate(x, z)
-				if float64(y)+lakeMarginAbove >= nominalGround(cl.Continentalness, cl.Erosion, cl.Weirdness) {
+				if float64(y)+lakeMarginAbove >= nominalGround(g.surfaceShape(x, z).offset) {
 					under = false
 				}
 			}
@@ -472,12 +467,16 @@ func (g *Generator) applyLakes(c *chunk.Chunk, s *chunkScratch, originX, originZ
 
 // SurfaceHeight returns the Y of the highest solid block of terrain in a column, with caves,
 // carvers and lakes taken into account: the same answer as the generated chunk, not counting trees,
-// plants and snow, without needing the chunk to exist. Where a cave opens the ground this is lower than highestSolid. It walks
+// plants and snow, without needing the chunk to exist. It walks
 // every tunnel that could reach the column, so it costs far more than noiseHeight.
 func (g *Generator) SurfaceHeight(x, z int) int {
 	var mask carveMask
 	sink := carveSink{x0: x, x1: x, z0: z, z1: z, column: &mask}
 	g.walkCarvers(x>>4, z>>4, carverReach, &sink)
 	var buf [18]lake
-	return g.newColumnWalk(x, z).top(&mask, g.lakesNear(x>>4, z>>4, buf[:0]))
+	lakes := g.lakesNear(x>>4, z>>4, buf[:0])
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	s.startColumnOnly(g)
+	return g.startWalk(s, x, z).top(&mask, lakes)
 }

@@ -2,52 +2,47 @@ package worldgen
 
 import "math"
 
-// Climate holds the values biome choice and terrain shape read at one column. The spreads
-// and octave lists below come from studying the Java 26.1 generator (see NOTES.md).
+// Climate holds the values biome choice and terrain shape read at one column, exactly as the game
+// computes them (Mojang's algorithm, per the owner's decision; notes section 6). They are not clamped:
+// the game's run past 1 in places.
 type Climate struct {
 	Temperature, Humidity, Continentalness, Erosion, Weirdness float64
 }
 
-// climateNoises holds one noise per climate value and the two domain-warp noises. First
-// octaves and amplitudes come from the study; a noise with first octave -9, read at
-// block/4, has a longest wavelength of 2048 blocks. The target spreads are the standard
-// deviations measured from the game over 3 seeds of 8192 x 8192 blocks, so that band
-// shares come out alike.
+// climateNoises holds the noises of the climate and the domain warp.
 type climateNoises struct {
-	temperature, humidity, continentalness, erosion, weirdness *layered
-	shiftX, shiftZ                                             *layered
+	temperature, humidity, continentalness, erosion, weirdness, shift *normalNoise
 }
 
-func newClimateNoises(seed int64) climateNoises {
-	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
+func newClimateNoises(w seedFactory) climateNoises {
 	return climateNoises{
-		temperature:     newLayered(sub(1), -10, []float64{1.5, 0, 1}, 0.380),
-		humidity:        newLayered(sub(2), -8, []float64{1, 1}, 0.252),
-		continentalness: newLayered(sub(3), -9, []float64{1, 1, 2, 2, 2, 1, 1, 1, 1}, 0.373),
-		erosion:         newLayered(sub(4), -9, []float64{1, 1, 0, 1, 1}, 0.309),
-		weirdness:       newLayered(sub(5), -7, []float64{1, 2, 1}, 0.353),
-		shiftX:          newLayered(sub(9), -3, []float64{1, 1, 1}, warpSpread),
-		shiftZ:          newLayered(sub(10), -3, []float64{1, 1, 1}, warpSpread),
+		temperature:     newNamedNoise(w, "temperature"),
+		humidity:        newNamedNoise(w, "vegetation"),
+		continentalness: newNamedNoise(w, "continentalness"),
+		erosion:         newNamedNoise(w, "erosion"),
+		weirdness:       newNamedNoise(w, "ridge"),
+		shift:           newNamedNoise(w, "offset"),
 	}
 }
 
-// warped returns the climate coordinates of a column in noise units (block/4). The warp moves
-// samples 5.4 blocks at the median and 21 at most, measured on ours over 6 seeds (the notes say
-// about 5 and up to about 25 for the game), wiggling every 8 to 32 blocks, which is what makes
-// biome borders and coasts ragged. All climate noises read the same warped point, as in the game.
+func (c *climateNoises) shiftX(bx, bz float64) float64 {
+	return float64(c.shift.at(float64(bx*0.25), 0, float64(bz*0.25)) * 4.0)
+}
+
+// shiftZ reads its noise with z, x, 0, as the game does.
+func (c *climateNoises) shiftZ(bx, bz float64) float64 {
+	return float64(c.shift.at(float64(bz*0.25), float64(bx*0.25), 0) * 4.0)
+}
+
+// warped returns a column's climate coordinates: every climate noise reads the same shifted point.
 func (g *Generator) warped(x, z int) (qx, qz float64) {
-	bx, bz := float64(x)/4, float64(z)/4
-	return bx + g.climate.shiftX.at(bx, 0, bz)*4, bz + g.climate.shiftZ.at(bz, 0, bx)*4
+	bx, bz := float64(x), float64(z)
+	return float64(bx*0.25) + g.climate.shiftX(bx, bz), float64(bz*0.25) + g.climate.shiftZ(bx, bz)
 }
 
 // shapeClimate returns the three climate values terrain shape reads, at warped coordinates.
-// The clamps on continentalness and erosion are our own bounds; past them the splines hold
-// their last knot anyway. Weirdness has no clamp: the game's reaches 1.33 and ours 1.49 (0.25
-// to 0.42% of the game's columns are beyond 1 on the 4 seeds probed), and PV keeps falling there.
 func (g *Generator) shapeClimate(qx, qz float64) (continentalness, erosion, weirdness float64) {
-	return clamp(g.climate.continentalness.at(qx, 0, qz), -1.2, 1),
-		clamp(g.climate.erosion.at(qx, 0, qz), -1, 1),
-		g.climate.weirdness.at(qx, 0, qz)
+	return g.climate.continentalness.at(qx, 0, qz), g.climate.erosion.at(qx, 0, qz), g.climate.weirdness.at(qx, 0, qz)
 }
 
 // Climate returns the climate values at a column.
@@ -55,22 +50,15 @@ func (g *Generator) Climate(x, z int) Climate {
 	qx, qz := g.warped(x, z)
 	c, e, w := g.shapeClimate(qx, qz)
 	return Climate{
-		Temperature:     clamp(g.climate.temperature.at(qx, 0, qz), -1, 1),
-		Humidity:        clamp(g.climate.humidity.at(qx, 0, qz), -1, 1),
+		Temperature:     g.climate.temperature.at(qx, 0, qz),
+		Humidity:        g.climate.humidity.at(qx, 0, qz),
 		Continentalness: c,
 		Erosion:         e,
 		Weirdness:       w,
 	}
 }
 
-// peaksAndValleys folds weirdness: PV = 1 - |3*|weirdness| - 2|. A river valley is where
-// this is near -1, which is where weirdness is near zero.
+// peaksAndValleys folds weirdness. A river valley is where this is near -1.
 func peaksAndValleys(weirdness float64) float64 {
-	return 1 - math.Abs(3*math.Abs(weirdness)-2)
+	return float64((math.Abs(math.Abs(weirdness)-0.6666666666666666) - 0.3333333333333333) * -3.0)
 }
-
-// warpSpread is the spread of the domain-warp noises. The study gives none, so it is the natural
-// spread of their octave list times the measured ratio for three octaves (see spreadRatios), the
-// two three-octave climate noises measuring 0.652 and 0.648 against the table's 0.65. It comes to
-// 0.284.
-var warpSpread = gameSpread([]float64{1, 1, 1})
