@@ -501,12 +501,25 @@ func leafReachesLog(w world3, x, y, z int) bool {
 }
 
 // The same chunk whichever order chunks are made in, and on any number of workers, on chunks
-// with trees crossing their edges.
+// with trees crossing their edges: 3 forest, jungle or roofed forest spots, 2 snowy and 2 ocean.
 func TestDecorationOrderIndependent(t *testing.T) {
+	skipUnlessLong(t)
+	checkDecorationOrderIndependent(t, 3, 2)
+}
+
+// TestDecorationOrderIndependentQuick is the same check, fixture free, on one spot of each kind, for
+// the default run.
+func TestDecorationOrderIndependentQuick(t *testing.T) {
+	checkDecorationOrderIndependent(t, 1, 1)
+}
+
+// checkDecorationOrderIndependent makes the 3 x 3 chunks around wooded spots of seed 42, and around
+// others snowy and others ocean spots, in order, backwards and on many workers at once.
+func checkDecorationOrderIndependent(t *testing.T, wooded, others int) {
 	g := New(42)
-	spots := biomeChunks(g, 3, "forest", "jungle", "roofed_forest")
-	spots = append(spots, biomeChunks(g, 2, "snowy_plains", "taiga")...)
-	spots = append(spots, biomeChunks(g, 2, "ocean", "frozen_ocean")...)
+	spots := biomeChunks(g, wooded, "forest", "jungle", "roofed_forest")
+	spots = append(spots, biomeChunks(g, others, "snowy_plains", "taiga")...)
+	spots = append(spots, biomeChunks(g, others, "ocean", "frozen_ocean")...)
 	for _, p := range spots {
 		pos := blockAround(p, 1)
 		want := map[[2]int32]*chunk.Chunk{}
@@ -534,20 +547,33 @@ func TestDecorationOrderIndependent(t *testing.T) {
 		}
 		wg.Wait()
 	}
-	if len(spots) < 4 {
+	if len(spots) < wooded+2*others {
 		t.Fatalf("only %d chunks found", len(spots))
 	}
 }
 
+// TestForestHasTreesDesertHasNone counts trees in 40 forest chunks and looks for logs and leaves in
+// 40 desert chunks, of each of seeds 1 to 4.
 func TestForestHasTreesDesertHasNone(t *testing.T) {
+	skipUnlessLong(t)
+	checkForestAndDesert(t, []int64{1, 2, 3, 4}, 40)
+}
+
+// TestForestHasTreesDesertHasNoneQuick is the same check, fixture free, on 20 chunks of each of seeds
+// 1 and 2, for the default run.
+func TestForestHasTreesDesertHasNoneQuick(t *testing.T) {
+	checkForestAndDesert(t, []int64{1, 2}, 20)
+}
+
+func checkForestAndDesert(t *testing.T, seeds []int64, n int) {
 	var forest, forestTrees, desert int
-	for _, seed := range []int64{1, 2, 3, 4} {
+	for _, seed := range seeds {
 		g := New(seed)
-		for _, c := range generateAll(g, biomeChunks(g, 40, "forest")) {
+		for _, c := range generateAll(g, biomeChunks(g, n, "forest")) {
 			forest++
 			forestTrees += countTrees(c, nil)
 		}
-		for p, c := range generateAll(g, biomeChunks(g, 40, "desert")) {
+		for p, c := range generateAll(g, biomeChunks(g, n, "desert")) {
 			desert++
 			for x := range uint8(16) {
 				for z := range uint8(16) {
@@ -561,7 +587,7 @@ func TestForestHasTreesDesertHasNone(t *testing.T) {
 		}
 	}
 	t.Logf("%d forest chunks, %.2f trees each; %d desert chunks", forest, float64(forestTrees)/float64(forest), desert)
-	if forest < 40 || desert < 20 {
+	if forest < n || desert < n/2 {
 		t.Fatalf("only %d forest and %d desert chunks found", forest, desert)
 	}
 	if forestTrees < forest*2 {

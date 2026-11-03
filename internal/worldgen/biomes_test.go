@@ -4,6 +4,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -70,22 +71,28 @@ func TestNoHardClimateJumps(t *testing.T) {
 	clash := func(a, b string) bool {
 		return (slices.Contains(hot, a) && slices.Contains(cold, b)) || (slices.Contains(cold, a) && slices.Contains(hot, b))
 	}
+	// The seeds run side by side: each is a single-threaded sweep.
+	var wg sync.WaitGroup
 	for seed := int64(1); seed <= 5; seed++ {
-		g := New(seed)
-		grid := make([][n]string, n)
-		for i := range grid {
-			for j := range grid[i] {
-				grid[i][j] = surfaceName(g, i*cell-span/2, j*cell-span/2)
-			}
-		}
-		for i := range n - 1 {
-			for j := range n - 1 {
-				if clash(grid[i][j], grid[i+1][j]) || clash(grid[i][j], grid[i][j+1]) {
-					t.Fatalf("seed %d at (%d,%d): %s is right beside a hot or cold opposite", seed, i*cell-span/2, j*cell-span/2, grid[i][j])
+		wg.Go(func() {
+			g := New(seed)
+			grid := make([][n]string, n)
+			for i := range grid {
+				for j := range grid[i] {
+					grid[i][j] = surfaceName(g, i*cell-span/2, j*cell-span/2)
 				}
 			}
-		}
+			for i := range n - 1 {
+				for j := range n - 1 {
+					if clash(grid[i][j], grid[i+1][j]) || clash(grid[i][j], grid[i][j+1]) {
+						t.Errorf("seed %d at (%d,%d): %s is right beside a hot or cold opposite", seed, i*cell-span/2, j*cell-span/2, grid[i][j])
+						return
+					}
+				}
+			}
+		})
 	}
+	wg.Wait()
 }
 
 func TestBiomesStoredInChunk(t *testing.T) {

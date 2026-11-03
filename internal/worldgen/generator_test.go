@@ -57,14 +57,25 @@ func TestDifferentSeedDiffers(t *testing.T) {
 	}
 }
 
+// TestOrderIndependent makes chunk 5, 5 again after 100 scattered chunks, each built alone.
 func TestOrderIndependent(t *testing.T) {
+	skipUnlessLong(t)
+	checkOrderIndependent(t, 100)
+}
+
+// TestOrderIndependentQuick is the same check, fixture free, after 12 of the chunks, for the default run.
+func TestOrderIndependentQuick(t *testing.T) {
+	checkOrderIndependent(t, 12)
+}
+
+func checkOrderIndependent(t *testing.T, n int32) {
 	first := generate(New(7), 5, 5)
 	g := New(7)
-	for i := int32(0); i < 100; i++ {
+	for i := int32(0); i < n; i++ {
 		generate(g, i*3-150, 40-i)
 	}
 	if !generate(g, 5, 5).Equals(first) {
-		t.Fatal("chunk (5,5) changed after 100 other chunks were generated")
+		t.Fatalf("chunk (5,5) changed after %d other chunks were generated", n)
 	}
 }
 
@@ -166,8 +177,19 @@ func seamExcess(chunks []seamSteps, measure func([]int) float64) (diff, stdErr f
 
 // Every chunk edge is also a cell edge, and cell edges step more than the inside of a cell
 // because of blending, so the fair question is whether a chunk edge steps more than the other
-// cell edges. It must not, beyond three standard errors of the sampling.
+// cell edges. It must not, beyond three standard errors of the sampling. Seeds 1234, 5 and 6.
 func TestNoSeamAtChunkEdges(t *testing.T) {
+	skipUnlessLong(t)
+	checkNoSeams(t, 1234, 5, 6)
+}
+
+// TestNoSeamAtChunkEdgesQuick is the same check, fixture free, on seed 1234 alone, for the default
+// run. Fewer chunks give a wider standard error, so it is the same test with less power.
+func TestNoSeamAtChunkEdgesQuick(t *testing.T) {
+	checkNoSeams(t, 1234)
+}
+
+func checkNoSeams(t *testing.T, seeds ...int64) {
 	over4 := func(steps []int) float64 {
 		var n int
 		for _, s := range steps {
@@ -177,7 +199,7 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 		}
 		return float64(n) / float64(len(steps))
 	}
-	for _, seed := range []int64{1234, 5, 6} {
+	for _, seed := range seeds {
 		chunks := measureSeams(New(seed))
 		rate, rateErr := seamExcess(chunks, over4)
 		meanDiff, meanErr := seamExcess(chunks, mean)
@@ -193,34 +215,41 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 
 func TestTerrainStatistics(t *testing.T) {
 	const span, step = 4096, 32
+	// The seeds run side by side: each is a single-threaded sweep.
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for seed := int64(1); seed <= 5; seed++ {
-		g := New(seed)
-		var ocean, total, high, low int
-		low = maxY
-		for x := -span / 2; x < span/2; x += step {
-			for z := -span / 2; z < span/2; z += step {
-				h := g.noiseHeight(x, z)
-				total++
-				if h < SeaLevel {
-					ocean++
-				}
-				high, low = max(high, h), min(low, h)
+		wg.Go(func() { terrainStatistics(t, seed, span, step) })
+	}
+}
+
+func terrainStatistics(t *testing.T, seed int64, span, step int) {
+	g := New(seed)
+	var ocean, total, high, low int
+	low = maxY
+	for x := -span / 2; x < span/2; x += step {
+		for z := -span / 2; z < span/2; z += step {
+			h := g.noiseHeight(x, z)
+			total++
+			if h < SeaLevel {
+				ocean++
 			}
+			high, low = max(high, h), min(low, h)
 		}
-		share := float64(ocean) / float64(total)
-		t.Logf("seed %d: ocean %.1f%%, highest %d, lowest %d", seed, share*100, high, low)
-		if share < 0.25 || share > 0.75 {
-			t.Errorf("seed %d: ocean %.1f%% of area, want 25-75%%", seed, share*100)
-		}
-		if high <= 120 {
-			t.Errorf("seed %d: highest land %d, want above 120", seed, high)
-		}
-		if high >= 319 {
-			t.Errorf("seed %d: peak %d, want under 319", seed, high)
-		}
-		if low >= 45 {
-			t.Errorf("seed %d: deepest ocean floor %d, want below 45", seed, low)
-		}
+	}
+	share := float64(ocean) / float64(total)
+	t.Logf("seed %d: ocean %.1f%%, highest %d, lowest %d", seed, share*100, high, low)
+	if share < 0.25 || share > 0.75 {
+		t.Errorf("seed %d: ocean %.1f%% of area, want 25-75%%", seed, share*100)
+	}
+	if high <= 120 {
+		t.Errorf("seed %d: highest land %d, want above 120", seed, high)
+	}
+	if high >= 319 {
+		t.Errorf("seed %d: peak %d, want under 319", seed, high)
+	}
+	if low >= 45 {
+		t.Errorf("seed %d: deepest ocean floor %d, want below 45", seed, low)
 	}
 }
 
@@ -300,26 +329,33 @@ func TestDefaultSpawnIsAboveTerrain(t *testing.T) {
 // chunk a player there stands on a block (ground, water or leaves) with air for feet and head, not
 // inside a tree, snow layer or plant, and nothing over their head.
 func TestDefaultSpawnFallbackHasRoom(t *testing.T) {
+	// Each spot is a lone chunk with all its sources to build, so the spots run side by side.
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for _, seed := range []int64{0, 1, 5, 7, 100, 12345, -2147483648} {
 		g := New(seed)
 		for _, xz := range [][2]int{{0, 0}, {8, 8}, {100, -40}, {-333, 517}} {
-			p := g.fallbackSpawn(xz[0], xz[1])
-			c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-			g.GenerateChunk(world.ChunkPos{int32(p.X() >> 4), int32(p.Z() >> 4)}, c)
-			lx, lz := uint8(p.X()&15), uint8(p.Z()&15)
-			at := func(y int) uint32 { return c.Block(lx, int16(y), lz, 0) }
-			if at(p.Y()-1) == g.blocks.air {
-				t.Errorf("seed %d at %v: nothing to stand on", seed, p)
-			}
-			if at(p.Y()) != g.blocks.air || at(p.Y()+1) != g.blocks.air {
-				t.Errorf("seed %d at %v: no room to stand (%v, %v)", seed, p, nameOf(at(p.Y())), nameOf(at(p.Y()+1)))
-			}
-			for y := p.Y() + 2; y < world.Overworld.Range().Max(); y++ {
-				if b := at(y); b != g.blocks.air {
-					t.Errorf("seed %d at %v: %v above at Y %d", seed, p, nameOf(b), y)
-					break
-				}
-			}
+			wg.Go(func() { fallbackSpawnHasRoom(t, g, seed, xz) })
+		}
+	}
+}
+
+func fallbackSpawnHasRoom(t *testing.T, g *Generator, seed int64, xz [2]int) {
+	p := g.fallbackSpawn(xz[0], xz[1])
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	g.GenerateChunk(world.ChunkPos{int32(p.X() >> 4), int32(p.Z() >> 4)}, c)
+	lx, lz := uint8(p.X()&15), uint8(p.Z()&15)
+	at := func(y int) uint32 { return c.Block(lx, int16(y), lz, 0) }
+	if at(p.Y()-1) == g.blocks.air {
+		t.Errorf("seed %d at %v: nothing to stand on", seed, p)
+	}
+	if at(p.Y()) != g.blocks.air || at(p.Y()+1) != g.blocks.air {
+		t.Errorf("seed %d at %v: no room to stand (%v, %v)", seed, p, nameOf(at(p.Y())), nameOf(at(p.Y()+1)))
+	}
+	for y := p.Y() + 2; y < world.Overworld.Range().Max(); y++ {
+		if b := at(y); b != g.blocks.air {
+			t.Errorf("seed %d at %v: %v above at Y %d", seed, p, nameOf(b), y)
+			break
 		}
 	}
 }
