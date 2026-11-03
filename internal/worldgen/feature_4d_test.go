@@ -17,6 +17,9 @@ func TestUntracedFeaturesAppear(t *testing.T) {
 		want   func(n string, y int16) bool
 		least  int
 	}{
+		{"coral", []string{"warm_ocean"}, func(n string, _ int16) bool { return strings.HasSuffix(n, "_coral_block") }, 50},
+		{"coral fans", []string{"warm_ocean"}, func(n string, _ int16) bool { return strings.HasSuffix(n, "_coral_wall_fan") }, 1},
+		{"icebergs", []string{"frozen_ocean", "deep_frozen_ocean"}, func(n string, y int16) bool { return n == "packed_ice" && y > SeaLevel }, 20},
 		{"cherry petals", []string{"cherry_grove"}, func(n string, _ int16) bool { return n == "pink_petals" }, 10},
 		{"meadow flowers", []string{"meadow"}, func(n string, _ int16) bool { return n == "allium" || n == "cornflower" || n == "oxeye_daisy" || n == "azure_bluet" }, 1},
 		{"wildflowers", []string{"meadow", "birch_forest"}, func(n string, _ int16) bool { return n == "wildflowers" }, 1},

@@ -198,6 +198,13 @@ func lushOwnBlocks() {
 			}
 		}
 	}
+	coralDir := map[string]int32{"west": 0, "east": 1, "north": 2, "south": 3}
+	for _, k := range [5]string{"tube", "brain", "bubble", "fire", "horn"} {
+		addOwn(k+"_coral_fan[waterlogged=true]", k+"_coral_fan", map[string]any{"coral_fan_direction": int32(0)}, false)
+		for _, f := range cardinals {
+			addOwn(k+"_coral_wall_fan[facing="+f+",waterlogged=true]", k+"_coral_wall_fan", map[string]any{"coral_direction": coralDir[f]}, false)
+		}
+	}
 	plain("sculk", "sculk", true)
 	addOwn("sculk_catalyst[bloom=false]", "sculk_catalyst", map[string]any{"bloom": uint8(0)}, true)
 	for _, w := range bools {
@@ -276,6 +283,8 @@ var leafTypes = map[string]block.LeavesType{"oak": block.OakLeaves(), "spruce": 
 var flowerTypes = map[string]block.FlowerType{"dandelion": block.Dandelion(), "poppy": block.Poppy(), "blue_orchid": block.BlueOrchid(), "allium": block.Allium(),
 	"azure_bluet": block.AzureBluet(), "red_tulip": block.RedTulip(), "orange_tulip": block.OrangeTulip(), "white_tulip": block.WhiteTulip(), "pink_tulip": block.PinkTulip(),
 	"oxeye_daisy": block.OxeyeDaisy(), "cornflower": block.Cornflower(), "lily_of_the_valley": block.LilyOfTheValley()}
+
+var coralTypes = map[string]block.CoralType{"tube": block.TubeCoral(), "brain": block.BrainCoral(), "bubble": block.BubbleCoral(), "fire": block.FireCoral(), "horn": block.HornCoral()}
 
 // dragonflyBlock gives the Dragonfly block of a state. Air stands in for what has no block.
 func dragonflyBlock(name string) world.Block {
@@ -480,6 +489,10 @@ func dragonflyBlock(name string) world.Block {
 		return block.Bamboo{Thick: true, LeafSize: leaf, Ready: propOf(name, "stage") == "1"}
 	case "moss_carpet":
 		return block.MossCarpet{}
+	case "tube_coral", "brain_coral", "bubble_coral", "fire_coral", "horn_coral":
+		return block.Coral{Type: coralTypes[strings.TrimSuffix(base, "_coral")]}
+	case "tube_coral_block", "brain_coral_block", "bubble_coral_block", "fire_coral_block", "horn_coral_block":
+		return block.CoralBlock{Type: coralTypes[strings.TrimSuffix(base, "_coral_block")]}
 	case "pink_petals":
 		n, _ := strconv.Atoi(propOf(name, "flower_amount"))
 		return block.PinkPetals{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}
