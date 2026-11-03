@@ -9,7 +9,7 @@ Changes, each marked "Overmind fork" in the code:
 
   Left as they are, and why that is harmless: redstone propagates within one tick from a change in reach, through at most 15 blocks of wire, and explosions and entity drops start from entities, which tick only in reach. Either can leave an entity (lit TNT, an item) at most a chunk past reach, which is still inside view (the reach is held two chunks under it). It freezes there and resumes when a player comes near, as any entity that walks out of reach does; unlike a bolt, it closes on its own once ticked.
 
-- `server/block/leaves.go`: a leaf stays while a log is within 6 steps through leaves (`leafLogReach`, Java's rule; was 4). Overmind generates Java's trees, whose leaves reach 6 steps, so at 4 any change beside an untouched tree decayed its outer leaves. Tested by internal/app `TestLeavesDecay`.
+- `server/block/leaves.go`: a leaf stays while a log is within 6 steps through leaves (`leafLogReach`, Java's rule; was 4). Overmind generates Java's trees, whose leaves reach 6 steps, so at 4 any change beside an untouched tree decayed its outer leaves. A leaf that finds its log clears its mark without a block update (upstream sent one, which marked its neighbours again for ever, so every leaf of a canopy searched on every random tick; at reach 6 that slowed ticks to 18 a second in `TestGenerationDoesNotStallTicks`). Tested by internal/app `TestLeavesDecay` and that stall test.
 
 - `server/session/handler_request_chunk_radius.go`: a client's radius is held to at least 2 (`minChunkRadius`, `clampChunkRadius`), the smallest tick reach (0, the player's own chunk) plus 2, so a tick never reads an unloaded chunk. Tested by `overmind_radius_test.go`.
 

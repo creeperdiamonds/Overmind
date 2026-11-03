@@ -72,7 +72,10 @@ func (l Leaves) RandomTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
 	if !l.Persistent && l.ShouldUpdate {
 		if findLog(pos, tx) {
 			l.ShouldUpdate = false
-			tx.SetBlock(pos, l, nil)
+			// Overmind fork: clearing the mark changes nothing a neighbour reads, so it sends no block
+			// update. Upstream sent one, which marked the neighbours again, and so on for ever: every
+			// leaf of a canopy beside any change searched for its log on every random tick.
+			tx.SetBlock(pos, l, &world.SetOpts{DisableBlockUpdates: true})
 			return
 		}
 		ctx := tx.Event()
