@@ -480,12 +480,14 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 
 // TestNoiseCavesOpenToSky asserts the measured figure: 4.7% of land columns (addendum A4), which
 // the game itself spread over 3.5 to 6.6 per seed. Because seeds vary that much, ours is pooled over
-// 12 seeds and must be within 1 point of 4.7. Carvers are left out, as they were there.
+// 12 seeds and must be within 1 point of 4.7. Carvers are left out, as they were there. The noise stage
+// is block-exact against Java (TestGoldenNoiseStage), so the figure moves only with the sample: 60
+// windows of 2 x 2 chunks a seed gave 6.43% with one sampler, so it takes 240 (5.41%; 480 give 5.23%).
 func TestNoiseCavesOpenToSky(t *testing.T) {
 	const seeds = 12
 	var land, open int
 	for seed := int64(1); seed <= seeds; seed++ {
-		l, o := openNoiseCaves(New(seed), seed, 60)
+		l, o := openNoiseCaves(New(seed), seed, 240)
 		t.Logf("seed %d: %d land columns, %.2f%% open to the sky", seed, l, float64(o)/float64(l)*100)
 		land += l
 		open += o

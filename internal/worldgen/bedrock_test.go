@@ -86,6 +86,7 @@ var oreFigures = []struct {
 // only: they hold only land, and the windows' land stands higher than the world's (median 80
 // against the 8192 study's 71, p99 164 against 150), so their figures do not carry over.
 func TestOresMatchBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	type counts [12]float64
 	totals := map[string]*counts{}
 	byID := map[uint32]string{}
@@ -149,6 +150,7 @@ func TestOresMatchBedrock(t *testing.T) {
 // (700) mixes patches with the soil under every surface, so it does not measure the patch rule.
 // Infested stone has its own test.
 func TestRockPatchesMatchBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	b := newBlocks()
 	rows := []struct {
 		name string
@@ -206,6 +208,7 @@ func TestRockPatchesMatchBedrock(t *testing.T) {
 // 0.875 down to 0.125. Rock patches that replace only stone would lift it, which is what the data
 // files suggest (BEDROCK-NOTES section 5 row 8), so this test bears on that choice.
 func TestDeepslateBlendMatchesBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	want := []float64{0.9021, 0.8008, 0.6914, 0.5736, 0.4462, 0.3093, 0.1613}
 	var deep, stone [7]float64
 	var mu sync.Mutex
@@ -264,6 +267,7 @@ var bedrockVolume = [128]float64{141.9, 136.6, 130.6, 124.5, 118.2, 111.8, 105.3
 // rate in each world, so ours is measured per Y and weighted by Bedrock's volume at that Y. The
 // tolerance is two standard errors of the seeds' densities, with a floor of 20%.
 func TestOreDensityMatchesBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	rows := []struct {
 		ore    string
 		band   int // Index into oreBands.
@@ -341,6 +345,7 @@ func TestOreDensityMatchesBedrock(t *testing.T) {
 // 342.7 such dirt a chunk over 21,485 blocks, so 15.95. One seed, so 20%. Soil, the rest, is logged:
 // seed 100 has 516 a chunk over a window 87% land, about 2.3 a land column.
 func TestDirtPatchesMatchBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	ground := GroundBlocks()
 	var deep, soil, volume, land float64
 	var mu sync.Mutex
@@ -387,6 +392,7 @@ func TestDirtPatchesMatchBedrock(t *testing.T) {
 // both biome rules read the blob's own height to meet them. Tolerance 30% a seed, the wider of the
 // old two, plus 0.01 so a seed with none can hold a stray blob's edge at most.
 func TestMountainOresMatchBedrock(t *testing.T) {
+	skipUnlessLong(t)
 	b := newBlocks()
 	emerald := oreIDs()["emerald"]
 	rows := []struct {

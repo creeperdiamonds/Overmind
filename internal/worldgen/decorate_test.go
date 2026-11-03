@@ -437,6 +437,7 @@ func TestForestHasTreesDesertHasNone(t *testing.T) {
 // with upright logs over air, so a log over air is fine if it is joined to a grounded trunk; a trunk
 // cut from its base by another source's block is not. Neighbouring chunks are generated as needed.
 func TestTreesStandOnSoil(t *testing.T) {
+	skipUnlessLong(t)
 	var trunks, joined int
 	for _, seed := range []int64{5, 6} {
 		g := New(seed)
@@ -530,6 +531,7 @@ func logGrounded(at func(x, y, z int) uint32, x, y, z int) bool {
 // Every plant sits on a valid block, over caves too: the sample holds all biomes and whatever the
 // carvers opened under them. Plants on the outermost columns read the real neighbour for water.
 func TestNoFloatingPlants(t *testing.T) {
+	skipUnlessLong(t)
 	counts := map[string]int{}
 	soil := []string{"grass_block", "dirt", "coarse_dirt", "podzol", "mycelium", "mud"}
 	for _, seed := range []int64{7, 8, 9} {
@@ -668,6 +670,7 @@ func TestFrozenOceanHasIce(t *testing.T) {
 // plains and snowy taiga are nearly covered, since their surface is grass and relies on them; and
 // the temperature read for Bedrock's warmer biomes holds at their usual heights.
 func TestSnowOnlyWhereCold(t *testing.T) {
+	skipUnlessLong(t)
 	var total, covered, columns int
 	for _, seed := range []int64{11, 12} {
 		g := New(seed)
