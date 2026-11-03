@@ -187,6 +187,17 @@ func lushOwnBlocks() {
 		}
 		addOwn("cave_vines_plant[berries="+b+"]", bodyName, map[string]any{"growing_plant_age": int32(0)}, false)
 	}
+	for di, dn := range [2]string{"up", "down"} {
+		for _, th := range dripThickness {
+			b := th
+			if th == "tip_merge" {
+				b = "merge"
+			}
+			for _, w := range bools {
+				addOwn("pointed_dripstone[thickness="+th+",vertical_direction="+dn+",waterlogged="+w+"]", "pointed_dripstone", map[string]any{"dripstone_thickness": b, "hanging": uint8(di)}, true)
+			}
+		}
+	}
 	// Bedrock's big dripleaf is one block: the leaf is its head, the stem the rest.
 	for _, f := range cardinals {
 		for _, w := range bools {
