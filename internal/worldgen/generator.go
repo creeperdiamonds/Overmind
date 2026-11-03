@@ -89,6 +89,8 @@ type chunkScratch struct {
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
+	caveSegs    []caveSegment   // The Bedrock carvers' segments of one source (bedrock_carvers.go).
+	canyonSegs  []canyonSegment
 	deco        decoration
 	copies      []*baseChunk // Spare full buffers, which the working set's chunks are expanded into.
 	final       [chunkCells]bs

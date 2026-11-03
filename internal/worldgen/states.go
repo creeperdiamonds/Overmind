@@ -136,10 +136,19 @@ var (
 )
 
 // stateOf finds or adds a state. Adding is rare and happens almost all at start-up; states already
-// added are never moved, so reading the tables by a state needs no lock.
+// added are never moved, so reading the tables by a state needs no lock. Air is always state zero,
+// what a cleared chunk holds, whichever file's package variables ask for a state first.
 func stateOf(name string) bs {
 	stateLock.Lock()
 	defer stateLock.Unlock()
+	if len(stateIndex) == 0 && name != "air" {
+		addState("air")
+	}
+	return addState(name)
+}
+
+// addState is stateOf under the lock.
+func addState(name string) bs {
 	if s, ok := stateIndex[name]; ok {
 		return s
 	}

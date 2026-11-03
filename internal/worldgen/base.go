@@ -105,6 +105,10 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 	if stage == stageSurface {
 		return
 	}
+	if g.profile.carversBedrock {
+		g.applyBedrockCarvers(b, s, x0, x1, z0, z1)
+		return
+	}
 	g.applyJavaCarvers(b, s, x0, x1, z0, z1)
 }
 

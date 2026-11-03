@@ -22,6 +22,9 @@ type Profile struct {
 	// surfaceBedrock builds the surface with Bedrock's default surface builder (bedrock_surface.go)
 	// where a biome uses it.
 	surfaceBedrock bool
+	// carversBedrock cuts Bedrock's two cave carvers and its canyon (bedrock_carvers.go) instead of
+	// Java's carvers.
+	carversBedrock bool
 
 	// Where the Bedrock data files differ from Java's ore table (BEDROCK-NOTES section 5).
 	ironSize, diamondMediumSize                int
@@ -47,7 +50,7 @@ type Profile struct {
 
 var (
 	// ProfileBedrock is the default: Java's algorithms with Bedrock's data where it differs.
-	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true, surfaceBedrock: true,
+	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true, surfaceBedrock: true, carversBedrock: true,
 		ironSize: 10, diamondMediumSize: 4, dirtReplaces: "stone", gravelReplaces: "stone deepslate", rockReplaces: "stone",
 		oresSkipTuff: true, infestedBedrock: true, extraMountainCoal: true, climate: &bedrockClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30},
