@@ -32,6 +32,35 @@ var handTags = []struct {
 		{"pause_screen_additions", ""},
 		{"quick_actions", ""},
 	}},
+	// The client's item table reads these tags while it finishes configuration
+	// ("Missing tag TagKey[minecraft:banner_pattern / minecraft:pattern_item/flower]",
+	// a real 26.1 client, 2026-11-04). Lists from minecraft.wiki "Banner
+	// pattern tag (Java Edition)" and "Banner/Patterns".
+	{"minecraft:banner_pattern", `minecraft.wiki "Banner pattern tag (Java Edition)"; required by the 26.1 client`, [][2]string{
+		{"no_item_required", "square_bottom_left square_bottom_right square_top_left square_top_right stripe_bottom stripe_top stripe_left stripe_right stripe_center stripe_middle stripe_downright stripe_downleft small_stripes cross straight_cross triangle_bottom triangle_top triangles_bottom triangles_top diagonal_left diagonal_up_right diagonal_up_left diagonal_right circle rhombus half_vertical half_horizontal half_vertical_right half_horizontal_bottom border gradient gradient_up"},
+		{"pattern_item/bordure_indented", "curly_border"},
+		{"pattern_item/creeper", "creeper"},
+		{"pattern_item/field_masoned", "bricks"},
+		{"pattern_item/flow", "flow"},
+		{"pattern_item/flower", "flower"},
+		{"pattern_item/globe", "globe"},
+		{"pattern_item/guster", "guster"},
+		{"pattern_item/mojang", "mojang"},
+		{"pattern_item/piglin", "piglin"},
+		{"pattern_item/skull", "skull"},
+	}},
+	// Goat horns name these (same item table). minecraft.wiki "Instrument tag
+	// (Java Edition)".
+	{"minecraft:instrument", `minecraft.wiki "Instrument tag (Java Edition)"; required by the 26.1 client`, [][2]string{
+		{"regular_goat_horns", "ponder_goat_horn sing_goat_horn seek_goat_horn feel_goat_horn"},
+		{"screaming_goat_horns", "admire_goat_horn call_goat_horn yearn_goat_horn dream_goat_horn"},
+		{"goat_horns", "#regular_goat_horns #screaming_goat_horns"},
+	}},
+	// The creative tab lists paintings by this tag. Bound but empty for now:
+	// the full list is not yet copied from a cited source (creative only).
+	{"minecraft:painting_variant", `bound empty; minecraft.wiki "Painting variant tag (Java Edition)" to be copied`, [][2]string{
+		{"placeable", ""},
+	}},
 	{"minecraft:damage_type", `minecraft.wiki "Damage type tag (Java Edition)" oldid=3498996`, [][2]string{
 		{"is_explosion", "fireworks explosion player_explosion bad_respawn_point"},
 		{"is_player_attack", "player_attack spear mace_smash"},

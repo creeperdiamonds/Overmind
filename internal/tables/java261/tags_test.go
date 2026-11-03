@@ -31,7 +31,7 @@ func TestTags(t *testing.T) {
 		ids = append(ids, r.ID)
 	}
 	slices.Sort(ids)
-	if !slices.Equal(ids, []string{"minecraft:block", "minecraft:damage_type", "minecraft:dialog", "minecraft:enchantment", "minecraft:entity_type", "minecraft:fluid", "minecraft:item", "minecraft:timeline"}) {
+	if !slices.Equal(ids, []string{"minecraft:banner_pattern", "minecraft:block", "minecraft:damage_type", "minecraft:dialog", "minecraft:enchantment", "minecraft:entity_type", "minecraft:fluid", "minecraft:instrument", "minecraft:item", "minecraft:painting_variant", "minecraft:timeline"}) {
 		t.Fatalf("tag registries %v", ids)
 	}
 	if water := find("minecraft:fluid", "minecraft:water"); len(water) != 2 {
