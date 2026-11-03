@@ -60,6 +60,10 @@ type Config struct {
 	Profile string
 	// Skins is how skins cross between the editions ([skins] in the file).
 	Skins Skins `toml:"skins"`
+	// FlatWorld, set by tests (never read from the file), makes the Overworld
+	// Dragonfly's flat world instead of worldgen's. The front ends' tests build
+	// on it, at fixed heights.
+	FlatWorld bool `toml:"-"`
 }
 
 // Skins is the [skins] table.

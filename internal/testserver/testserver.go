@@ -30,6 +30,12 @@ type Server struct {
 	PlayersFolder string
 }
 
+// FlatWorld makes every server this process starts use Dragonfly's flat world
+// instead of worldgen's. internal/javafront's tests set it in their TestMain:
+// they build at fixed heights on the flat world, and test the front end, not
+// the terrain.
+var FlatWorld bool
+
 // Start runs a server with Xbox and Mojang login off, spare ports and a temporary
 // world folder. It is closed when the test ends.
 func Start(t *testing.T) *Server {
@@ -65,6 +71,7 @@ func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, 
 	cfg.WorldFolder = filepath.Join(dir, "world")
 	cfg.PlayersFolder = filepath.Join(dir, "players")
 	cfg.ResourcesFolder = filepath.Join(dir, "resources")
+	cfg.FlatWorld = FlatWorld
 
 	if tweak != nil {
 		tweak(&cfg)

@@ -165,6 +165,7 @@ func (e *EntityHandle) runScheduled(task *Task, f func(tx *Tx, e Entity) error, 
 		if !task.begin() {
 			return
 		}
+		defer task.abortRunning(ErrTransactionExited) // Overmind fork: f may call runtime.Goexit.
 		err := executeWithRecovery(tx.w, func() error { return f(tx, ent) })
 		tx.runDeferred()
 		task.finish(err)

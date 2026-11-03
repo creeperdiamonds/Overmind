@@ -120,11 +120,13 @@ func Start(cfg config.Config) (*Server, error) {
 	}
 	gen := worldgen.NewWithProfile(seed, profile)
 	guard := &offTick{g: gen}
-	conf.Generator = func(dim world.Dimension) world.Generator {
-		if dim == world.Overworld {
-			return guard
+	if !cfg.FlatWorld {
+		conf.Generator = func(dim world.Dimension) world.Generator {
+			if dim == world.Overworld {
+				return guard
+			}
+			return unusedGenerator(dim)
 		}
-		return unusedGenerator(dim)
 	}
 	conf.RandomTickSpeed = cfg.RandomTickSpeed
 	conf.ChunkLoadWorkers = chunkWorkers(cfg.ChunkWorkers)
@@ -135,7 +137,7 @@ func Start(cfg config.Config) (*Server, error) {
 	// the tick. The search is deterministic, so a world that stopped before its first save finds the
 	// same spawn again.
 	set := conf.WorldProvider.Settings()
-	if newWorld {
+	if newWorld && !cfg.FlatWorld {
 		set.Spawn = gen.DefaultSpawn(world.Overworld)
 	}
 	set.TickRange = int32(tickDistance(cfg.TickDistance, cfg.ViewDistance))
@@ -185,7 +187,9 @@ func Start(cfg config.Config) (*Server, error) {
 	}
 	srv := conf.New()
 	bedrockSrv.Store(srv)
-	guard.watch(srv.World())
+	if !cfg.FlatWorld {
+		guard.watch(srv.World())
+	}
 	// Dragonfly's default comes from level.dat and is creative.
 	for _, w := range []*world.World{srv.World(), srv.Nether(), srv.End()} {
 		w.SetDefaultGameMode(mode)

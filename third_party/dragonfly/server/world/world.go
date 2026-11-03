@@ -197,7 +197,7 @@ func (w *World) handleTransactions() {
 	for {
 		select {
 		case tx := <-w.queue:
-			tx.Run(w)
+			w.runGuarded(tx) // Overmind fork: logs a panic or Goexit (overmind_txguard.go).
 		case <-w.queueClosing:
 			w.queueing.Done()
 			return
