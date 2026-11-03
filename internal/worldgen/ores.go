@@ -125,13 +125,13 @@ var veinFeatures = [...]veinFeature{
 	{block: veinDiamond, attempts: 1.0 / 9, size: 12, minY: -144, maxY: 16, dist: distTriangle, exposed: 0.7},
 	{block: veinDiamond, attempts: 4, size: 8, minY: -144, maxY: 16, dist: distTriangle, exposed: 1},
 	{block: veinEmerald, attempts: 100, size: 3, minY: -16, maxY: 480, dist: distTriangle, biome: biomeMountain},
-	{block: veinInfested, attempts: infestedAttempts, size: 8, minY: 0, maxY: 64, biome: biomeMountain},
+	{block: veinInfested, attempts: infestedAttempts, size: 8, minY: 0, maxY: 64, biome: biomeMountain, replaces: repStone | repDeepslate},
 }
 
 // ironUpperBottom and infestedAttempts are the Bedrock data files' values (BEDROCK-NOTES sections 4, 5).
 const (
-	ironUpperBottom  = 76
-	infestedAttempts = 4.4
+	ironUpperBottom  = 80
+	infestedAttempts = 14
 )
 
 // rng is a tiny seeded generator. Every blob has its own, started from the blob's origin

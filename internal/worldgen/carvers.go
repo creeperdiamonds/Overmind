@@ -173,7 +173,7 @@ func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
 // starts is gone, because its cause was the old noise caves, and the noise layer is now exact.
 const (
 	maxStarts  = 15
-	startScale = 3.6
+	startScale = 4
 )
 
 // Own numbers: how far a cave tunnel tilts, its lowest ceiling, and its radius at the middle.
