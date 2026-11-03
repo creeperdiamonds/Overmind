@@ -65,3 +65,7 @@ Java's carvers give more air than Bedrock's at Y -20 to 0 on every seed (10.5 to
 **Against Java**, trees are asserted by biome (`TestPlacementRatesMatchJava`, with the fixtures). They pass in most biomes, but **three still fail**: jungle 11.45 / 9.73, roofed forest 5.47 / 4.64, bamboo jungle 3.58 / 2.75. The cause is measured. In those biomes our trunk bases match Java's in chunk interiors (618 / 603, ratio 1.02) and run 29% over in the 4-block band by chunk edges (2245 / 1745). In Java a later chunk's tree is placed from the live heightmap, which counts an earlier chunk's canopy, so it lands on leaves and fails its soil test. Each of our sources sees bare ground. The fix is to refuse a whole later tree whose base column lies under an earlier source's canopy. That needs tree-level units in source results, and the changes of sources two chunks out. It is open.
 
 **Kelp and seagrass per ocean chunk**: ours 108.0 to 109.5 kelp and 47.5 to 55.7 seagrass, against Bedrock's seed 1 figures of 189 and 57. Against Java on the same chunks: kelp 111.5 / 112.9, seagrass 44.6 / 45.5. So Bedrock places about 1.7 times Java's kelp.
+
+## Commit e1873aa's message
+
+Commit e1873aa ("ores on the feature driver follow Mojang's algorithm") says every ore feature replays exactly. At that commit the emerald ore did not yet: it was fixed in the next commits (48b5e1f, 84c767f), and `TestGoldenFeatureTraces` has held every ore run exact since (6485 of 6485). History is not rewritten; this note corrects the record.
