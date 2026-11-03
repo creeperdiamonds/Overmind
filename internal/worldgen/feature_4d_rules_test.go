@@ -179,3 +179,96 @@ func TestMangrovesFollowJava(t *testing.T) {
 		}
 	}
 }
+
+// testDecoration readies a decoration on a chunk for placing by hand, as a source run would.
+func testDecoration(t *testing.T, g *Generator, cx, cz int) *decoration {
+	t.Helper()
+	d := newScratch().startDecoration(g, cx, cz)
+	d.cx, d.cz = cx, cz
+	d.gen++
+	d.r = featRand{}
+	d.r.setSeed(1)
+	return d
+}
+
+func (d *decoration) undo() {
+	d.rollback()
+	d.log = d.log[:0]
+}
+
+// TestMossCarpetToppersLikeJava checks MossyCarpetBlock.placeAt as simple_block runs it: the topper's
+// side coins come from the level random (one per side the topper could have, north, east, south,
+// west), never from the feature random, and there is no topper and no coin where the block above is
+// solid or a bottom carpet. A side under a kept topper side grows tall.
+func TestMossCarpetToppersLikeJava(t *testing.T) {
+	g := NewWithProfile(7, ProfileOverjava)
+	d := testDecoration(t, g, 0, 0)
+	p := pos{8, 200, 8} // In the air, far over any ground.
+	up := p.step(dUp)
+	put := func(q pos, s bs) { d.set(q.x, q.y, q.z, s) }
+	walls := func() {
+		put(p.step(dDown), sStone)
+		for _, q := range []pos{p.step(dNorth), p.step(dEast), up.step(dNorth), up.step(dEast)} {
+			put(q, sStone)
+		}
+	}
+	grass := stateOf("short_grass")
+	toppers, bare := 0, 0
+	for seed := range uint64(64) {
+		for _, above := range []bs{sAir, grass} {
+			walls()
+			put(up, above)
+			d.region = newXoro(seed*0x9E3779B97F4A7C15+1, seed+7)
+			ref := d.region
+			north, east := ref.next()&1 != 0, ref.next()&1 != 0
+			featBefore := d.r
+			placeCarpet(d, p)
+			if d.region != ref {
+				t.Fatalf("seed %d: the topper drew other than one coin for each of its two sides", seed)
+			}
+			if d.r != featBefore {
+				t.Fatalf("seed %d: the carpet drew from the feature random", seed)
+			}
+			low := func(keep bool) int {
+				if keep {
+					return 2
+				}
+				return 1
+			}
+			if want := paleCarpet(true, [4]int{low(north), low(east), 0, 0}); d.at(p) != want {
+				t.Fatalf("seed %d: bottom %s, want %s", seed, d.at(p).name(), want.name())
+			}
+			wantUp := above
+			if north || east {
+				wantUp = paleCarpet(false, [4]int{btoi(north), btoi(east), 0, 0})
+				toppers++
+			} else {
+				bare++
+			}
+			if d.at(up) != wantUp {
+				t.Fatalf("seed %d over %s: above %s, want %s", seed, above.name(), d.at(up).name(), wantUp.name())
+			}
+			d.undo()
+		}
+	}
+	if toppers == 0 || bare == 0 {
+		t.Fatalf("%d toppers and %d bare carpets, want both", toppers, bare)
+	}
+	for _, above := range []bs{sStone, paleCarpet(true, [4]int{})} {
+		walls()
+		put(up, above)
+		d.region = newXoro(5, 6)
+		ref := d.region
+		placeCarpet(d, p)
+		if d.at(up) != above {
+			t.Errorf("over %s: a topper replaced it (%s)", above.name(), d.at(up).name())
+		}
+		if d.region != ref {
+			t.Errorf("over %s: a coin was drawn with no topper possible", above.name())
+		}
+		if want := paleCarpet(true, [4]int{1, 1, 0, 0}); d.at(p) != want {
+			t.Errorf("over %s: bottom %s, want %s", above.name(), d.at(p).name(), want.name())
+		}
+		d.undo()
+	}
+}

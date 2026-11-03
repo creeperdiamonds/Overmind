@@ -69,24 +69,44 @@ func carpetUpdated(d *decoration, bottom bool, sides [4]int, p pos, create bool)
 
 var sPaleCarpetBlock = paleCarpet(true, [4]int{}).block()
 
-// placeCarpet is the mossy carpet's own placement: a bottom carpet, maybe with a topper over it.
+// placeCarpet is the mossy carpet's own placement: a bottom carpet shaped by its neighbours, then
+// maybe a topper over it. Java's simple_block hands the carpet the level's random, not the feature's,
+// so the topper's side coins come from the source's region random (decoration.region), as a raw
+// xoroshiro boolean: the low bit of the next long.
 func placeCarpet(d *decoration, p pos) {
 	sides := carpetUpdated(d, true, [4]int{}, p, true)
 	d.set(p.x, p.y, p.z, paleCarpet(true, sides))
 	up := p.step(dUp)
+	if top, ok := carpetTopper(d, p, func() bool { return d.region.next()&1 != 0 }); ok {
+		d.set(up.x, up.y, up.z, top)
+		sides = carpetUpdated(d, true, sides, p, true)
+		d.set(p.x, p.y, p.z, paleCarpet(true, sides))
+	}
+}
+
+// carpetTopper is the topper a carpet at p grows. There is none where the block above is a bottom
+// carpet, or is neither a carpet nor replaceable; then no coin is drawn. Each side the topper could
+// have is kept when keep says so, drawn north, east, south, west, and only for those sides. There is
+// none either when no side is left, or when the topper is the block already there.
+func carpetTopper(d *decoration, p pos, keep func() bool) (bs, bool) {
+	up := p.step(dUp)
+	prev := d.at(up)
+	isCarpet := prev.block() == sPaleCarpetBlock
+	if prevBottom, _ := carpetSides(prev); isCarpet && prevBottom || !isCarpet && !prev.has(fReplaceable) {
+		return 0, false
+	}
 	top := carpetUpdated(d, false, [4]int{}, up, true)
 	any := false
 	for i := range top {
-		if top[i] != 0 && !d.r.nextBool() {
+		if top[i] != 0 && !keep() {
 			top[i] = 0
 		}
 		any = any || top[i] != 0
 	}
-	if any {
-		d.set(up.x, up.y, up.z, paleCarpet(false, top))
-		sides = carpetUpdated(d, true, sides, p, true)
-		d.set(p.x, p.y, p.z, paleCarpet(true, sides))
+	if s := paleCarpet(false, top); any && s != prev {
+		return s, true
 	}
+	return 0, false
 }
 
 // paleMoss is the pale oak's moss decorator: a moss patch at its foot and hanging moss under logs and
