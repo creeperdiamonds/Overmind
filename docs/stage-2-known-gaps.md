@@ -5,7 +5,7 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 ## Behaviour
 
 - **Leaf decay is slow and partial.** Dragonfly marks a leaf for decay only when a neighbouring block changes, then decays it on a random tick. After the logs of a tree are cut, the leaves next to them go first and the rest follow as leaves between them fall. With the random tick speed raised to 200, 99 of 172 leaves without a log were gone after 2 s and 129 of 172 after 27 s; the rest had not been marked yet. `TestLeavesDecay` asks for half of them within 60 s. Not a small fix: the rule is in Dragonfly, which we do not change.
-- **The tick distance is held two chunks under the view distance.** A tick that reads a block of a chunk that is not loaded makes Dragonfly generate it on the tick, or wait for it (`Tx.chunk`, `doImmediate`). With the tick distance equal to the view distance, every random tick and neighbour update at the edge of view did that. So the tick distance is Bedrock's default 4, at most the view distance minus 2 (`Config.TickDistance`), and `TestGenerationDoesNotStallTicks` asserts no chunk is generated on the tick. A client that asks for a view distance under the tick distance plus 2 can still cause it; Dragonfly has no per-player tick distance.
+- **The tick distance is held two chunks under the view distance, for each player.** A tick that reads a block of a chunk that is not loaded makes Dragonfly generate it on the tick. So the tick distance is Bedrock's default 4, at most the view distance minus 2 (`Config.TickDistance`), and the Dragonfly fork holds each player's tick reach, for blocks and entities, two under that player's own view distance. Entities beyond a player's tick reach do not move, as on Bedrock. `TestGenerationDoesNotStallTicks` and `TestSmallViewDistanceNeverGeneratesOnTick` assert no chunk is generated on the tick.
 - **Java's trees make leaves out to distance 6; Dragonfly keeps leaves within 4 of a log.** A leaf 5 or 6 steps from its log decays in Dragonfly once a neighbour update marks it.
 - **Snow does not melt; there are no items for snow layers and seagrass** (see worldgen NOTES).
 - **Nether and End are flat floors** and nothing sends players there.
@@ -55,16 +55,17 @@ Task 4b scored 99.02% (seed 1) and 97.55% (seed 12345) over all points because i
 
 Java's carvers give more air than Bedrock's at Y -20 to 0 on every seed (10.5 to 12.3 against 9.81).
 
-**Trees per chunk**, by the chunk's centre biome, ours / Bedrock (with our chunk count where it is under 100). Bedrock's figures are over all 4 windows. All windows: ours 1.53 / 0.74 / 1.60 / 3.87 by seed, Bedrock 2.217 pooled.
+**Trees per chunk**, by the chunk's centre biome, ours / Bedrock (with our chunk count where it is under 100), after fix round 2 of Task 4c. Bedrock's figures are over all 4 windows. All windows: ours 1.40 / 0.68 / 1.80 / 3.50 by seed, Bedrock 2.217 pooled.
 
-- Close: forest 4.50 to 5.67 / 5.92; birch forest 4.31 to 5.52 / 5.04; flower forest 4.12 to 4.33 / 4.06; mega taiga 4.21 / 4.72; badlands plateau 2.53 / 2.57 (49).
-- Ours above: jungle 12.78 / 10.03 (49), jungle edge 2.27 / 1.43, old growth birch forest 4.36 to 6.03 / 3.64, cherry grove 3.76 / 2.41 (29).
-- Ours below: roofed forest 5.65 to 6.45 / 7.44; savanna 0.73 / 1.02; savanna plateau 0.80 / 1.10; meadow 0.12 to 0.43 / 0.95; plains 0.12 to 0.19 / 0.31.
-- Far below, features not written yet: grove 0.21 / 4.49 and pale garden 0.40 / 6.50 (pale oak trees are a Task 4d gap). Grove's spruces are written; why they come out so few is not found, and the Java sample holds 1 grove chunk only.
+- Close: birch forest 4.08 to 5.20 / 5.04; flower forest 3.97 to 4.09 / 4.06; mega taiga 4.07 / 4.72; badlands plateau 2.47 / 2.57 (49); grove 3.73 / 4.49.
+- Ours above: jungle 10.53 / 10.03 (49), jungle edge 2.02 / 1.43, old growth birch forest 4.18 to 5.67 / 3.64, cherry grove 3.17 / 2.41 (29).
+- Ours below: forest 4.27 to 5.21 / 5.92; roofed forest 5.00 to 5.56 / 7.44; savanna 0.66 / 1.02; savanna plateau 0.72 / 1.10; meadow 0.11 to 0.43 / 0.95; plains 0.12 to 0.20 / 0.31.
+- Pale garden 0.49 / 6.50: pale oak trees are a Task 4d gap.
+- Grove was 0.21 before round 2. It was a bug: Java's grove trees grow on snow (`spruce_on_snow`, `pine_on_snow`), and ours used the sapling survival test, which fails on snow. Java's fixtures hold 14 grove trunks where ours had 0; now the one grove chunk there matches (2.00 / 2.00), and `TestGroveHasTrees` holds it.
 
-**Against Java**, trees are asserted by biome (`TestPlacementRatesMatchJava`, with the fixtures). They pass in most biomes, but **three still fail**: jungle 11.45 / 9.73, roofed forest 5.47 / 4.64, bamboo jungle 3.58 / 2.75. The cause is measured. In those biomes our trunk bases match Java's in chunk interiors (618 / 603, ratio 1.02) and run 29% over in the 4-block band by chunk edges (2245 / 1745). In Java a later chunk's tree is placed from the live heightmap, which counts an earlier chunk's canopy, so it lands on leaves and fails its soil test. Each of our sources sees bare ground. The fix is to refuse a whole later tree whose base column lies under an earlier source's canopy. That needs tree-level units in source results, and the changes of sources two chunks out. It is open.
+**Against Java**, trees are asserted by biome (`TestPlacementRatesMatchJava`, with the fixtures), and all pass after round 2: jungle 9.59 / 9.73, roofed forest 4.58 / 4.64, bamboo jungle 2.88 / 2.75, forest 5.03 / 5.16. Each source now runs on top of what its earlier neighbours do (two levels), as Java's later chunk sees the earlier one's canopy. So where ours differ from Bedrock, it is Java's placement against Bedrock's.
 
-**Kelp and seagrass per ocean chunk**: ours 108.0 to 109.5 kelp and 47.5 to 55.7 seagrass, against Bedrock's seed 1 figures of 189 and 57. Against Java on the same chunks: kelp 111.5 / 112.9, seagrass 44.6 / 45.5. So Bedrock places about 1.7 times Java's kelp.
+**Kelp and seagrass per ocean chunk**: ours 108.0 to 109.6 kelp and 47.5 to 55.8 seagrass, against Bedrock's seed 1 figures of 189 and 57. Against Java on the same chunks: kelp 111.3 / 112.9, seagrass 44.6 / 45.5. So Bedrock places about 1.7 times Java's kelp.
 
 ## Commit e1873aa's message
 

@@ -185,6 +185,14 @@ func defineSteps(t *tableBuilder) {
 	checkedBirch := func(decos ...treeDecorator) *placement { return checked(birchTree(decos...), birch) }
 	spruce := func() *placement { return checked(spruceTree(), "spruce_sapling") }
 	pine := func() *placement { return checked(pineTree(), "spruce_sapling") }
+	// Java's grove trees grow on snow: scan up through powder snow, at most 8 blocks, then the block
+	// below must be snow block or powder snow (spruce_on_snow, pine_on_snow). The trunk turns it to dirt.
+	onSnow := func(cfg *treeCfg) *placement {
+		notPowder := notP(matchBlocks("powder_snow"))
+		yes := func(*decoration, pos) bool { return true }
+		return newNestedPlacement(treeFeature(cfg), scanMod{dUp, notPowder, yes, 8},
+			filterMod{offsetP(0, -1, 0, matchBlocks("snow_block powder_snow"))})
+	}
 	third := float32(0.33333334)
 
 	shrooms := attachedToLogs(0.1, weightedStates(weightedState{2, stateOf("red_mushroom")}, weightedState{1, stateOf("brown_mushroom")}), []dir{dUp})
@@ -213,7 +221,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("trees_old_growth_spruce_taiga", treeSel(spruce(), selEntry{third, checked(megaSpruce(13, 17), "spruce_sapling")}, selEntry{third, pine()}, selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_old_growth_pine_taiga", treeSel(spruce(), selEntry{0.025641026, checked(megaSpruce(13, 17), "spruce_sapling")}, selEntry{0.30769232, checked(megaSpruce(3, 7), "spruce_sapling")}, selEntry{third, pine()}, selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_snowy", treeSel(spruce(), selEntry{0.0125, fallenSpruce()}), treeBase(countExtra(0, 10, 1), 0)...)
-	t.def("trees_grove", treeSel(spruce(), selEntry{third, pine()}), treeBase(countExtra(10, 10, 1), 0)...)
+	t.def("trees_grove", treeSel(onSnow(spruceTree()), selEntry{third, onSnow(pineTree())}), treeBase(countExtra(10, 10, 1), 0)...)
 	t.def("trees_savanna", treeSel(checkedOak(), selEntry{0.8, checked(acaciaTree(), "acacia_sapling")}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(1, 10, 1), 0)...)
 	t.def("trees_windswept_savanna", treeSel(checkedOak(), selEntry{0.8, checked(acaciaTree(), "acacia_sapling")}, selEntry{0.0125, fallenOak()}), treeBase(countExtra(2, 10, 1), 0)...)
 	windswept := func() feature {

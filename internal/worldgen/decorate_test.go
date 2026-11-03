@@ -975,3 +975,30 @@ func TestSnowAndSeagrassInARealWorld(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestGroveHasTrees: Java's grove grows spruces and pines on snow (spruce_on_snow, pine_on_snow: a
+// scan up through powder snow, then snow block or powder snow below), where a sapling's survival test
+// would refuse them. Java's fixtures hold 14 grove trunks over 953 grove columns of seed 987654321.
+func TestGroveHasTrees(t *testing.T) {
+	g := New(987654321)
+	spots := biomeChunks(g, 12, "grove")
+	if len(spots) < 6 {
+		t.Fatalf("only %d grove chunks", len(spots))
+	}
+	trunks := 0
+	for _, c := range generateAll(g, spots) {
+		for x := range uint8(16) {
+			for z := range uint8(16) {
+				for y := int16(minY + 1); y <= maxY; y++ {
+					if isTrunkID(c.Block(x, y, z, 0)) && !isLogID(c.Block(x, y-1, z, 0)) {
+						trunks++
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d trunks in %d grove chunks", trunks, len(spots))
+	if trunks < len(spots) {
+		t.Errorf("%d trunks in %d grove chunks", trunks, len(spots))
+	}
+}
