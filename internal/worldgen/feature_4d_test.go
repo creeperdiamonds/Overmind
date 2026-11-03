@@ -66,3 +66,59 @@ func TestUntracedFeaturesAppear(t *testing.T) {
 		})
 	}
 }
+
+// TestDesertWellShape places a desert well by hand on desert sand (one chunk in a thousand has one,
+// too few to find by sweeping) and checks its shape and that its blocks map to Bedrock's.
+func TestDesertWellShape(t *testing.T) {
+	g := NewWithProfile(7, ProfileOverjava)
+	chunks := biomeChunks(g, 1, "desert")
+	if len(chunks) == 0 {
+		t.Fatal("no desert chunk")
+	}
+	cx, cz := int(chunks[0][0]), int(chunks[0][1])
+	var well *placement
+	for _, pl := range g.profile.placements {
+		if pl.name == "desert_well" {
+			well = pl
+		}
+	}
+	if well == nil {
+		t.Fatal("no desert_well placement")
+	}
+	s := newScratch()
+	d := s.startDecoration(g, cx, cz)
+	d.cx, d.cz = cx, cz
+	d.gen++
+	d.r = featRand{}
+	d.r.setSeed(1)
+	x, z := cx*16+8, cz*16+8
+	y := d.height(hmMotionBlocking, x, z)
+	if !well.feat(d, pos{x, y, z}) {
+		t.Fatalf("no well at %d %d %d on %s", x, y, z, d.block(x, y-1, z).name())
+	}
+	o := pos{x, y - 1, z}
+	for _, c := range []struct {
+		p    pos
+		want bs
+	}{{o, sWater}, {o.step(dNorth), sWater}, {o.add(2, 0, 2), sSandst}, {o.add(1, 2, 1), sSandst}, {o.add(0, 4, 0), sSandst}, {o.add(1, 4, 0), sSandSlab}, {o.add(2, 1, 0), sSandSlab}, {o.add(0, 1, 0), sAir}} {
+		if got := d.at(c.p); got != c.want {
+			t.Errorf("%v: %s, want %s", c.p, got.name(), c.want.name())
+		}
+	}
+	sus := 0
+	seen := map[[2]int32]bool{}
+	for _, e := range d.log {
+		if k := [2]int32{e.chunk, e.cell}; !seen[k] {
+			seen[k] = true
+			lv := &d.live[e.chunk]
+			if s := lv.b.b[e.cell]; s == sSuspicious {
+				sus++
+			}
+			runtimeOf(lv.b.b[e.cell])
+		}
+	}
+	if sus == 0 || sus > 2 {
+		t.Errorf("%d suspicious sand, want one or two", sus)
+	}
+	d.rollback()
+}

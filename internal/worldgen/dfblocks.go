@@ -214,6 +214,7 @@ func lushOwnBlocks() {
 			}
 		}
 	}
+	addOwn("suspicious_sand[dusted=0]", "suspicious_sand", map[string]any{"brushed_progress": int32(0), "hanging": uint8(0)}, true)
 	plain("pale_moss_block", "pale_moss_block", true)
 	plain("closed_eyeblossom", "closed_eyeblossom", false)
 	for i, tip := range bools {
@@ -529,6 +530,8 @@ func dragonflyBlock(name string) world.Block {
 			a = cube.Z
 		}
 		return block.MuddyMangroveRoots{Axis: a}
+	case "sandstone_slab":
+		return block.Slab{Block: block.Sandstone{}, Top: propOf(name, "type") == "top"}
 	case "pink_petals":
 		n, _ := strconv.Atoi(propOf(name, "flower_amount"))
 		return block.PinkPetals{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}

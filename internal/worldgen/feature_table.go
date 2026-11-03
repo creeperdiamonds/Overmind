@@ -141,6 +141,7 @@ func buildPlacements(prof *Profile) []*placement {
 	defineFlowers(t)
 	defineOcean(t)
 	definePale(t)
+	defineDesert(t)
 	var out []*placement
 	for step := 0; step <= 10; step++ {
 		names, ok := featureOrder[step]
