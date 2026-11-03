@@ -34,6 +34,32 @@ func List(h *world.EntityHandle, name string, sk skin.Skin) {
 	}
 }
 
+// SetListedSkin gives a listed player a new skin in the list rows of every
+// Bedrock player, now and for those who join later; it does nothing for a
+// player List did not add. Call it as the player's skin changes. A row carries
+// a skin with OverrideAppearance, and a Bedrock client draws the player from
+// its row, so a row left with an older skin keeps it drawn in that skin
+// whatever PlayerSkin then says. The row is taken out and put back, as
+// PocketMine did for a skin change, since adding a UUID already listed is not
+// sure to replace its skin.
+func SetListedSkin(h *world.EntityHandle, sk skin.Skin) {
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	lp, ok := listed[h]
+	if !ok {
+		return
+	}
+	lp.skin = sk
+	listed[h] = lp
+	for _, s := range sessions.s {
+		s.writePacket(&packet.PlayerList{Entries: []protocol.PlayerListEntry{{
+			ActionType: protocol.PlayerListActionRemove,
+			UUID:       h.UUID(),
+		}}})
+		sendListedTo(h, lp, s)
+	}
+}
+
 // Unlist reverses List.
 func Unlist(h *world.EntityHandle) {
 	sessions.mu.Lock()

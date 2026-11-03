@@ -235,6 +235,8 @@ func Start(cfg config.Config) (*Server, error) {
 		Left:             func(id uuid.UUID) { h.left(java, id) },
 		Log:              log,
 		Uploader:         uploader,
+		FetchSkin:        cfg.Skins.JavaFetch,
+		OfflineTextures:  cfg.Skins.JavaOfflineTextures,
 	})
 	if err != nil {
 		if uploader != nil {

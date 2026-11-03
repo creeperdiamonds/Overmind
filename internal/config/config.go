@@ -2,6 +2,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -103,6 +104,12 @@ type Skins struct {
 	// Uploader, set by tests (never read from the file), is used in place of an
 	// upload account.
 	Uploader *skins.Uploader `toml:"-"`
+	// JavaFetch and JavaOfflineTextures, set by tests (never read from the
+	// file), fetch Java players' skin PNGs in place of textures.minecraft.net
+	// and give offline Java logins a textures property, as Mojang gives online
+	// ones (javafront.Options.FetchSkin and OfflineTextures).
+	JavaFetch           func(ctx context.Context, url string) ([]byte, error) `toml:"-"`
+	JavaOfflineTextures func(name string) string                              `toml:"-"`
 }
 
 // Default returns the settings used when a file leaves something out.

@@ -275,7 +275,9 @@ func (b *Bot) watch(pk packet.Packet) {
 		for _, e := range pk.Entries {
 			if e.ActionType == protocol.PlayerListActionAdd {
 				b.listed[e.UUID] = e.Username
-				b.skins[e.Username] = skinSeen(e.Skin)
+				s := skinSeen(e.Skin)
+				s.Rows, s.RowPix = b.skins[e.Username].Rows+1, s.Pix
+				b.skins[e.Username] = s
 			} else {
 				delete(b.listed, e.UUID)
 			}
@@ -283,7 +285,8 @@ func (b *Bot) watch(pk packet.Packet) {
 	case *packet.PlayerSkin:
 		if name, ok := b.listed[pk.UUID]; ok {
 			s := skinSeen(pk.Skin)
-			s.Changes = b.skins[name].Changes + 1
+			prev := b.skins[name]
+			s.Changes, s.Rows, s.RowPix = prev.Changes+1, prev.Rows, prev.RowPix
 			b.skins[name] = s
 		}
 	}
@@ -621,6 +624,8 @@ type SkinSeen struct {
 	Geometry            string // the geometry data
 	Persona             bool
 	Changes             int           // skin changes seen after the list's row
+	Rows                int           // player list rows seen for the name
+	RowPix              []byte        // the image the last list row carried, RGBA
 	Raw                 protocol.Skin // the skin as the packet carried it, every field
 }
 

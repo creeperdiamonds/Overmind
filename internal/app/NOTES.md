@@ -14,7 +14,7 @@ One account UUID is one player across editions, since Dragonfly, the player list
 
 Player data is saved per edition by account ID under `PlayersFolder` (`bedrock`, `java`) through `internal/playerstore`, which replaces Dragonfly's LevelDB provider.
 
-Skins: the hub gives `javafront.Front.List` a Bedrock player's skin and handle, and tells the front of each Bedrock skin change (`HandleSkinChange`, `Front.BedrockSkinChanged`), so Java rows follow it. With `skins.blockOddShapes` an odd Bedrock skin becomes `skins.StandIn` at join (Dragonfly's `JoinSkin`, a fork hook) and on each change. With `skins.uploadAccount` the uploader starts here and closes with the server.
+Skins: the hub gives `javafront.Front.List` a Bedrock player's skin and handle, and tells the front of each Bedrock skin change (`HandleSkinChange`, `Front.BedrockSkinChanged`), so Java rows follow it. A Java player's skin change (its Mojang skin, once the Java front end has fetched it) goes to `session.SetListedSkin`, so its Bedrock list rows stop carrying the stand-in it joined with. With `skins.blockOddShapes` an odd Bedrock skin becomes `skins.StandIn` at join (Dragonfly's `JoinSkin`, a fork hook) and on each change. With `skins.uploadAccount` the uploader starts here and closes with the server.
 
 World:
 
