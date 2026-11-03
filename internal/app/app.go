@@ -236,6 +236,8 @@ func Start(cfg config.Config) (*Server, error) {
 		Log:              log,
 		Uploader:         uploader,
 		BedrockBridging:  cfg.JavaBedrockBridging,
+		FetchSkin:        cfg.Skins.JavaFetch,
+		OfflineTextures:  cfg.Skins.JavaOfflineTextures,
 	})
 	if err != nil {
 		if uploader != nil {

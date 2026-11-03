@@ -63,6 +63,9 @@ type Options struct {
 	// FetchSkin fetches a Java player's skin PNG from its profile's URL. Nil
 	// fetches it from textures.minecraft.net (skins.go).
 	FetchSkin func(ctx context.Context, url string) ([]byte, error)
+	// OfflineTextures, for tests, gives an offline login (Login.Offline) the
+	// textures property Mojang would give it online. Nil gives none.
+	OfflineTextures func(name string) string
 	// Uploader has Bedrock players' Java-format skins signed by Mojang, so Java
 	// clients can draw them (bedrockskins.go). Nil shows those as Steve or Alex.
 	Uploader *skins.Uploader
@@ -379,6 +382,9 @@ func (f *Front) serve(nc net.Conn, host string) {
 		}
 		_ = wc.Close()
 		return
+	}
+	if f.opts.Login.Offline && f.opts.OfflineTextures != nil && id.Textures == "" {
+		id.Textures = f.opts.OfflineTextures(id.Name)
 	}
 	newConn(f, wc, nc, id).run()
 }

@@ -247,9 +247,13 @@ func (ph *playerHandler) HandleChat(ctx *player.Context, msg *string) {
 
 // HandleSkinChange follows a Bedrock player's new skin: with blockOddShapes an
 // odd shape becomes the default skin for everyone, and Java viewers' rows
-// follow it. A Java player's skin is its Mojang one, set by the Java front end.
-func (ph *playerHandler) HandleSkinChange(_ *player.Context, s *skin.Skin) {
-	if ph.ed != bedrock {
+// follow it. A Java player's skin is its Mojang one, set by the Java front end
+// once fetched: its Bedrock list rows, listed with the stand-in it joined
+// with, follow it (session.SetListedSkin), or Bedrock keeps drawing the
+// stand-in.
+func (ph *playerHandler) HandleSkinChange(ctx *player.Context, s *skin.Skin) {
+	if ph.ed == java {
+		session.SetListedSkin(ctx.Player().H(), *s)
 		return
 	}
 	*s = ph.h.allowedSkin(*s)
