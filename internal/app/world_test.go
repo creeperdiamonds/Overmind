@@ -18,6 +18,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/df-mc/dragonfly/server/world/portal"
 	"github.com/stretchr/testify/require"
 
 	"github.com/overmind/overmind/bots/bedrock"
@@ -323,6 +324,30 @@ func TestDayCycleAdvances(t *testing.T) {
 	defer watch(t, w, w.Spawn(), 1)()
 	before := w.Time()
 	require.Eventually(t, func() bool { return w.Time() >= before+20 }, 10*time.Second, 100*time.Millisecond, "time stuck at %d", before)
+
+	// On the same server, as test servers are capped: the Nether and End are flat floors, but a player
+	// can still reach the Nether, by building and lighting a portal, as in survival. (The End needs an
+	// End portal, which nothing generates yet: no strongholds.)
+	t.Run("a lit Nether portal leads to the Nether", func(t *testing.T) {
+		require.Equal(t, world.Nether, w.PortalDestination(world.Nether).Dimension(), "the Overworld has no Nether to send players to")
+		require.Equal(t, world.End, w.PortalDestination(world.End).Dimension(), "the Overworld has no End")
+		c := lab(t, w)
+		var lit bool
+		run(t, w, func(tx *world.Tx) {
+			// A 4 x 5 obsidian frame standing on the lab floor, its inside 2 wide and 3 tall.
+			for x := 0; x < 4; x++ {
+				for y := 1; y <= 5; y++ {
+					if x == 0 || x == 3 || y == 1 || y == 5 {
+						tx.SetBlock(c.Add(cube.Pos{x, y, 0}), block.Obsidian{}, nil)
+					}
+				}
+			}
+			lit = portal.ActivateNetherPortal(tx, c.Add(cube.Pos{1, 2, 0})) // what flint and steel does
+		})
+		require.True(t, lit, "the frame did not light")
+		_, ok := blockAt(t, w, c.Add(cube.Pos{2, 4, 0})).(block.Portal)
+		require.True(t, ok, "no portal blocks in the lit frame")
+	})
 }
 
 func TestLeavesDecay(t *testing.T) {

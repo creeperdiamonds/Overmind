@@ -117,7 +117,8 @@ func tickDistance(set, view int) int {
 	return max(1, min(set, view-2))
 }
 
-// unusedGenerator makes the Nether and End a flat floor. Nothing sends players there yet.
+// unusedGenerator makes the Nether and End a flat floor. A player-built Nether portal reaches the
+// Nether; nothing generates an End portal yet.
 func unusedGenerator(dim world.Dimension) world.Generator {
 	if dim == world.Nether {
 		return generator.NewFlat(biome.NetherWastes{}, []world.Block{block.Netherrack{}, block.Bedrock{}})
