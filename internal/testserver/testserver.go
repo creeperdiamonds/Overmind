@@ -22,13 +22,31 @@ type Server struct {
 	BedrockAddr string
 	// JavaAddr is a reserved spare TCP port for the Java side.
 	JavaAddr string
+	// Config is what the server was started with.
+	Config config.Config
 }
 
 // Start runs a server with Xbox login off, spare ports and a temporary
 // world folder. It is closed when the test ends.
 func Start(t *testing.T) *Server {
 	t.Helper()
-	dir := t.TempDir()
+	return StartIn(t, t.TempDir(), nil)
+}
+
+// StartIn is Start with the world kept under dir, so a second call with the
+// same dir is a restart. tweak, if not nil, may change the settings first.
+func StartIn(t *testing.T, dir string, tweak func(*config.Config)) *Server {
+	t.Helper()
+	srv, err := TryStartIn(t, dir, tweak)
+	if err != nil {
+		t.Fatalf("start server: %v", err)
+	}
+	return srv
+}
+
+// TryStartIn is StartIn that returns the start error instead of failing the test.
+func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, error) {
+	t.Helper()
 	cfg := config.Default()
 	cfg.AuthEnabled = false
 	cfg.BedrockAddr = spareUDP(t)
@@ -36,12 +54,15 @@ func Start(t *testing.T) *Server {
 	cfg.WorldFolder = filepath.Join(dir, "world")
 	cfg.ResourcesFolder = filepath.Join(dir, "resources")
 
+	if tweak != nil {
+		tweak(&cfg)
+	}
 	srv, err := app.Start(cfg)
 	if err != nil {
-		t.Fatalf("start server: %v", err)
+		return nil, err
 	}
 	t.Cleanup(func() { _ = srv.Close() })
-	return &Server{Server: srv, BedrockAddr: cfg.BedrockAddr, JavaAddr: cfg.JavaAddr}
+	return &Server{Server: srv, BedrockAddr: cfg.BedrockAddr, JavaAddr: cfg.JavaAddr, Config: cfg}, nil
 }
 
 // PlayerByName reports whether a player with that name is online.

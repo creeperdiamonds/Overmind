@@ -26,6 +26,15 @@ type Config struct {
 	MaxPlayers int
 	// ResourcesFolder is where resource packs are read from.
 	ResourcesFolder string
+	// Seed is the world seed. Leave it out and a random one is chosen when the
+	// world is first made, then kept in the world folder. Any int64 is allowed.
+	Seed *int64
+	// RandomTickSpeed is how many blocks per sub chunk get a random tick each
+	// tick. 0 is Dragonfly's normal speed, 3.
+	RandomTickSpeed int
+	// ChunkWorkers is how many background workers generate and load chunks.
+	// 0 picks half the processors, at least 1.
+	ChunkWorkers int
 }
 
 // Default returns the settings used when a file leaves something out.
