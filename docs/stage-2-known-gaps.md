@@ -23,6 +23,13 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 
 - **Spawn inside a tree, flower or snow layer.** `DefaultSpawn` read heights only; seed 100's spawn was inside an oak trunk and seed 12345's inside a snow layer. It now checks the finished chunk (`spawnClear`).
 
+## Bedrock profile, until Task 4e
+
+The Bedrock profile runs Java's feature algorithms with Bedrock's file values where they differ. Task 4e replaces its placement with Bedrock's own, from the BDS study. Until then:
+
+- **Underwater magma moved in the Bedrock profile too.** Task 4d (763e823) places underwater magma as Java does: Y from the bottom to 256, at least 2 under `OCEAN_FLOOR_WG`, so in flooded caves as well as on the sea floor. The Bedrock profile shares that placement and keeps only Bedrock's attempts (18 to 30, BEDROCK-NOTES row 9), so its magma moved into flooded caves as well. Where Bedrock itself puts magma is not known.
+- **Bedrock's extra mangrove rate is not applied.** BEDROCK-NOTES row 9 gives Bedrock's mangrove trees as "25 + 2 + 2" a chunk; both profiles use Java's 25 (`trees_mangrove`).
+
 ## Bedrock comparisons (measured, not asserted)
 
 The owner chose Java's algorithms for carvers, trees and plants (ruling 23), and Bedrock's placement is hidden in its program. So these are measured against the Bedrock reference worlds by `tools/seedcheck` and listed here, and do not fail a test (ruling 28). What is asserted is that ours match Java: `TestPlacementRatesMatchJava` (trees by biome, kelp, seagrass, cave air) and the golden stage tests. Bedrock's shipped data differences stay in the Bedrock profile.
