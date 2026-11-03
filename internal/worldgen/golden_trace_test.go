@@ -133,6 +133,17 @@ func traceReplay(t *testing.T, dir string, scores map[string]*featureScore) {
 						}
 					}
 				}
+				if dbg := os.Getenv("OVERMIND_TRACE_DEBUG"); dbg != "" && dbg == fmt.Sprintf("%d,%d,%d,%s", seed, cx, cz, tf.name) {
+					var lines []string
+					for k := range got {
+						lines = append(lines, fmt.Sprintf("ours %5d %4d %5d %s", k[1], k[0], k[2], d.block(k[0], k[1], k[2]).name()))
+					}
+					for _, c := range tf.changes {
+						lines = append(lines, fmt.Sprintf("java %5d %4d %5d %s", c.y, c.x, c.z, c.new.name()))
+					}
+					sort.Strings(lines)
+					t.Logf("%s", strings.Join(lines, "\n"))
+				}
 				miss := 0
 				firstBad := ""
 				want := map[[3]int]bs{}
@@ -152,7 +163,7 @@ func traceReplay(t *testing.T, dir string, scores map[string]*featureScore) {
 						} else if now != old {
 							miss++
 							if firstBad == "" {
-								firstBad = fmt.Sprintf("%v: %s, Java left %s", k, now.name(), old.name())
+								firstBad = fmt.Sprintf("%v in %s: %s, Java left %s", k, biomeTableNames[d.biomeAt(k[0], k[1], k[2])], now.name(), old.name())
 							}
 						}
 					}

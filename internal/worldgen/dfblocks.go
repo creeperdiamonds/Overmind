@@ -1,26 +1,277 @@
 package worldgen
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// dfMap holds the Dragonfly runtime ID of each state.
+// The generator's states are translated to Dragonfly's blocks at the end of a chunk. A generator state
+// keeps properties Dragonfly has no field for, such as a leaf's distance, and those are dropped here.
+// Blocks Dragonfly has no type for get OwnBlock, so they can be broken.
+
+// OwnBlock is one state of a block Dragonfly lists but has no Go type for.
+type OwnBlock struct{ id uint16 }
+
+type ownState struct {
+	name  string
+	props map[string]any
+	solid bool
+}
+
 var (
-	dfOnce sync.Once
-	dfRT   [maxStates]uint32
-	dfDone [maxStates]bool
-	dfLock sync.RWMutex
+	ownStates []ownState
+	ownByJava = map[string]uint16{}
+	ownHash   = block.NextHash()
 )
 
-// dragonflyBlock gives the Dragonfly block of a state. Air stands in for what has no block: see the
-// list of gaps in NOTES.md.
+func addOwn(java, name string, props map[string]any, solid bool) {
+	if _, ok := ownByJava[java]; ok {
+		return
+	}
+	ownByJava[java] = uint16(len(ownStates))
+	ownStates = append(ownStates, ownState{name, props, solid})
+}
+
+// EncodeBlock ...
+func (o OwnBlock) EncodeBlock() (string, map[string]any) {
+	s := &ownStates[o.id]
+	return "minecraft:" + s.name, s.props
+}
+
+// Hash ...
+func (o OwnBlock) Hash() (uint64, uint64) { return ownHash, uint64(o.id) }
+
+// Model ...
+func (o OwnBlock) Model() world.BlockModel {
+	if ownStates[o.id].solid {
+		return model.Solid{}
+	}
+	return model.Empty{}
+}
+
+// BreakInfo gives every own block a short hand break, with no drop.
+func (o OwnBlock) BreakInfo() block.BreakInfo {
+	return block.BreakInfo{Hardness: 0.5, Effective: func(item.Tool) bool { return true }, Harvestable: func(item.Tool) bool { return true }, Drops: func(item.Tool, []item.Enchantment) []item.Stack { return nil }}
+}
+
+func boolWord(v int) string { return strconv.FormatBool(v != 0) }
+
+// ownBlocksList fills the table of own blocks. A Java state not listed is dropped to air: NOTES.md
+// lists the gaps.
+func ownBlocksList() {
+	plain := func(java, name string, solid bool) { addOwn(java, name, map[string]any{}, solid) }
+	plain("moss_block", "moss_block", true)
+	plain("powder_snow", "powder_snow", true)
+	plain("budding_amethyst", "budding_amethyst", true)
+	plain("spawner", "mob_spawner", true)
+	plain("bush", "bush", false)
+	plain("firefly_bush", "firefly_bush", false)
+	plain("short_dry_grass", "short_dry_grass", false)
+	plain("tall_dry_grass", "tall_dry_grass", false)
+	plain("azalea", "azalea", false)
+	plain("flowering_azalea", "flowering_azalea", false)
+	plain("brown_mushroom", "brown_mushroom", false)
+	plain("red_mushroom", "red_mushroom", false)
+	addOwn("sweet_berry_bush[age=3]", "sweet_berry_bush", map[string]any{"growth": int32(3)}, false)
+	addOwn("bee_nest[facing=south,honey_level=0]", "bee_nest", map[string]any{"direction": int32(0), "honey_level": int32(0)}, true)
+	for mask := range 64 {
+		down, up, north, south, west, east := mask&1, mask>>1&1, mask>>2&1, mask>>3&1, mask>>4&1, mask>>5&1
+		for _, water := range [2]string{"false", "true"} {
+			j := fmt.Sprintf("glow_lichen[down=%s,east=%s,north=%s,south=%s,up=%s,waterlogged=%s,west=%s]", boolWord(down), boolWord(east), boolWord(north), boolWord(south), boolWord(up), water, boolWord(west))
+			bits := int32(down) | int32(up)<<1 | int32(south)<<2 | int32(west)<<3 | int32(north)<<4 | int32(east)<<5
+			addOwn(j, "glow_lichen", map[string]any{"multi_face_direction_bits": bits}, false)
+		}
+	}
+	for _, name := range [2]string{"leaf_litter", "wildflowers"} {
+		key := "segment_amount"
+		if name == "wildflowers" {
+			key = "flower_amount"
+		}
+		for _, f := range [4]string{"north", "east", "south", "west"} {
+			for n := 1; n <= 4; n++ {
+				addOwn(fmt.Sprintf("%s[facing=%s,%s=%d]", name, f, key, n), name, map[string]any{"growth": int32(n - 1), "minecraft:cardinal_direction": f}, false)
+			}
+		}
+	}
+	for _, name := range [4]string{"small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud", "amethyst_cluster"} {
+		for _, f := range [6]string{"down", "up", "north", "south", "west", "east"} {
+			for _, w := range [2]string{"false", "true"} {
+				addOwn(fmt.Sprintf("%s[facing=%s,waterlogged=%s]", name, f, w), name, map[string]any{"minecraft:block_face": f}, false)
+			}
+		}
+	}
+	addOwn("tall_seagrass[half=lower]", "seagrass", map[string]any{"sea_grass_type": "double_bot"}, false)
+	addOwn("tall_seagrass[half=upper]", "seagrass", map[string]any{"sea_grass_type": "double_top"}, false)
+	bits := func(name string, up, north, south, east, west bool, stem bool) int32 {
+		if stem {
+			return 10
+		}
+		if !up {
+			return 0
+		}
+		switch {
+		case north && west:
+			return 1
+		case north && east:
+			return 3
+		case south && west:
+			return 7
+		case south && east:
+			return 9
+		case north:
+			return 2
+		case west:
+			return 4
+		case east:
+			return 6
+		case south:
+			return 8
+		}
+		return 5
+	}
+	for _, cap := range [2]string{"brown_mushroom_block", "red_mushroom_block"} {
+		for mask := range 64 {
+			down, east, north, south, up, west := mask&1 != 0, mask&2 != 0, mask&4 != 0, mask&8 != 0, mask&16 != 0, mask&32 != 0
+			j := fmt.Sprintf("%s[down=%v,east=%v,north=%v,south=%v,up=%v,west=%v]", cap, down, east, north, south, up, west)
+			v := bits(cap, up, north, south, east, west, false)
+			if !up && (north || south || east || west) {
+				switch {
+				case north:
+					v = 2
+				case south:
+					v = 8
+				case east:
+					v = 6
+				default:
+					v = 4
+				}
+			}
+			addOwn(j, cap, map[string]any{"huge_mushroom_bits": v}, true)
+		}
+	}
+	addOwn("mushroom_stem[down=false,east=true,north=true,south=true,up=false,west=true]", "brown_mushroom_block", map[string]any{"huge_mushroom_bits": int32(10)}, true)
+}
+
+var registerOwnBlocks = sync.OnceFunc(func() {
+	ownBlocksList()
+	seen := map[string]bool{}
+	for i := range ownStates {
+		s := &ownStates[i]
+		k := fmt.Sprint(s.name, s.props)
+		if seen[k] {
+			// Two Java states share a Bedrock state: the first registered answers for both.
+			continue
+		}
+		seen[k] = true
+		world.RegisterBlock(OwnBlock{uint16(i)})
+	}
+})
+
+func init() { registerOwnBlocks() }
+
+func propOf(name, key string) string {
+	i := strings.Index(name, key+"=")
+	if i < 0 {
+		return ""
+	}
+	v := name[i+len(key)+1:]
+	if j := strings.IndexAny(v, ",]"); j >= 0 {
+		v = v[:j]
+	}
+	return v
+}
+
+func cubeDir(s string) cube.Direction {
+	switch s {
+	case "south":
+		return cube.South
+	case "west":
+		return cube.West
+	case "east":
+		return cube.East
+	}
+	return cube.North
+}
+
+// Wood and leaf kinds by the state's name.
+var woods = map[string]block.WoodType{"oak": block.OakWood(), "spruce": block.SpruceWood(), "birch": block.BirchWood(), "jungle": block.JungleWood(),
+	"acacia": block.AcaciaWood(), "dark_oak": block.DarkOakWood(), "mangrove": block.MangroveWood(), "cherry": block.CherryWood(), "pale_oak": block.PaleOakWood()}
+
+var leafTypes = map[string]block.LeavesType{"oak": block.OakLeaves(), "spruce": block.SpruceLeaves(), "birch": block.BirchLeaves(), "jungle": block.JungleLeaves(),
+	"acacia": block.AcaciaLeaves(), "dark_oak": block.DarkOakLeaves(), "mangrove": block.MangroveLeaves(), "cherry": block.CherryLeaves(), "pale_oak": block.PaleOakLeaves()}
+
+var flowerTypes = map[string]block.FlowerType{"dandelion": block.Dandelion(), "poppy": block.Poppy(), "blue_orchid": block.BlueOrchid(), "allium": block.Allium(),
+	"azure_bluet": block.AzureBluet(), "red_tulip": block.RedTulip(), "orange_tulip": block.OrangeTulip(), "white_tulip": block.WhiteTulip(), "pink_tulip": block.PinkTulip(),
+	"oxeye_daisy": block.OxeyeDaisy(), "cornflower": block.Cornflower(), "lily_of_the_valley": block.LilyOfTheValley()}
+
+// dragonflyBlock gives the Dragonfly block of a state. Air stands in for what has no block.
 func dragonflyBlock(name string) world.Block {
-	switch stateBase(name) {
+	if id, ok := ownByJava[name]; ok {
+		return ownBlockOf(id)
+	}
+	base := stateBase(name)
+	if id, ok := ownByJava[base]; ok {
+		return ownBlockOf(id)
+	}
+	if w, ok := strings.CutSuffix(base, "_log"); ok {
+		if t, ok := woods[w]; ok {
+			a := cube.Y
+			switch propOf(name, "axis") {
+			case "x":
+				a = cube.X
+			case "z":
+				a = cube.Z
+			}
+			return block.Log{Wood: t, Axis: a}
+		}
+	}
+	if w, ok := strings.CutSuffix(base, "_leaves"); ok {
+		if t, ok := leafTypes[w]; ok {
+			return block.Leaves{Type: t}
+		}
+	}
+	if t, ok := flowerTypes[base]; ok {
+		return block.Flower{Type: t}
+	}
+	ore := func(deep bool) block.OreType {
+		if deep {
+			return block.DeepslateOre()
+		}
+		return block.StoneOre()
+	}
+	if o, ok := strings.CutSuffix(base, "_ore"); ok {
+		deep := strings.HasPrefix(o, "deepslate_")
+		o = strings.TrimPrefix(o, "deepslate_")
+		switch o {
+		case "coal":
+			return block.CoalOre{Type: ore(deep)}
+		case "iron":
+			return block.IronOre{Type: ore(deep)}
+		case "copper":
+			return block.CopperOre{Type: ore(deep)}
+		case "gold":
+			return block.GoldOre{Type: ore(deep)}
+		case "redstone":
+			return block.RedstoneOre{Type: ore(deep)}
+		case "lapis":
+			return block.LapisOre{Type: ore(deep)}
+		case "diamond":
+			return block.DiamondOre{Type: ore(deep)}
+		case "emerald":
+			return block.EmeraldOre{Type: ore(deep)}
+		}
+	}
+	upper := propOf(name, "half") == "upper"
+	switch base {
 	case "stone":
 		return block.Stone{}
 	case "water":
@@ -55,22 +306,26 @@ func dragonflyBlock(name string) world.Block {
 		return block.Sandstone{Red: true}
 	case "calcite":
 		return block.Calcite{}
-	case "snow_block", "powder_snow":
+	case "snow_block":
 		return block.Snow{}
 	case "ice":
 		return block.Ice{}
 	case "packed_ice":
 		return block.PackedIce{}
+	case "blue_ice":
+		return block.BlueIce{}
 	case "granite":
 		return block.Granite{}
+	case "diorite":
+		return block.Diorite{}
+	case "andesite":
+		return block.Andesite{}
 	case "tuff":
 		return block.Tuff{}
-	case "copper_ore":
-		return block.CopperOre{Type: block.StoneOre()}
+	case "clay":
+		return block.Clay{}
 	case "raw_copper_block":
 		return block.RawCopper{}
-	case "deepslate_iron_ore":
-		return block.IronOre{Type: block.DeepslateOre()}
 	case "raw_iron_block":
 		return block.RawIron{}
 	case "terracotta":
@@ -87,9 +342,103 @@ func dragonflyBlock(name string) world.Block {
 		return block.StainedTerracotta{Colour: item.ColourWhite()}
 	case "light_gray_terracotta":
 		return block.StainedTerracotta{Colour: item.ColourLightGrey()}
+	case "infested_stone":
+		return block.InfestedStone{}
+	case "infested_deepslate":
+		return block.InfestedDeepslate{}
+	case "amethyst_block":
+		return block.Amethyst{}
+	case "smooth_basalt":
+		return block.SmoothBasalt{}
+	case "dripstone_block":
+		return block.Dripstone{}
+	case "magma_block":
+		return block.Magma{}
+	case "cobblestone":
+		return block.Cobblestone{}
+	case "mossy_cobblestone":
+		return block.Cobblestone{Mossy: true}
+	case "chest":
+		return block.Chest{Facing: cubeDir(propOf(name, "facing"))}
+	case "melon":
+		return block.Melon{}
+	case "pumpkin":
+		return block.Pumpkin{Facing: cube.South}
+	case "short_grass":
+		return block.ShortGrass{}
+	case "fern":
+		return block.Fern{}
+	case "dead_bush":
+		return block.DeadBush{}
+	case "tall_grass":
+		return block.DoubleTallGrass{Type: block.NormalDoubleTallGrass(), UpperPart: upper}
+	case "large_fern":
+		return block.DoubleTallGrass{Type: block.FernDoubleTallGrass(), UpperPart: upper}
+	case "sunflower":
+		return block.DoubleFlower{Type: block.Sunflower(), UpperPart: upper}
+	case "lilac":
+		return block.DoubleFlower{Type: block.Lilac(), UpperPart: upper}
+	case "rose_bush":
+		return block.DoubleFlower{Type: block.RoseBush(), UpperPart: upper}
+	case "peony":
+		return block.DoubleFlower{Type: block.Peony(), UpperPart: upper}
+	case "sugar_cane":
+		return block.SugarCane{}
+	case "cactus":
+		return block.Cactus{}
+	case "lily_pad":
+		return block.LilyPad{}
+	case "kelp":
+		return block.Kelp{Age: 25}
+	case "kelp_plant":
+		return block.Kelp{Age: 25}
+	case "seagrass":
+		return Seagrass{}
+	case "snow":
+		return SnowLayer{}
+	case "vine":
+		return block.Vines{NorthDirection: propOf(name, "north") == "true", EastDirection: propOf(name, "east") == "true",
+			SouthDirection: propOf(name, "south") == "true", WestDirection: propOf(name, "west") == "true"}
+	case "cocoa":
+		age, _ := strconv.Atoi(propOf(name, "age"))
+		return block.CocoaBean{Facing: cubeDir(propOf(name, "facing")), Age: age}
+	case "sea_pickle":
+		n, _ := strconv.Atoi(propOf(name, "pickles"))
+		return block.SeaPickle{AdditionalCount: max(n-1, 0)}
+	case "bamboo":
+		leaf := block.BambooSizeNoLeaves()
+		switch propOf(name, "leaves") {
+		case "small":
+			leaf = block.BambooSizeSmallLeaves()
+		case "large":
+			leaf = block.BambooSizeLargeLeaves()
+		}
+		return block.Bamboo{Thick: true, LeafSize: leaf, Ready: propOf(name, "stage") == "1"}
+	case "moss_carpet":
+		return block.MossCarpet{}
+	case "spore_blossom":
+		return block.SporeBlossom{}
 	}
 	return block.Air{}
 }
+
+func ownBlockOf(id uint16) world.Block {
+	s := &ownStates[id]
+	for i := range ownStates {
+		o := &ownStates[i]
+		if o.name == s.name && fmt.Sprint(o.props) == fmt.Sprint(s.props) {
+			return OwnBlock{uint16(i)}
+		}
+	}
+	return OwnBlock{id}
+}
+
+// dfMap holds the Dragonfly runtime ID of each state, filled on first use.
+var (
+	dfRT   [maxStates]uint32
+	dfDone [maxStates]bool
+	dfLock sync.RWMutex
+)
 
 // runtimeOf finds a state's Dragonfly runtime ID.
 func runtimeOf(s bs) uint32 {
@@ -99,6 +448,7 @@ func runtimeOf(s bs) uint32 {
 	if done {
 		return id
 	}
+	world.DefaultBlockRegistry.Finalize()
 	id = world.BlockRuntimeID(dragonflyBlock(s.name()))
 	dfLock.Lock()
 	dfRT[s], dfDone[s] = id, true
@@ -107,12 +457,17 @@ func runtimeOf(s bs) uint32 {
 }
 
 // writeChunk puts a base's blocks into a Dragonfly chunk.
-func (g *Generator) writeChunk(c *chunk.Chunk, b *baseChunk) {
-	air := bs(0)
-	for i, s := range b.b {
-		if s == air {
+func (g *Generator) writeChunk(c *chunk.Chunk, b *baseChunk) { writeCells(c, &b.b) }
+
+func writeCells(c *chunk.Chunk, cells *[chunkCells]bs) {
+	last, lastID := bs(0), uint32(0)
+	for i, s := range cells {
+		if s == 0 {
 			continue
 		}
-		c.SetBlock(uint8(i&15), int16(i>>8)+minY, uint8(i>>4&15), 0, runtimeOf(s))
+		if s != last {
+			last, lastID = s, runtimeOf(s)
+		}
+		c.SetBlock(uint8(i&15), int16(i>>8)+minY, uint8(i>>4&15), 0, lastID)
 	}
 }

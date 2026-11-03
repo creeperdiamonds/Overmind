@@ -9,75 +9,73 @@ import (
 
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/biome"
-	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// def pairs a Dragonfly biome with the surface it gets.
+// def is a Dragonfly biome.
 type def struct {
 	world.Biome
-	surface surfaceKind
 }
 
 // Every biome the Java 26.1 Overworld generates has a Dragonfly biome. Two have other
 // names there: Java's sparse jungle is JungleEdge and wooded badlands is
 // WoodedBadlandsPlateau.
 var (
-	plains          = def{biome.Plains{}, surfGrass}
-	sunflower       = def{biome.SunflowerPlains{}, surfGrass}
-	forest          = def{biome.Forest{}, surfGrass}
-	flowerForest    = def{biome.FlowerForest{}, surfGrass}
-	birchForest     = def{biome.BirchForest{}, surfGrass}
-	oldBirch        = def{biome.OldGrowthBirchForest{}, surfGrass}
-	darkForest      = def{biome.DarkForest{}, surfGrass}
-	paleGarden      = def{biome.PaleGarden{}, surfGrass}
-	taiga           = def{biome.Taiga{}, surfGrass}
-	oldSpruce       = def{biome.OldGrowthSpruceTaiga{}, surfOldGrowth}
-	oldPine         = def{biome.OldGrowthPineTaiga{}, surfOldGrowth}
-	snowyTaiga      = def{biome.SnowyTaiga{}, surfGrass}
-	snowyPlains     = def{biome.SnowyPlains{}, surfGrass}
-	iceSpikes       = def{biome.IceSpikes{}, surfSnow}
-	desert          = def{biome.Desert{}, surfDesert}
-	savanna         = def{biome.Savanna{}, surfGrass}
-	savannaPlateau  = def{biome.SavannaPlateau{}, surfGrass}
-	windSavanna     = def{biome.WindsweptSavanna{}, surfWindSavanna}
-	jungle          = def{biome.Jungle{}, surfGrass}
-	sparseJungle    = def{biome.JungleEdge{}, surfGrass}
-	bambooJungle    = def{biome.BambooJungle{}, surfGrass}
-	swamp           = def{biome.Swamp{}, surfSwamp}
-	mangrove        = def{biome.MangroveSwamp{}, surfMangrove}
-	badlands        = def{biome.Badlands{}, surfBadlands}
-	erodedBadlands  = def{biome.ErodedBadlands{}, surfEroded}
-	woodedBadlands  = def{biome.WoodedBadlandsPlateau{}, surfWooded}
-	meadow          = def{biome.Meadow{}, surfGrass}
-	cherryGrove     = def{biome.CherryGrove{}, surfGrass}
-	grove           = def{biome.Grove{}, surfGrove}
-	snowySlopes     = def{biome.SnowySlopes{}, surfSnowySlopes}
-	jaggedPeaks     = def{biome.JaggedPeaks{}, surfJagged}
-	frozenPeaks     = def{biome.FrozenPeaks{}, surfFrozenPeaks}
-	stonyPeaks      = def{biome.StonyPeaks{}, surfStonyPeaks}
-	windsweptHills  = def{biome.WindsweptHills{}, surfWindswept}
-	windsweptForest = def{biome.WindsweptForest{}, surfWindswept}
-	gravellyHills   = def{biome.WindsweptGravellyHills{}, surfGravelly}
-	beach           = def{biome.Beach{}, surfBeach}
-	snowyBeach      = def{biome.SnowyBeach{}, surfBeach}
-	stonyShore      = def{biome.StonyShore{}, surfShore}
-	river           = def{biome.River{}, surfGrass}
-	frozenRiver     = def{biome.FrozenRiver{}, surfGrass}
-	mushroom        = def{biome.MushroomFields{}, surfMycelium}
+	plains          = def{biome.Plains{}}
+	sunflower       = def{biome.SunflowerPlains{}}
+	forest          = def{biome.Forest{}}
+	flowerForest    = def{biome.FlowerForest{}}
+	birchForest     = def{biome.BirchForest{}}
+	oldBirch        = def{biome.OldGrowthBirchForest{}}
+	darkForest      = def{biome.DarkForest{}}
+	paleGarden      = def{biome.PaleGarden{}}
+	taiga           = def{biome.Taiga{}}
+	oldSpruce       = def{biome.OldGrowthSpruceTaiga{}}
+	oldPine         = def{biome.OldGrowthPineTaiga{}}
+	snowyTaiga      = def{biome.SnowyTaiga{}}
+	snowyPlains     = def{biome.SnowyPlains{}}
+	iceSpikes       = def{biome.IceSpikes{}}
+	desert          = def{biome.Desert{}}
+	savanna         = def{biome.Savanna{}}
+	savannaPlateau  = def{biome.SavannaPlateau{}}
+	windSavanna     = def{biome.WindsweptSavanna{}}
+	jungle          = def{biome.Jungle{}}
+	sparseJungle    = def{biome.JungleEdge{}}
+	bambooJungle    = def{biome.BambooJungle{}}
+	swamp           = def{biome.Swamp{}}
+	mangrove        = def{biome.MangroveSwamp{}}
+	badlands        = def{biome.Badlands{}}
+	erodedBadlands  = def{biome.ErodedBadlands{}}
+	woodedBadlands  = def{biome.WoodedBadlandsPlateau{}}
+	meadow          = def{biome.Meadow{}}
+	cherryGrove     = def{biome.CherryGrove{}}
+	grove           = def{biome.Grove{}}
+	snowySlopes     = def{biome.SnowySlopes{}}
+	jaggedPeaks     = def{biome.JaggedPeaks{}}
+	frozenPeaks     = def{biome.FrozenPeaks{}}
+	stonyPeaks      = def{biome.StonyPeaks{}}
+	windsweptHills  = def{biome.WindsweptHills{}}
+	windsweptForest = def{biome.WindsweptForest{}}
+	gravellyHills   = def{biome.WindsweptGravellyHills{}}
+	beach           = def{biome.Beach{}}
+	snowyBeach      = def{biome.SnowyBeach{}}
+	stonyShore      = def{biome.StonyShore{}}
+	river           = def{biome.River{}}
+	frozenRiver     = def{biome.FrozenRiver{}}
+	mushroom        = def{biome.MushroomFields{}}
 
-	dripstoneCaves = def{biome.DripstoneCaves{}, surfNone}
-	lushCaves      = def{biome.LushCaves{}, surfNone}
-	deepDark       = def{biome.DeepDark{}, surfNone}
+	dripstoneCaves = def{biome.DripstoneCaves{}}
+	lushCaves      = def{biome.LushCaves{}}
+	deepDark       = def{biome.DeepDark{}}
 
-	frozenOcean       = def{biome.FrozenOcean{}, surfFrozenOcean}
-	coldOcean         = def{biome.ColdOcean{}, surfOcean}
-	ocean             = def{biome.Ocean{}, surfOcean}
-	lukewarmOcean     = def{biome.LukewarmOcean{}, surfWarmFloor}
-	warmOcean         = def{biome.WarmOcean{}, surfBeach}
-	deepFrozenOcean   = def{biome.DeepFrozenOcean{}, surfFrozenOcean}
-	deepColdOcean     = def{biome.DeepColdOcean{}, surfOcean}
-	deepOcean         = def{biome.DeepOcean{}, surfOcean}
-	deepLukewarmOcean = def{biome.DeepLukewarmOcean{}, surfWarmFloor}
+	frozenOcean       = def{biome.FrozenOcean{}}
+	coldOcean         = def{biome.ColdOcean{}}
+	ocean             = def{biome.Ocean{}}
+	lukewarmOcean     = def{biome.LukewarmOcean{}}
+	warmOcean         = def{biome.WarmOcean{}}
+	deepFrozenOcean   = def{biome.DeepFrozenOcean{}}
+	deepColdOcean     = def{biome.DeepColdOcean{}}
+	deepOcean         = def{biome.DeepOcean{}}
+	deepLukewarmOcean = def{biome.DeepLukewarmOcean{}}
 )
 
 // biomeDefs maps the parameter table's names to our biomes. The table has no deep warm ocean, though
@@ -388,51 +386,4 @@ func (g *Generator) zoomQuart(x, y, z int) (qx, qy, qz int) {
 		}
 	}
 	return px + (best>>2)&1, py + (best>>1)&1, pz + best&1
-}
-
-// heights fills a column's biome ids from the bottom up, with a lookup per quart until the rest are
-// known. Above the ground (depth under zero), every box's depth term grows as depth falls, by the same
-// for a box whose range starts at 0 and by more for any other. So once a lookup above the ground lands
-// on a box starting at 0, it stays the nearest all the way up, and the search would return that same
-// leaf: the first nearest leaf in tree order is unchanged, ties included.
-func (c *biomeColumn) heights(ids *[(maxY - minY + 1) / 4]uint32) {
-	t := c.target
-	n := c.sky
-	for i := range ids {
-		d := quantize(depthAt(minY+i*4, c.offset))
-		t[biomeTargetDepth] = d
-		n = nearestBiomeFrom(&t, n)
-		id := uint32(n.def().EncodeBiome())
-		ids[i] = id
-		if d < 0 && n.bounds[biomeTargetDepth][0] == 0 {
-			for j := i + 1; j < len(ids); j++ {
-				ids[j] = id
-			}
-			return
-		}
-	}
-}
-
-// fillBiomes stores a chunk's biomes, one 4x4x4 cell at a time. It fills cols so the
-// surface pass uses the same biomes.
-func (g *Generator) fillBiomes(c *chunk.Chunk, originX, originZ int, cols *[4][4]biomeColumn) {
-	var ids [4][4][(maxY - minY + 1) / 4]uint32
-	for i := range cols {
-		for j := range cols[i] {
-			cols[i][j] = g.biomeColumnAt(originX+i*4, originZ+j*4)
-			cols[i][j].heights(&ids[i][j])
-		}
-	}
-	for y := minY; y <= maxY; y += 16 {
-		var section [4][4][4]uint32
-		base := (y - minY) / 4
-		for i := range section {
-			for j := range section[i] {
-				for k := range section[i][j] {
-					section[i][j][k] = ids[i][k][base+j]
-				}
-			}
-		}
-		c.SetBiomeSection(int16(y), section)
-	}
 }

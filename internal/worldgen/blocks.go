@@ -7,7 +7,47 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 )
 
-// blocks holds the runtime IDs of the blocks the generator places, looked up once.
+// treeKind names a wood; veinBlock names an ore or rock. They index the table tests read.
+type treeKind uint8
+
+const (
+	treeNone treeKind = iota
+	treeOak
+	treeBirch
+	treeSpruce
+	treePine
+	treeDarkOak
+	treeJungle
+	treeAcacia
+	treeCherry
+	treePaleOak
+	treeMangrove
+	numTreeKinds
+)
+
+type veinBlock uint8
+
+const (
+	veinCoal veinBlock = iota
+	veinIron
+	veinCopper
+	veinGold
+	veinRedstone
+	veinLapis
+	veinDiamond
+	veinEmerald
+	veinInfested
+	veinGranite
+	veinDiorite
+	veinAndesite
+	veinTuff
+	veinDirt
+	veinGravel
+	veinClay
+	numVeinBlocks
+)
+
+// blocks holds the runtime IDs that tests and GroundBlocks compare with, looked up once.
 type blocks struct {
 	air, stone, water                      uint32
 	grass, dirt, podzol, mycelium          uint32
@@ -18,8 +58,7 @@ type blocks struct {
 	coarseDirt, packedIce, ice, calcite    uint32
 	mud, rawIron, rawCopper                uint32
 	amethyst, smoothBasalt                 uint32
-	// veins holds the blocks the vein pass places, by veinBlock: the stone variant first,
-	// then the deepslate variant. The rock patches have the same block in both.
+	// veins holds ore and rock blocks by veinBlock: the stone variant first, then the deepslate one.
 	veins [numVeinBlocks][2]uint32
 	// terracotta holds the badlands band colours, from the plain block to the stained ones.
 	terracotta []uint32
@@ -68,6 +107,7 @@ func (b *blocks) holdsWaterPlant(id uint32) bool {
 // Finalize is safe to repeat, but it does stop later RegisterBlock calls.
 func newBlocks() blocks {
 	registerPlantBlocks()
+	registerOwnBlocks()
 	world.DefaultBlockRegistry.Finalize()
 	id := func(b world.Block) uint32 { return world.BlockRuntimeID(b) }
 	stained := func(c item.Colour) uint32 { return id(block.StainedTerracotta{Colour: c}) }

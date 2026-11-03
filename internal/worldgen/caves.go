@@ -431,8 +431,7 @@ func floorDiv(a, b int) int {
 	return q
 }
 
-// columnWalk works out one column from the top down without a chunk, by the same rules as the chunk
-// pass. Grid points are worked out only when reached. It lives in a chunk's scratch.
+// columnWalk works out one column's noise stage from the top down without a chunk. Grid points are worked out only when reached. It lives in a chunk's scratch.
 type columnWalk struct {
 	g            *Generator
 	x, z         int
@@ -440,11 +439,6 @@ type columnWalk struct {
 	fx, fz       float64
 	corners      [2][2]*walkCorner
 	aq           *aquiferCache
-	kind         surfaceKind
-	ext          columnExtension
-	puddle       bool
-	// topUnderWater says whether the top found by the last call of top has water directly above.
-	topUnderWater bool
 }
 
 // walkCorner is one grid column a walk has read. Neighbouring walks share them, and an entry is a pure
@@ -489,10 +483,6 @@ func (g *Generator) startWalk(s *chunkScratch, x, z int) *columnWalk {
 			w.corners[i][j] = s.cornerAt(g, w.gridX+i*cellXZ, w.gridZ+j*cellXZ)
 		}
 	}
-	col := g.biomeColumnAt(x, z)
-	w.kind = col.surface.surface
-	w.ext = g.extensionAt(w.kind, x, z)
-	w.puddle = g.puddled(w.kind, x, z)
 	return w
 }
 
@@ -576,81 +566,6 @@ func (w *columnWalk) rawTops() (solid, nonAir int) {
 	return solid, nonAir
 }
 
-// top finds the highest block that is not air or water, by the order of the chunk pass:
-// noise, sealing of hanging water, extensions, puddles, carvers, lakes. carved may be nil.
-func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
-	g := w.g
-	noiseSolid := false // A solid noise block has been met above.
-	prevWater := false  // The block above is water in the noise pass.
-	aboveWater := false // The block above is water in the final column.
-	w.topUnderWater = false
-	// final decides a block's final kind from what the noise pass left there.
-	final := func(y int, k fillKind) fillKind {
-		if !noiseSolid && y <= w.ext.top && (!w.ext.iceberg || y >= w.ext.bottom) && k != fillSolid {
-			k = fillSolid // An extension block; it is not carved.
-		} else if k == fillSolid {
-			first := !noiseSolid
-			noiseSolid = true
-			if first && y == puddleY && w.puddle && w.ext.top < minY {
-				return fillWater
-			}
-			if carved != nil && carved.has(y) && y > minY {
-				f := g.carveFill(w.aq, w.x, y, w.z)
-				if f != fillSolid && !(f == fillAir && aboveWater) {
-					return f
-				}
-			}
-		}
-		if k == fillSolid {
-			switch lakeAt(lakes, w.x, y, w.z) {
-			case lakeAir:
-				if !aboveWater {
-					return fillAir
-				}
-			case lakeLava:
-				return fillLava
-			}
-		}
-		return k
-	}
-	for layer := columnNodes - 2; layer >= 0; layer-- {
-		baseY := minY + layer*cellY
-		if w.ext.top < baseY && baseY >= seaFluidTop && w.layerCertainAir(layer) {
-			prevWater = false
-			continue
-		}
-		var blend columnBlend
-		certain := w.layerCertainAir(layer)
-		if !certain {
-			blend = w.layerBlendAt(layer)
-		}
-		for dy := cellY - 1; dy >= 0; dy-- {
-			y := baseY + dy
-			var kind fillKind
-			if certain {
-				kind = globalFluid(y).at(y)
-			} else {
-				kind = w.rawKind(&blend, y, dy)
-			}
-			if kind == fillAir && prevWater {
-				// The water above is sealed with stone, as in the chunk pass.
-				if f := final(y+1, fillSolid); f != fillAir && f != fillWater {
-					w.topUnderWater = aboveWater
-					return y + 1
-				}
-			}
-			prevWater = kind == fillWater
-			f := final(y, kind)
-			if f != fillAir && f != fillWater {
-				w.topUnderWater = aboveWater
-				return y
-			}
-			aboveWater = f == fillWater
-		}
-	}
-	return minY - 1
-}
-
 // noiseHeight is the top of the solid ground at the noise stage, without any later pass. It is what the
 // study measured, and much cheaper than SurfaceHeight because no tunnels are walked.
 func (g *Generator) noiseHeight(x, z int) int {
@@ -663,3 +578,5 @@ func (g *Generator) noiseHeight(x, z int) int {
 
 // NoiseHeight is noiseHeight for tools that draw maps.
 func (g *Generator) NoiseHeight(x, z int) int { return g.noiseHeight(x, z) }
+
+func cubed(v float64) float64 { return float64(float64(v*v) * v) }

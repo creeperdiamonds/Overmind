@@ -24,6 +24,7 @@ const (
 // after New, so any number of workers can share it.
 type Generator struct {
 	seed       int64
+	reuseBases bool
 	zoomSeed   int64
 	climate    climateNoises
 	caves      caveNoises
@@ -33,42 +34,32 @@ type Generator struct {
 	sf         surfaceFactories
 	oreFac     seedFactory
 	profile    *Profile
-	runtime    []uint32 // Dragonfly's runtime ID of each state, grown as states appear.
-	// bandTable is the world's terracotta band pattern.
-	bandTable [bandTableSize]uint8
-	// Seeds for our own position-based chances.
-	strataSeed, veinSeed, diskSeed, carveSeed, lakeSeed, featureSeed, treeSeed uint64
 }
+
+// defaultReuseBases is what a new generator starts with. Tests turn it on, for speed: they generate
+// many chunks, and TestReuseBasesChangesNothing holds it to changing no result.
+var defaultReuseBases = false
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
 func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
 
 // NewWithProfile returns a Generator for a seed and a placement profile.
 func NewWithProfile(seed int64, profile *Profile) *Generator {
-	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
 	root := xoroFromSeed(seed)
 	w := root.forkFactory()
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
 	return &Generator{
-		seed:        seed,
-		sf:          newSurfaceFactories(w),
-		oreFac:      ore.forkFactory(),
-		profile:     profile,
-		zoomSeed:    biomeZoomSeed(seed),
-		climate:     newClimateNoises(w),
-		caves:       newCaveNoises(w),
-		aquiferFac:  aquifer.forkFactory(),
-		surface:     newSurfaceNoises(w),
-		blocks:      newBlocks(),
-		bandTable:   newBandTable(sub(7)),
-		strataSeed:  sub(20),
-		veinSeed:    sub(21),
-		diskSeed:    sub(23),
-		carveSeed:   sub(24),
-		lakeSeed:    sub(25),
-		featureSeed: sub(26),
-		treeSeed:    sub(27),
+		seed:       seed,
+		sf:         newSurfaceFactories(w),
+		oreFac:     ore.forkFactory(),
+		profile:    profile,
+		zoomSeed:   biomeZoomSeed(seed),
+		climate:    newClimateNoises(w),
+		caves:      newCaveNoises(w),
+		aquiferFac: aquifer.forkFactory(),
+		surface:    newSurfaceNoises(w),
+		blocks:     newBlocks(),
 	}
 }
 
@@ -84,14 +75,14 @@ type chunkScratch struct {
 	walkAqReady bool
 	walk        columnWalk
 	walkCorners [walkCornerSlots]walkCorner
-	carved      [carvedSize][carvedSize]carveMask // The chunk and treeMargin columns around it.
-	lakes       []lake
 	quarts      [quartSlots]quartColumn
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
 	deco        decoration
 	bases       [liveSpan * liveSpan]*baseChunk
+	final       [chunkCells]bs
+	kept        []keptCell
 }
 
 const cellsAcross = 16 / cellXZ
@@ -111,39 +102,74 @@ func (s *chunkScratch) startColumnOnly(g *Generator) {
 
 var scratchPool = sync.Pool{New: func() any { return new(chunkScratch) }}
 
-// GenerateChunk builds a chunk. Noise and surface follow Mojang's algorithms; what comes after is
-// still being moved over. Everything is worked out from the seed and the chunk position.
+// GenerateChunk builds a chunk: noise, surface and carvers for it and its neighbours, then the changes
+// of the nine source chunks that can reach it, each decorated alone, merged in row-major order. It
+// reads no real neighbour and keeps nothing about a chunk after it returns, unless the generator was
+// told to reuse bases (SetReuseBases), which changes speed and never a result.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
-	originX, originZ := int(pos[0])*16, int(pos[1])*16
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	b := &s.base
-	g.buildBase(b, s, int(pos[0]), int(pos[1]), stageCarvers, 0, 15, 0, 15)
-	g.writeChunk(c, b)
-	var top [16][16]int16
-	for x := range 16 {
-		for z := range 16 {
-			top[x][z] = b.wgFloor[z<<4|x] - 1
+	cx, cz := int(pos[0]), int(pos[1])
+	if !g.reuseBases {
+		s.forgetBases()
+	}
+	d := s.startDecoration(g, cx, cz)
+	here := d.chunkAt(cx, cz)
+	final := &s.final
+	*final = here.b.b
+	for sx := cx - 1; sx <= cx+1; sx++ {
+		for sz := cz - 1; sz <= cz+1; sz++ {
+			d.runSource(sx, sz)
+			s.keepChanges(d, here, final)
+			d.rollback()
 		}
 	}
-	noiseTop := top
+	writeCells(c, final)
+	g.storeBiomes(c, s, cx, cz)
+}
 
-	var cols [4][4]biomeColumn
-	g.fillBiomes(c, originX, originZ, &cols)
-	g.placeDisks(c, int(pos[0]), int(pos[1]), &top)
-	highest := minY
-	for x := range top {
-		for z := range top[x] {
-			highest = max(highest, int(top[x][z]))
+// keepChanges records a source's changes that land in the chunk being made.
+func (s *chunkScratch) keepChanges(d *decoration, here *liveChunk, final *[chunkCells]bs) {
+	s.kept = s.kept[:0]
+	me := int32((liveSpan/2)*liveSpan + liveSpan/2)
+	for _, e := range d.log {
+		if e.chunk == me {
+			s.kept = append(s.kept, keptCell{e.cell, here.b.b[e.cell]})
 		}
 	}
-	_ = noiseTop
-	g.applyLakes(c, s, originX, originZ, highest)
-	g.placeGeodes(c, int(pos[0]), int(pos[1]))
-	g.placeVeins(c, pos, highest, true)
-	g.placeVeins(c, pos, highest, false)
-	g.placeSprings(c, int(pos[0]), int(pos[1]))
-	g.decorate(c, s, originX, originZ, &top, &cols)
+	for i := len(d.log) - 1; i >= 0; i-- {
+		e := d.log[i]
+		d.live[e.chunk].b.b[e.cell] = e.old
+	}
+	d.log = d.log[:0]
+	for _, k := range s.kept {
+		if here.b.b[k.cell] != k.now {
+			final[k.cell] = k.now
+		}
+	}
+}
+
+// keptCell is a cell's value after a source ran.
+type keptCell struct {
+	cell int32
+	now  bs
+}
+
+// storeBiomes writes the chunk's quart biomes, from the same lookups the passes read.
+func (g *Generator) storeBiomes(c *chunk.Chunk, s *chunkScratch, cx, cz int) {
+	for y := minY; y <= maxY; y += 16 {
+		var section [4][4][4]uint32
+		base := (y - minY) / 4
+		for i := range section {
+			for k := range section[i][0] {
+				q := s.quartColumnAt(g, cx*4+i, cz*4+k)
+				for j := range section[i] {
+					section[i][j][k] = uint32(biomeRowDefs[q.ids[base+j]].EncodeBiome())
+				}
+			}
+		}
+		c.SetBiomeSection(int16(y), section)
+	}
 }
 
 // Kinds of noise cell, worked out once for all the block columns that share it.
@@ -353,8 +379,18 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	return cube.Pos{0, max(g.SurfaceHeight(0, 0), SeaLevel) + 1, 0}
 }
 
-// baseFor gives a chunk's carvers stage, in a slot of the working set, built on first use.
-func (s *chunkScratch) baseFor(g *Generator, slot, cx, cz int) *baseChunk {
+// forgetBases marks every kept base as unusable.
+func (s *chunkScratch) forgetBases() {
+	for _, b := range s.bases {
+		if b != nil {
+			b.whole = false
+		}
+	}
+}
+
+// baseFor gives a chunk's carvers stage, in a slot by its position, built on first use.
+func (s *chunkScratch) baseFor(g *Generator, _, cx, cz int) *baseChunk {
+	slot := floorMod(cx, liveSpan)*liveSpan + floorMod(cz, liveSpan)
 	b := s.bases[slot]
 	if b == nil {
 		b = new(baseChunk)
@@ -366,6 +402,13 @@ func (s *chunkScratch) baseFor(g *Generator, slot, cx, cz int) *baseChunk {
 	}
 	return b
 }
+
+func floorMod(a, b int) int { return a - floorDiv(a, b)*b }
+
+// SetReuseBases lets workers keep neighbour bases between chunks, in pooled scratch. A base is a pure
+// function of the seed and the chunk, so this changes speed and never a result; but it is per-chunk data
+// kept after a chunk is made, so it is off unless the owner asks for it.
+func (g *Generator) SetReuseBases(on bool) { g.reuseBases = on }
 
 // startDecoration readies the working set around a chunk.
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {

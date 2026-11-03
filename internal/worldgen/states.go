@@ -184,6 +184,8 @@ func (s bs) hasFluid() bool { return stateFlag[s]&(fWater|fLava) != 0 }
 // tagged says whether a state's block is in a tag.
 func (s bs) tagged(tag uint32) bool { return blockTag[stateBlock[s]]&tag != 0 }
 
+func (s bs) block() uint16 { return stateBlock[s] }
+
 // name is the state's text, as the fixtures print it, without the namespace.
 func (s bs) name() string { return stateName[s] }
 

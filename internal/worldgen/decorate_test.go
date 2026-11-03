@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/item"
@@ -22,6 +21,7 @@ import (
 // blockNames maps every runtime ID to its block name and pillar axis, so these tests read blocks
 // by what a client would call them and not through the generator's own table.
 var blockNames = sync.OnceValue(func() []struct{ name, axis string } {
+	registerOwnBlocks()
 	world.DefaultBlockRegistry.Finalize()
 	out := make([]struct{ name, axis string }, world.DefaultBlockRegistry.BlockCount())
 	for i := range out {
@@ -545,8 +545,9 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 						}
 						total++
 						// The layer rests on the block below, so that is the height the pass asks about.
-						if b := g.surfaceDefAt(wx, wz); !coldAt(b, int(y)) {
-							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, b.String(), b.Temperature())
+						sc := new(chunkScratch)
+						if b := sc.blockBiome(g, wx, int(y), wz); !coldEnough(b, wx, int(y), wz) {
+							t.Fatalf("seed %d: snow at %d %d %d in %s (temperature %.2f)", seed, wx, y, wz, biomeTableNames[b], biomeTemperature(b, wx, int(y), wz))
 						}
 					}
 				}
@@ -715,74 +716,6 @@ func TestKelpAndSeagrassMatchBedrock(t *testing.T) {
 	}
 	if math.Abs(seagrass/n-57) > 57*0.3 {
 		t.Errorf("seagrass %.1f a chunk, Bedrock 57", seagrass/n)
-	}
-}
-
-// The cheap answer for columns around a chunk must equal SurfaceHeight, on every margin column.
-func TestChunkGroundMatchesSurfaceHeight(t *testing.T) {
-	g := New(14)
-	var checked, opened atomic.Int64
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-	for i := range 80 {
-		p := [2]int{i*23 - 900, 700 - i*31}
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			ox, oz := p[0]*16, p[1]*16
-			s := new(chunkScratch)
-			s.startChunk(g, ox, oz)
-			g.cutCarvers(s, ox, oz)
-			cg := chunkGround{g: g, s: s, originX: ox, originZ: oz}
-			for x := ox - treeMargin; x <= ox+15+treeMargin; x++ {
-				for z := oz - treeMargin; z <= oz+15+treeMargin; z++ {
-					if x >= ox && x < ox+16 && z >= oz && z < oz+16 {
-						continue
-					}
-					top, untouched, _ := cg.ground(x, z)
-					if want := g.SurfaceHeight(x, z); top != want {
-						t.Errorf("(%d,%d) from chunk %v: ground %d, SurfaceHeight %d", x, z, p, top, want)
-						return
-					}
-					checked.Add(1)
-					if !untouched {
-						opened.Add(1)
-					}
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	t.Logf("%d columns agree, %d of them opened by carvers or lakes", checked.Load(), opened.Load())
-	if opened.Load() == 0 {
-		t.Fatal("no column opened by a carver or lake; the test would prove little")
-	}
-}
-
-// Decoration reaches biomes only through BiomeAt, so every biome the tables give must map back.
-func TestSurfaceDefAtMatchesTables(t *testing.T) {
-	g := New(15)
-	for x := -4096; x < 4096; x += 37 {
-		for z := -4096; z < 4096; z += 41 {
-			if got, want := g.surfaceDefAt(x, z), func() def { col := g.biomeColumnAt(x, z); return col.surface }(); got != want {
-				// Hottest deep ocean and warm ocean share a biome and a surface, so this is exact.
-				t.Fatalf("(%d,%d): %v, want %v", x, z, got, want)
-			}
-		}
-	}
-}
-
-func BenchmarkChunkGround(b *testing.B) {
-	g := New(1)
-	s := new(chunkScratch)
-	g.cutCarvers(s, 0, 0)
-	cg := chunkGround{g: g, s: s}
-	i := 0
-	for b.Loop() {
-		cg.ground(-1-i%5, i%16)
-		i++
 	}
 }
 

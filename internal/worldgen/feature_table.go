@@ -25,7 +25,7 @@ const (
 	mountainFeatures   = "ore_emerald ore_infested "
 	defaultGrass       = "flower_default patch_grass_badlands "
 	plainsVegetation   = "patch_tall_grass_2 patch_bush trees_plains flower_plains patch_grass_plain "
-	forestVegetation   = "forest_flowers flower_default patch_grass_forest "
+	forestVegetation   = "forest_flowers patch_grass_forest "
 	oceanBase          = "trees_water flower_default patch_grass_badlands "
 )
 
@@ -41,13 +41,13 @@ var biomeOwnFeatures = map[string]string{
 	"forest":                   "trees_birch_and_oak_leaf_litter patch_bush patch_tall_grass_2 " + forestVegetation,
 	"flower_forest":            "flower_forest_flowers trees_flower_forest flower_flower_forest " + defaultGrass,
 	"birch_forest":             "wildflowers_birch_forest trees_birch patch_bush patch_tall_grass_2 " + forestVegetation,
-	"old_growth_birch_forest":  "wildflowers_birch_forest birch_tall patch_bush patch_tall_grass_2 " + forestVegetation,
+	"old_growth_birch_forest":  "wildflowers_birch_forest birch_tall patch_tall_grass_2 " + forestVegetation,
 	"dark_forest":              "dark_forest_vegetation patch_leaf_litter patch_tall_grass_2 " + forestVegetation,
 	"pale_garden":              "pale_garden_vegetation pale_moss_patch pale_garden_flowers flower_pale_garden patch_tall_grass_2 " + forestVegetation,
-	"taiga":                    "trees_taiga patch_large_fern patch_berry_common brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 patch_tall_grass_2 flower_default",
-	"snowy_taiga":              "trees_taiga patch_large_fern patch_berry_rare brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 patch_tall_grass_2 flower_default",
-	"old_growth_pine_taiga":    "forest_rock patch_large_fern trees_old_growth_pine_taiga patch_grass_taiga patch_dead_bush brown_mushroom_old_growth red_mushroom_old_growth patch_berry_common patch_tall_grass_2 flower_default",
-	"old_growth_spruce_taiga":  "forest_rock patch_large_fern trees_old_growth_spruce_taiga patch_grass_taiga patch_dead_bush brown_mushroom_old_growth red_mushroom_old_growth patch_berry_common patch_tall_grass_2 flower_default",
+	"taiga":                    "trees_taiga patch_large_fern patch_berry_common brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 flower_default",
+	"snowy_taiga":              "trees_taiga patch_large_fern patch_berry_rare brown_mushroom_taiga red_mushroom_taiga patch_grass_taiga_2 flower_default",
+	"old_growth_pine_taiga":    "forest_rock patch_large_fern trees_old_growth_pine_taiga patch_grass_taiga patch_dead_bush brown_mushroom_old_growth red_mushroom_old_growth patch_berry_common flower_default",
+	"old_growth_spruce_taiga":  "forest_rock patch_large_fern trees_old_growth_spruce_taiga patch_grass_taiga patch_dead_bush brown_mushroom_old_growth red_mushroom_old_growth patch_berry_common flower_default",
 	"savanna":                  "patch_tall_grass trees_savanna flower_warm patch_grass_savanna",
 	"savanna_plateau":          "patch_tall_grass trees_savanna flower_warm patch_grass_savanna",
 	"windswept_savanna":        "trees_windswept_savanna flower_default patch_grass_normal",
@@ -156,6 +156,9 @@ func buildPlacements(prof *Profile) []*placement {
 			if n == "ore_copper" && biome == "dripstone_caves" {
 				continue // It has the large copper ore instead.
 			}
+			if n == "spring_water" && biome == "deep_dark" {
+				continue // The traces show no water springs in the deep dark.
+			}
 			if pl := t.byN[n]; pl != nil {
 				pl.biomes[id>>6] |= 1 << (id & 63)
 			}
@@ -224,7 +227,7 @@ func defineOres(t *tableBuilder) {
 	ore("ore_copper", cu, dcu, 10, 0, common(constInt(16), trapHeight(-16, 112, 0)))
 	ore("ore_copper_large", cu, dcu, 20, 0, common(constInt(16), trapHeight(-16, 112, 0)))
 	emerald := []oreTarget{{list: blockSet("stone"), state: stateOf("emerald_ore")}, {list: blockSet("deepslate"), state: stateOf("deepslate_emerald_ore")}}
-	t.def("ore_emerald", oreFeature(oreSpec{size: 3, targets: emerald}), common(constInt(100), uniHeight(-16, 480))...)
+	t.def("ore_emerald", oreFeature(oreSpec{size: 3, targets: emerald}), common(constInt(100), trapHeight(-16, 480, 0))...)
 	if p.infestedBedrock {
 		tg := []oreTarget{{list: blockSet("stone"), state: stateOf("infested_stone")}, {list: blockSet("deepslate"), state: stateOf("infested_deepslate[axis=y]")}}
 		t.def("ore_infested", oreFeature(oreSpec{size: 8, targets: tg}), common(constInt(14), uniHeight(0, 64))...)
@@ -244,6 +247,3 @@ func defineOres(t *tableBuilder) {
 		t.extra = append(t.extra, extra)
 	}
 }
-
-// defineSteps is filled in with the other features.
-func defineSteps(t *tableBuilder) {}

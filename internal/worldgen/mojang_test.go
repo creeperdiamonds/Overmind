@@ -411,7 +411,7 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			h := posHash(uint64(seed), w, 0, 99)
+			h := mix64(uint64(seed) ^ mix64(uint64(w)*31+99))
 			cx, cz := int(h%512)-256, int((h>>20)%512)-256
 			var chunks [2][2]*chunk.Chunk
 			var tops [2][2][16][16]int16
@@ -494,131 +494,6 @@ func TestNoiseCavesOpenToSky(t *testing.T) {
 	t.Logf("%d seeds: %d land columns, %.2f%% open; measured from the game 4.7%%", seeds, land, share)
 	if math.Abs(share-4.7) > 1 {
 		t.Errorf("%.2f%% of land columns open to the sky over %d seeds, measured 4.7%% give or take 1", share, seeds)
-	}
-}
-
-// A cut can never be further from its start than the constants say, for any roll, so a chunk's
-// carverReach covers every tunnel that can touch it. Rolled with the longest length and the
-// widest radius, every point of a path plus its radius must stay within the limit on each axis.
-func TestTunnelsStayWithinReach(t *testing.T) {
-	r := carverReachBlocks
-	check := func(name string, furthest float64) {
-		if furthest > float64(r) {
-			t.Errorf("%s reached %.1f blocks from its start, the limit is %d", name, furthest, r)
-		}
-	}
-	for i := range 4000 {
-		seed := posHash(99, i, 0, 0)
-		var far float64
-		// Largest allowed rolls for radius and height.
-		p := newTunnelPath(seed, 0, 0, 0, tunnelHalfMax, tunnelBendMax, caveTilt)
-		widest := tunnelRadius(1) * 1.4 * (1 + 2.0/40)
-		for s := 0; s <= 400; s++ {
-			px, _, pz := p.at(float64(s)/200 - 1)
-			far = max(far, math.Abs(px)+widest, math.Abs(pz)+widest)
-		}
-		check("a tunnel", far)
-		far = 0
-		c := newTunnelPath(seed, 0, 0, 0, tunnelHalfMax, canyonBendMax, 0.125)
-		c.half = tunnelHalfMax
-		widest = (canyonCore + 6) * canyonMiddleWidth * (1 + 2.0/40)
-		for s := 0; s <= 400; s++ {
-			px, _, pz := c.at(float64(s)/200 - 1)
-			far = max(far, math.Abs(px)+widest, math.Abs(pz)+widest)
-		}
-		check("a canyon", far)
-	}
-}
-
-// A slope reads the same from either side of a chunk edge, so snowy slope stone must not follow
-// chunk lines: the share of stone tops in edge columns must be like that in inner columns.
-func TestSteepStoneIgnoresChunkEdges(t *testing.T) {
-	g := New(1)
-	var edge, inner, edgeStone, innerStone int
-	chunks := 0
-	for x := -8192; x < 8192 && chunks < 150; x += 48 {
-		for z := -8192; z < 8192 && chunks < 150; z += 48 {
-			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "snowy_slopes" && name != "jagged_peaks" {
-				continue
-			}
-			chunks++
-			c := generate(g, int32(x>>4), int32(z>>4))
-			for a := range uint8(16) {
-				for b := range uint8(16) {
-					top := topSolid(c, a, b)
-					if top < SeaLevel {
-						continue
-					}
-					stone := c.Block(a, int16(top), b, 0) == ridStone
-					switch {
-					case a == 0 || a == 15 || b == 0 || b == 15:
-						edge++
-						if stone {
-							edgeStone++
-						}
-					case a >= 4 && a <= 11 && b >= 4 && b <= 11:
-						inner++
-						if stone {
-							innerStone++
-						}
-					}
-				}
-			}
-		}
-	}
-	e, i := float64(edgeStone)/float64(edge), float64(innerStone)/float64(inner)
-	t.Logf("%d chunks: stone tops %.3f at chunk edges, %.3f inside", chunks, e, i)
-	if chunks < 30 {
-		t.Fatalf("only %d steep biome chunks found", chunks)
-	}
-	if math.Abs(e-i) > 0.01 {
-		t.Errorf("stone tops %.3f at chunk edges against %.3f inside", e, i)
-	}
-}
-
-// A column's steep flag is a function of the world alone. The columns on either side of a chunk
-// edge are read from two grids, each anchored at its own chunk; the grid of the neighbour,
-// asked about a column just outside it, must give the same answer as the chunk's own. A
-// version that clamped neighbours to the chunk would read a flatter slope at its own edge and
-// disagree, which the stone-top share above could hide in noise. Checked exactly, on every edge
-// column of many chunks in steep country.
-func TestSteepFlagAgreesAcrossChunkEdges(t *testing.T) {
-	g := New(4)
-	var checked, steepCols, wrong int
-	for x := -8192; x < 8192 && steepCols < 1000; x += 80 {
-		for z := -8192; z < 8192 && steepCols < 1000; z += 80 {
-			if name := g.BiomeAt(x+8, maxY, z+8).String(); name != "snowy_slopes" && name != "jagged_peaks" {
-				continue
-			}
-			x0, z0 := x&^15, z&^15
-			a := g.newSlopeGrid(x0, z0)
-			east := g.newSlopeGrid(x0+16, z0)
-			south := g.newSlopeGrid(x0, z0+16)
-			for i := range 16 {
-				// Own last column against the grid east of it, and own last row against the one south.
-				for _, p := range [][2]bool{{a.steep(15, i), east.steep(-1, i)}, {a.steep(i, 15), south.steep(i, -1)}} {
-					checked++
-					if p[0] {
-						steepCols++
-					}
-					if p[0] != p[1] {
-						wrong++
-					}
-				}
-				// The neighbour's first column against our grid asked past its edge.
-				checked++
-				if east.steep(0, i) != a.steep(16, i) {
-					wrong++
-				}
-			}
-		}
-	}
-	t.Logf("%d edge columns compared, %d steep, %d disagree", checked, steepCols, wrong)
-	if steepCols < 100 {
-		t.Fatalf("only %d steep edge columns; the test would prove nothing", steepCols)
-	}
-	if wrong > 0 {
-		t.Errorf("%d edge columns read a different steep flag from the two sides of a chunk edge", wrong)
 	}
 }
 
