@@ -26,7 +26,9 @@ Explicit `float64()` and `float32()` conversions around products stop a platform
 
 Java itself has no single answer for step 3: two Java runs differ by 0.25 to 0.37% of blocks. See the task report for how far ours lands.
 
-**What this costs.** A target reads up to 25 carvers stages, so without any kept data a chunk costs far more than the old generator. `Generator.SetReuseBases` lets a worker keep bases between chunks in its pooled scratch. They are pure functions of the seed and chunk, so this changes speed and never a result (`TestReuseBasesChangesNothing`), but it is per-chunk data kept after a chunk is made, so it is **off by default**, and the owner decides.
+**What this costs, and the shared cache.** A target reads up to 49 carvers stages (its 5 x 5, which its sources write, plus reads up to 3 chunks from each source) and runs 9 sources, so with nothing kept a chunk costs about 107 ms on one worker. By the owner's ruling 26 every worker of a generator shares one cache (`cache.go`) of carvers stages and source results, which are pure functions of the seed, profile and position, so it changes speed and never a result (`TestReuseBasesChangesNothing`, `TestSourceSameFromEitherSide`). It is capped by bytes (24 MB by default, `SetCacheBytes`), drops the least recently used entry first, builds each entry once when workers ask at the same time, and empties a second after the last chunk is made. Cached bases are never written: a source writes the worker's own copy of each of its 3 x 3, given back when its writes are rolled back, so a worker's scratch holds at most 9 copies (about 3.2 MB in all, `TestScratchStaysSmall`).
+
+A source reads at most 3 chunks from itself (`sourceReach`); past that a read is air. That reach is fixed by the source and not by the chunk being made, so the cache can share one result.
 
 ## Profiles
 

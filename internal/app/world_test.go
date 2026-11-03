@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/overmind/overmind/bots/bedrock"
+	"github.com/overmind/overmind/internal/app"
 	"github.com/overmind/overmind/internal/config"
 	"github.com/overmind/overmind/internal/testserver"
 	"github.com/overmind/overmind/internal/worldgen"
@@ -302,19 +303,26 @@ func TestLeavesDecay(t *testing.T) {
 	spawn := w.Spawn()
 	defer watch(t, w, spawn, 6)()
 
-	// Find a tree near spawn, cut every log within 8 blocks of it, and note which leaves are left
-	// with no log within 4 blocks through other leaves: the game's rule for a leaf to survive.
+	// Find the tree nearest spawn, cut every log within 8 blocks of it, and note which leaves are left
+	// with no log within 4 blocks through other leaves: the game's rule for a leaf to survive. Leaves
+	// decay on random ticks, which reach only the tick distance around a player, so the search goes
+	// outwards ring by ring and stops at the first tree.
 	var tree cube.Pos
 	var orphans []cube.Pos
 	run(t, w, func(tx *world.Tx) {
 		found := false
-		for dx := -60; dx <= 60 && !found; dx++ {
-			for dz := -60; dz <= 60 && !found; dz++ {
-				for y := 140; y > 55; y-- {
-					p := cube.Pos{spawn.X() + dx, y, spawn.Z() + dz}
-					if _, ok := tx.Block(p).(block.Log); ok {
-						tree, found = p, true
-						break
+		for r := 0; r <= 60 && !found; r++ {
+			for dx := -r; dx <= r && !found; dx++ {
+				for dz := -r; dz <= r && !found; dz++ {
+					if max(abs(dx), abs(dz)) != r {
+						continue
+					}
+					for y := 140; y > 55; y-- {
+						p := cube.Pos{spawn.X() + dx, y, spawn.Z() + dz}
+						if _, ok := tx.Block(p).(block.Log); ok {
+							tree, found = p, true
+							break
+						}
 					}
 				}
 			}
@@ -410,8 +418,9 @@ func TestGrassSpreads(t *testing.T) {
 }
 
 // Four bots walking apart into new ground make the server generate chunks on its workers as fast
-// as it can; the world must keep ticking while they do.
+// as it can; the world must keep ticking while they do, and no chunk may be generated on the tick.
 func TestGenerationDoesNotStallTicks(t *testing.T) {
+	onTick := app.GenerationsOnTick()
 	srv := testserver.StartIn(t, t.TempDir(), withSeed(2468))
 	var bots []*bedrock.Bot
 	for i := range 4 {
@@ -444,4 +453,5 @@ func TestGenerationDoesNotStallTicks(t *testing.T) {
 		max(1, runtime.NumCPU()/2), worst, ticks, sent)
 	require.Less(t, worst, 500*time.Millisecond, "a world transaction waited %v while chunks were generated", worst)
 	require.Greater(t, ticks, 20*17, "the world ran slow: %d ticks in 20 s", ticks)
+	require.Equal(t, onTick, app.GenerationsOnTick(), "chunks were generated on the world's tick")
 }

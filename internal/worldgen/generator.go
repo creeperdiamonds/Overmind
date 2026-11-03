@@ -19,13 +19,11 @@ const (
 	waterTop = SeaLevel - 1
 )
 
-// Generator builds Overworld chunks from a seed. It holds only data that never changes
-// after New, so any number of workers can share it.
+// Generator builds Overworld chunks from a seed. Apart from its shared cache, which locks, it holds
+// only data that never changes after New, so any number of workers can share it.
 type Generator struct {
 	seed       int64
-	reuseBases bool
-	keptLock   sync.Mutex
-	kept       []*chunkScratch // Working spaces kept with reuse on, one per worker that has asked.
+	cache      *sharedCache
 	zoomSeed   int64
 	climate    climateNoises
 	caves      caveNoises
@@ -37,10 +35,6 @@ type Generator struct {
 	profile    *Profile
 }
 
-// defaultReuseBases is what a new generator starts with. Tests turn it on, for speed: they generate
-// many chunks, and TestReuseBasesChangesNothing holds it to changing no result.
-var defaultReuseBases = false
-
 // New returns a Generator for a seed, with the default profile, Bedrock's.
 func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
 
@@ -51,7 +45,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
 	return &Generator{
-		reuseBases: defaultReuseBases,
+		cache:      newSharedCache(DefaultCacheBytes),
 		seed:       seed,
 		sf:         newSurfaceFactories(w),
 		oreFac:     ore.forkFactory(),
@@ -82,13 +76,10 @@ type chunkScratch struct {
 	base        baseChunk
 	masks       [256]carveMask
 	deco        decoration
-	bases       [keptSpan * keptSpan]*baseChunk
+	copies      []*baseChunk // Spare copies for the bases a source writes: at most its 3 x 3.
 	final       [chunkCells]bs
-	sources     [keptSpan * keptSpan]sourceResult
+	changes     []sourceChange
 	firstOld    map[int64]bs
-	busy        bool
-	lastCX      int
-	lastCZ      int
 }
 
 const cellsAcross = 16 / cellXZ
@@ -110,15 +101,14 @@ var scratchPool = sync.Pool{New: func() any { return &chunkScratch{firstOld: map
 
 // GenerateChunk builds a chunk: noise, surface and carvers for it and its neighbours, then the changes
 // of the nine source chunks that can reach it, each decorated alone, merged in row-major order. It
-// reads no real neighbour and keeps nothing about a chunk after it returns, unless the generator was
-// told to reuse bases (SetReuseBases), which changes speed and never a result.
+// reads no real neighbour. Bases and source results go in the shared cache, which empties once no
+// chunk is being asked for.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	cx, cz := int(pos[0]), int(pos[1])
-	s := g.getScratch(cx, cz)
-	defer g.putScratch(s)
-	if !g.reuseBases {
-		s.forgetBases()
-	}
+	g.cache.begin()
+	defer g.cache.end()
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
 }
@@ -131,9 +121,9 @@ func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
 	*final = here.b.b
 	for sx := cx - 1; sx <= cx+1; sx++ {
 		for sz := cz - 1; sz <= cz+1; sz++ {
-			m := s.sourceChanges(g, d, sx, sz)
+			changes := g.cachedSource(s, d, sx, sz)
 			want := int8((cx-sx+1)*3 + (cz - sz + 1))
-			for _, c := range m.changes {
+			for _, c := range changes {
 				if c.chunk == want {
 					final[c.cell] = c.now
 				}
@@ -143,34 +133,23 @@ func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
 	return final
 }
 
-// sourceResult is what one source's decoration changed, by chunk of its 3 x 3 (x*3+z) and cell. It
-// is a pure function of the seed, profile and source chunk.
-type sourceResult struct {
-	owner   *Generator
-	sx, sz  int
-	ok      bool
-	changes []sourceChange
-}
-
+// sourceChange is one block a source's decoration changed: the chunk of its 3 x 3 (x*3+z), the
+// cell, and the new block. A source's changes are a pure function of the seed, profile and source.
 type sourceChange struct {
 	chunk int8
 	cell  int32
 	now   bs
 }
 
-// sourceChanges runs a source alone, or finds its result kept from an earlier chunk when bases are
-// reused, and rolls the working set back.
-func (s *chunkScratch) sourceChanges(g *Generator, d *decoration, sx, sz int) *sourceResult {
-	m := &s.sources[floorMod(sx, keptSpan)*keptSpan+floorMod(sz, keptSpan)]
-	if g.reuseBases && m.ok && m.owner == g && m.sx == sx && m.sz == sz {
-		return m
-	}
+// runSourceChanges runs a source alone on the working set, lists what it changed, and rolls the
+// working set back.
+func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) []sourceChange {
 	d.runSource(sx, sz)
-	m.owner, m.sx, m.sz, m.ok = g, sx, sz, g.reuseBases
-	m.changes = m.changes[:0]
+	s.changes = s.changes[:0]
 	first := s.firstOld
 	clear(first)
 	for _, e := range d.log {
+		// A cell of the working set as one key: its slot in the high half, its cell in the low.
 		k := int64(e.chunk)<<32 | int64(e.cell)
 		if _, seen := first[k]; !seen {
 			first[k] = e.old
@@ -184,11 +163,11 @@ func (s *chunkScratch) sourceChanges(g *Generator, d *decoration, sx, sz int) *s
 			continue
 		}
 		dx, dz := lv.b.cx-sx+1, lv.b.cz-sz+1
-		m.changes = append(m.changes, sourceChange{int8(dx*3 + dz), cell, now})
+		s.changes = append(s.changes, sourceChange{int8(dx*3 + dz), cell, now})
 	}
 	d.rollback()
 	d.log = d.log[:0]
-	return m
+	return append([]sourceChange(nil), s.changes...)
 }
 
 // storeBiomes writes the chunk's quart biomes, from the same lookups the passes read.
@@ -415,82 +394,23 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	return cube.Pos{0, max(g.SurfaceHeight(0, 0), SeaLevel) + 1, 0}
 }
 
-// forgetBases marks every kept base as unusable.
-func (s *chunkScratch) forgetBases() {
-	for _, b := range s.bases {
-		if b != nil {
-			b.whole = false
-		}
-	}
-}
-
-// baseFor gives a chunk's carvers stage, in a slot by its position, built on first use.
-func (s *chunkScratch) baseFor(g *Generator, _, cx, cz int) *baseChunk {
-	slot := floorMod(cx, keptSpan)*keptSpan + floorMod(cz, keptSpan)
-	b := s.bases[slot]
-	if b == nil {
+// takeCopy gives the worker its own copy of a shared base, to write.
+func (s *chunkScratch) takeCopy(from *baseChunk) *baseChunk {
+	var b *baseChunk
+	if n := len(s.copies); n > 0 {
+		b, s.copies = s.copies[n-1], s.copies[:n-1]
+	} else {
 		b = new(baseChunk)
-		s.bases[slot] = b
 	}
-	if b.owner != g || b.cx != cx || b.cz != cz || !b.whole {
-		g.buildBase(b, s, cx, cz, stageCarvers, 0, 15, 0, 15)
-		b.whole = true
-	}
+	*b = *from
 	return b
 }
 
-func floorMod(a, b int) int { return a - floorDiv(a, b)*b }
-
-// getScratch takes a chunk's working space. With reuse on, a generator keeps its own spaces, which the
-// garbage collector does not empty as it does a sync.Pool, and hands out the free one that last made
-// the nearest chunk, so its kept bases serve.
-func (g *Generator) getScratch(cx, cz int) *chunkScratch {
-	if !g.reuseBases {
-		return scratchPool.Get().(*chunkScratch)
-	}
-	g.keptLock.Lock()
-	defer g.keptLock.Unlock()
-	best, bestD := -1, 1<<62
-	for i, k := range g.kept {
-		if k.busy {
-			continue
-		}
-		if d := absInt(k.lastCX-cx) + absInt(k.lastCZ-cz); d < bestD {
-			best, bestD = i, d
-		}
-	}
-	if best < 0 {
-		s := &chunkScratch{firstOld: map[int64]bs{}}
-		g.kept = append(g.kept, s)
-		best = len(g.kept) - 1
-	}
-	s := g.kept[best]
-	s.busy, s.lastCX, s.lastCZ = true, cx, cz
-	return s
-}
-
-func (g *Generator) putScratch(s *chunkScratch) {
-	if !g.reuseBases {
-		scratchPool.Put(s)
-		return
-	}
-	g.keptLock.Lock()
-	s.busy = false
-	g.keptLock.Unlock()
-}
-
-// SetReuseBases lets workers keep neighbour bases and source results between chunks, in pooled
-// scratch. Both are pure functions of the seed, profile and chunk, so this changes speed and never a
-// result; but it is per-chunk data kept after a chunk is made, so it is off unless the owner asks.
-func (g *Generator) SetReuseBases(on bool) { g.reuseBases = on }
+// giveCopy returns a copy for the next source.
+func (s *chunkScratch) giveCopy(b *baseChunk) { s.copies = append(s.copies, b) }
 
 // startDecoration readies the working set around a chunk.
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 	s.deco.startTarget(g, s, cx, cz)
 	return &s.deco
 }
-
-// keptSpan is how many chunks across the kept bases and source results span, by position: enough for
-// a worker sweeping rows a few dozen chunks wide to find the row above. Without SetReuseBases only the
-// 25 a chunk needs are ever built.
-const keptSpan = 12

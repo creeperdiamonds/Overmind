@@ -383,7 +383,6 @@ func TestGoldenFinalAgainstJava(t *testing.T) {
 	step := goldenStep() * 2
 	for _, seed := range goldenSeeds {
 		g := NewWithProfile(seed, ProfileOverjava)
-		g.reuseBases = true
 		s := scratchPool.Get().(*chunkScratch)
 		var chunks, blocks, bad int64
 		var diffs diffCounter

@@ -200,9 +200,13 @@ const (
 	hmMotionNoLeaves
 )
 
-// liveChunk is a chunk being read and written during one source's decoration.
+// liveChunk is a chunk being read and written during one source's decoration. b is the shared
+// cache's base until the source first writes it, then the worker's own copy of it, given back when
+// the source's writes are rolled back.
 type liveChunk struct {
 	b        *baseChunk
+	shared   *baseChunk
+	own      bool
 	gen      uint32 // The source run its maps are valid for.
 	primed   bool
 	maps     [4][256]int16 // WorldSurface, OceanFloor, Motion, MotionNoLeaves.
@@ -216,7 +220,14 @@ type changeEntry struct {
 	old   bs
 }
 
-const liveSpan = 7 // Chunks across the working set around a target: its 5 x 5 and one more.
+// liveSpan is how many chunks across the working set around a target is: the target's 5 x 5, which
+// its nine sources write, and two more on each side for reads.
+const liveSpan = 9
+
+// sourceReach is how far from a source, in chunks, its features can read: its 3 x 3 and two more. A
+// read past that is air. It is fixed by the source and never by the chunk being made, so a source's
+// changes are the same for every chunk that needs them.
+const sourceReach = 3
 
 // decoration holds what a chunk's decoration uses, in the chunk's scratch.
 type decoration struct {
@@ -229,25 +240,32 @@ type decoration struct {
 	r              featRand
 	log            []changeEntry
 	used           []int32
+	owned          []int32 // Working-set slots the source being run has its own copy of.
 	ore            oreScratch
 	decSeed        int64
 	placed         bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.
-	lastCX, lastCZ int
-	lastB          *baseChunk
+	lastCX, lastCZ     int
+	lastB              *baseChunk
+	lastSrcX, lastSrcZ int // The source the shortcut was taken under, whose reach it obeyed.
 }
 
 // startTarget makes the working set ready for a chunk.
 func (d *decoration) startTarget(g *Generator, s *chunkScratch, cx, cz int) {
 	d.g, d.s, d.baseCX, d.baseCZ = g, s, cx, cz
+	d.cx, d.cz = cx, cz
 	d.lastB = nil
 	for _, i := range d.used {
-		d.live[i].b = nil
+		d.live[i].b, d.live[i].shared, d.live[i].own = nil, nil, false
 	}
 	d.used = d.used[:0]
 }
 
+// chunkAt gives a chunk of the working set, or nil past the reach of the source being decorated.
 func (d *decoration) chunkAt(cx, cz int) *liveChunk {
+	if absInt(cx-d.cx) > sourceReach || absInt(cz-d.cz) > sourceReach {
+		return nil
+	}
 	dx, dz := cx-d.baseCX+liveSpan/2, cz-d.baseCZ+liveSpan/2
 	if dx < 0 || dx >= liveSpan || dz < 0 || dz >= liveSpan {
 		return nil
@@ -255,14 +273,15 @@ func (d *decoration) chunkAt(cx, cz int) *liveChunk {
 	i := dx*liveSpan + dz
 	l := &d.live[i]
 	if l.b == nil {
-		l.b = d.s.baseFor(d.g, i, cx, cz)
+		l.b = d.g.cachedBase(d.s, cx, cz)
+		l.shared, l.own = l.b, false
 		l.hasClean = false
 		d.used = append(d.used, int32(i))
 	}
 	return l
 }
 
-// mapsFor gives a chunk's final heightmaps for this source run, primed from the carvers stage plus
+// mapsReady readies a chunk's final heightmaps for this source run, primed from the carvers stage plus
 // nothing, or from ore writes tracked so far.
 func (d *decoration) mapsReady(l *liveChunk) {
 	if l.gen == d.gen {
@@ -343,7 +362,7 @@ func (d *decoration) block(x, y, z int) bs {
 		return sAir
 	}
 	cx, cz := x>>4, z>>4
-	if cx == d.lastCX && cz == d.lastCZ && d.lastB != nil {
+	if cx == d.lastCX && cz == d.lastCZ && d.lastB != nil && d.lastSrcX == d.cx && d.lastSrcZ == d.cz {
 		return d.lastB.b[cellIndex(x&15, y, z&15)]
 	}
 	l := d.chunkAt(cx, cz)
@@ -351,6 +370,7 @@ func (d *decoration) block(x, y, z int) bs {
 		return sAir
 	}
 	d.lastCX, d.lastCZ, d.lastB = cx, cz, l.b
+	d.lastSrcX, d.lastSrcZ = d.cx, d.cz
 	return l.b.b[cellIndex(x&15, y, z&15)]
 }
 
@@ -365,7 +385,13 @@ func (d *decoration) canWrite(x, y, z int) bool {
 func (d *decoration) write(l *liveChunk, x, y, z int, s bs) {
 	cell := cellIndex(x&15, y, z&15)
 	dx, dz := (x>>4)-d.baseCX+liveSpan/2, (z>>4)-d.baseCZ+liveSpan/2
-	d.log = append(d.log, changeEntry{int32(dx*liveSpan + dz), int32(cell), l.b.b[cell]})
+	slot := dx*liveSpan + dz
+	if !l.own {
+		l.b, l.own = d.s.takeCopy(l.shared), true
+		d.owned = append(d.owned, int32(slot))
+		d.lastB = nil
+	}
+	d.log = append(d.log, changeEntry{int32(slot), int32(cell), l.b.b[cell]})
 	l.b.b[cell] = s
 }
 
@@ -718,12 +744,19 @@ func (d *decoration) runSource(cx, cz int) {
 	}
 }
 
-// rollback undoes a source's writes on the base chunks.
+// rollback undoes a source's writes and gives the copies back: each is its shared base again.
 func (d *decoration) rollback() {
 	for i := len(d.log) - 1; i >= 0; i-- {
 		e := d.log[i]
 		d.live[e.chunk].b.b[e.cell] = e.old
 	}
+	for _, i := range d.owned {
+		l := &d.live[i]
+		d.s.giveCopy(l.b)
+		l.b, l.own = l.shared, false
+	}
+	d.owned = d.owned[:0]
+	d.lastB = nil
 }
 
 // biomesAround is the set of biomes in the quarts of the 3 x 3 chunks around a source, as bits.

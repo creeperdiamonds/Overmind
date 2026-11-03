@@ -86,7 +86,7 @@ type result struct {
 // check generates every chunk of the window and compares it.
 func check(seed int64, m *refMaps) result {
 	g := worldgen.New(seed)
-	g.SetReuseBases(true) // A tool sweeping a window; it changes speed and no result.
+	g.SetCacheBytes(256 << 20) // A tool sweeping a window keeps more; it changes speed and no result.
 	ground := worldgen.GroundBlocks()
 	jobs := make(chan [2]int)
 	var mu sync.Mutex

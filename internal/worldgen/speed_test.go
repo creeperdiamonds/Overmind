@@ -10,10 +10,11 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// sweepBench generates a square of chunks with workers, reporting the wall time per chunk.
-func sweepBench(b *testing.B, reuse bool, workers int) {
+// sweepBench generates a square of chunks with workers, reporting the wall time per chunk and the
+// shared cache's peak.
+func sweepBench(b *testing.B, cache int64, workers int) {
 	g := New(1)
-	g.SetReuseBases(reuse)
+	g.SetCacheBytes(cache)
 	const side = 24
 	for b.Loop() {
 		var next atomic.Int64
@@ -35,9 +36,10 @@ func sweepBench(b *testing.B, reuse bool, workers int) {
 		wg.Wait()
 	}
 	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*side*side), "ms/chunk")
+	b.ReportMetric(float64(g.CacheStats().PeakBytes)/(1<<20), "cacheMB")
 }
 
-func BenchmarkSweepNoKeep(b *testing.B)        { sweepBench(b, false, 1) }
-func BenchmarkSweepNoKeepWorkers(b *testing.B) { sweepBench(b, false, runtime.NumCPU()) }
-func BenchmarkSweepReuse(b *testing.B)         { sweepBench(b, true, 1) }
-func BenchmarkSweepReuseWorkers(b *testing.B)  { sweepBench(b, true, runtime.NumCPU()) }
+func BenchmarkSweepNoKeep(b *testing.B)        { sweepBench(b, 0, 1) }
+func BenchmarkSweepNoKeepWorkers(b *testing.B) { sweepBench(b, 0, runtime.NumCPU()) }
+func BenchmarkSweepCache(b *testing.B)         { sweepBench(b, DefaultCacheBytes, 1) }
+func BenchmarkSweepCacheWorkers(b *testing.B)  { sweepBench(b, DefaultCacheBytes, runtime.NumCPU()) }

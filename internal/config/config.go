@@ -35,6 +35,10 @@ type Config struct {
 	// ChunkWorkers is how many background workers generate and load chunks.
 	// 0 picks half the processors, at least 1.
 	ChunkWorkers int
+	// TickDistance is how many chunks around a player have their blocks ticked,
+	// Bedrock's tick-distance. It is held two under ViewDistance, so a ticked
+	// block's neighbours are always loaded. 0 means Bedrock's default, 4.
+	TickDistance int
 }
 
 // Default returns the settings used when a file leaves something out.

@@ -7,7 +7,6 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-func init() { defaultReuseBases = true }
 
 func chunkRuntimeIDs(g *Generator, cx, cz int32) []uint32 {
 	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
@@ -21,22 +20,6 @@ func chunkRuntimeIDs(g *Generator, cx, cz int32) []uint32 {
 		}
 	}
 	return out
-}
-
-// TestReuseBasesChangesNothing: keeping neighbour bases, the speed option, gives the same chunks.
-func TestReuseBasesChangesNothing(t *testing.T) {
-	for _, profile := range []*Profile{ProfileBedrock, ProfileOverjava} {
-		a, b := NewWithProfile(100, profile), NewWithProfile(100, profile)
-		a.reuseBases, b.reuseBases = false, true
-		for _, p := range [][2]int32{{5, 5}, {6, 5}, {5, 6}, {-40, 30}, {6, 6}} {
-			x, y := chunkRuntimeIDs(a, p[0], p[1]), chunkRuntimeIDs(b, p[0], p[1])
-			for i := range x {
-				if x[i] != y[i] {
-					t.Fatalf("%s chunk %v differs at %d", profile.Name, p, i)
-				}
-			}
-		}
-	}
 }
 
 // TestProfilesDiffer: the two profiles share algorithms and differ in data.
