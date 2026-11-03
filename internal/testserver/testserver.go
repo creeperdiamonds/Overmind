@@ -2,8 +2,10 @@
 package testserver
 
 import (
+	"fmt"
 	"net"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,8 +59,12 @@ func TryStartIn(t *testing.T, dir string, tweak func(*config.Config)) (*Server, 
 	if tweak != nil {
 		tweak(&cfg)
 	}
+	if err := claimServer(); err != nil {
+		return nil, err
+	}
 	srv, err := app.Start(cfg)
 	if err != nil {
+		made.Add(-1) // A start refused before the server was made (a bad setting) adds nothing global.
 		return nil, err
 	}
 	t.Cleanup(func() { _ = srv.Close() })
@@ -108,4 +114,24 @@ func spareTCP(t *testing.T) string {
 	}
 	defer l.Close()
 	return l.Addr().String()
+}
+
+// serverCap is how many servers one test process may make. Dragonfly adds its creative items and
+// recipes to global lists on every server it makes, and after about 20 a joining bot's session is
+// dropped after a second (docs/stage-2-known-gaps.md). internal/app's tests make 19, which all pass.
+var serverCap int64 = 19
+
+// made counts the servers this process has made.
+var made atomic.Int64
+
+// Made is how many servers this test process has made so far.
+func Made() int64 { return made.Load() }
+
+// claimServer counts a server about to be made, or refuses one past the cap.
+func claimServer() error {
+	if n := made.Add(1); n > serverCap {
+		made.Add(-1)
+		return fmt.Errorf("test server %d of this process is past the cap of %d: Dragonfly adds its creative items and recipes to global lists on every server, and past about 20 a joining bot is dropped; reuse a server or move tests to another package", n, serverCap)
+	}
+	return nil
 }
