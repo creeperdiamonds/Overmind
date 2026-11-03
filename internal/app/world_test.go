@@ -401,7 +401,9 @@ func TestGrassSpreads(t *testing.T) {
 	srv := testserver.StartIn(t, t.TempDir(), fastTicks(9, 1000))
 	w := srv.World()
 	c := lab(t, w)
-	defer watch(t, w, c, 2)()
+	// Grass spreads on random ticks, which reach two chunks under a viewer's radius (the Dragonfly
+	// fork's per-player tick reach), so the viewer looks 4 chunks out to tick the lab's chunks.
+	defer watch(t, w, c, 4)()
 
 	// A row of dirt with grass at one end, open sky above.
 	run(t, w, func(tx *world.Tx) {
@@ -419,17 +421,25 @@ func TestGrassSpreads(t *testing.T) {
 
 // Four bots walking apart into new ground make the server generate chunks on its workers as fast
 // as it can; the world must keep ticking while they do, and no chunk may be generated on the tick.
+// A fifth asks for a view distance of 3, under the tick distance plus 2: its ticks must still stay
+// clear of chunks it has not loaded (the Dragonfly fork holds each player's tick reach two under
+// its view distance).
 func TestGenerationDoesNotStallTicks(t *testing.T) {
 	onTick := app.GenerationsOnTick()
-	srv := testserver.StartIn(t, t.TempDir(), withSeed(2468))
+	srv := testserver.StartIn(t, t.TempDir(), fastTicks(2468, 50))
 	var bots []*bedrock.Bot
-	for i := range 4 {
+	for i := range 5 {
 		name := fmt.Sprintf("Runner%d", i)
 		bot, err := bedrock.Join(srv.BedrockAddr, name)
 		require.NoError(t, err)
 		defer bot.Close()
 		require.Eventually(t, func() bool { return srv.PlayerByName(name) }, 15*time.Second, 100*time.Millisecond)
-		bot.Walk(float64(i) * math.Pi / 2)
+		heading := float64(i) * math.Pi / 2
+		if i == 4 {
+			require.NoError(t, bot.SetViewDistance(3))
+			heading = math.Pi / 4 // Its own way, so no other bot's view covers its edge.
+		}
+		bot.Walk(heading)
 		bots = append(bots, bot)
 	}
 
@@ -449,9 +459,25 @@ func TestGenerationDoesNotStallTicks(t *testing.T) {
 	for _, b := range bots {
 		sent += b.ChunksReceived()
 	}
-	t.Logf("4 bots walking apart, %d chunk workers per world: worst empty-transaction wait %v; ticks in 20 s: %d (20 is normal); chunks sent: %d",
+	t.Logf("5 bots walking apart (one at view distance 3), %d chunk workers per world, random ticks raised to 50: worst empty-transaction wait %v; ticks in 20 s: %d (20 is normal); chunks sent: %d",
 		max(1, runtime.NumCPU()/2), worst, ticks, sent)
 	require.Less(t, worst, 500*time.Millisecond, "a world transaction waited %v while chunks were generated", worst)
 	require.Greater(t, ticks, 20*17, "the world ran slow: %d ticks in 20 s", ticks)
 	require.Equal(t, onTick, app.GenerationsOnTick(), "chunks were generated on the world's tick")
+}
+
+// A lone client at view distance 3 walking into new ground, with random ticks raised so blocks at
+// the edge of its view tick often: no tick may reach past what it has loaded, so none generates a
+// chunk (the Dragonfly fork's per-player tick reach, tick.go tickCentres).
+func TestSmallViewDistanceNeverGeneratesOnTick(t *testing.T) {
+	onTick := app.GenerationsOnTick()
+	srv := testserver.StartIn(t, t.TempDir(), fastTicks(97531, 300))
+	bot, err := bedrock.Join(srv.BedrockAddr, "Short")
+	require.NoError(t, err)
+	defer bot.Close()
+	require.Eventually(t, func() bool { return srv.PlayerByName("Short") }, 15*time.Second, 100*time.Millisecond)
+	require.NoError(t, bot.SetViewDistance(3))
+	bot.Walk(math.Pi / 3)
+	time.Sleep(30 * time.Second)
+	require.Equal(t, onTick, app.GenerationsOnTick(), "a tick generated a chunk for a client at view distance 3")
 }

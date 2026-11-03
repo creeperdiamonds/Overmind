@@ -4,7 +4,7 @@ Overmind is built on these open projects. No Mojang code or files and no GeyserM
 
 ## Dragonfly
 
-Overmind runs on [Dragonfly](https://github.com/df-mc/dragonfly) (`github.com/df-mc/dragonfly`, pinned at commit `51dd9c1d615f17b70bbeef6ab2cbcee0545e66c0`), a Go Minecraft Bedrock server library.
+Overmind runs on [Dragonfly](https://github.com/df-mc/dragonfly) (`github.com/df-mc/dragonfly`, pinned at commit `51dd9c1d615f17b70bbeef6ab2cbcee0545e66c0`), a Go Minecraft Bedrock server library. Overmind keeps a modified copy of it at `third_party/dragonfly` (v0.11.6, with its LICENSE); `third_party/dragonfly/OVERMIND-FORK.md` lists the changes.
 
 MIT License. Copyright (c) 2020 Dragonfly Tech.
 

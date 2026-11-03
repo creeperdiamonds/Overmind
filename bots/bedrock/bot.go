@@ -54,6 +54,12 @@ func Join(addr, name string) (*Bot, error) {
 	return b, nil
 }
 
+// SetViewDistance asks the server for a view distance in chunks, as a client's render distance
+// setting does. The server may hold it lower.
+func (b *Bot) SetViewDistance(chunks int) error {
+	return b.conn.WritePacket(&packet.RequestChunkRadius{ChunkRadius: int32(chunks), MaxChunkRadius: uint8(chunks)})
+}
+
 // read drains packets so the connection never backs up.
 func (b *Bot) read() {
 	for {
