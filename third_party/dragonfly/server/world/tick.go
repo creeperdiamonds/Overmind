@@ -96,15 +96,19 @@ func (t ticker) tick(tx *Tx) {
 	// Overmind fork: nothing past a tick reach changes, as on Bedrock, where chunks past the
 	// simulation distance stay loaded but do not tick. Lightning, scheduled ticks and neighbour
 	// updates wait there, so no tick creates an entity that would then never tick.
+	// A chunk ticks only once its eight neighbours are loaded too, as in Java, where a chunk ticks
+	// only inside fully loaded ground: a tick at its edge reads the next chunk, and if a chunk worker
+	// were still making that one, the tick would wait for it (chunkRequest.doImmediate), stalling the
+	// whole world behind every chunk queued before it.
 	centres := tickCentres(tx, loaders)
-	inReach := func(pos ChunkPos) bool { return w.conf.Synchronous || ticked(pos, centres) }
+	inReach := w.tickable(centres)
 	if thunder {
 		w.tickLightning(tx, inReach)
 	}
 
-	t.tickEntities(tx, tick, centres)
+	t.tickEntities(tx, tick, inReach)
 	w.scheduledUpdates.tickIn(tx, tick, inReach)
-	t.tickBlocksRandomly(tx, centres, tick)
+	t.tickBlocksRandomly(tx, inReach, tick)
 	t.performNeighbourUpdates(tx, inReach)
 	w.redstone.tick(tx, tick)
 }
@@ -178,6 +182,37 @@ func tickCentres(tx *Tx, loaders []*Loader) []tickCentre {
 	return out
 }
 
+// tickable returns whether a chunk ticks this tick (Overmind fork): within a tick centre's reach and
+// with its eight neighbours loaded, so nothing ticked there reads a chunk that is not loaded yet. A
+// synchronous world loads on the calling goroutine and has no workers to wait for, so every chunk
+// ticks there. Answers are kept for the tick.
+func (w *World) tickable(centres []tickCentre) func(ChunkPos) bool {
+	if w.conf.Synchronous {
+		return func(ChunkPos) bool { return true }
+	}
+	known := make(map[ChunkPos]bool)
+	return func(pos ChunkPos) bool {
+		if ok, seen := known[pos]; seen {
+			return ok
+		}
+		ok := ticked(pos, centres) && w.neighboursLoaded(pos)
+		known[pos] = ok
+		return ok
+	}
+}
+
+// neighboursLoaded says whether pos and the eight chunks around it are loaded (Overmind fork).
+func (w *World) neighboursLoaded(pos ChunkPos) bool {
+	for x := int32(-1); x <= 1; x++ {
+		for z := int32(-1); z <= 1; z++ {
+			if _, ok := w.chunks[ChunkPos{pos[0] + x, pos[1] + z}]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ticked says whether a chunk is within reach of a tick centre.
 func ticked(pos ChunkPos, centres []tickCentre) bool {
 	for _, c := range centres {
@@ -190,7 +225,7 @@ func ticked(pos ChunkPos, centres []tickCentre) bool {
 }
 
 // tickBlocksRandomly executes random block ticks in loaded chunks within range of loaders.
-func (t ticker) tickBlocksRandomly(tx *Tx, centres []tickCentre, tick int64) {
+func (t ticker) tickBlocksRandomly(tx *Tx, inReach func(ChunkPos) bool, tick int64) {
 	var (
 		g             randUint4
 		blockEntities []cube.Pos
@@ -202,8 +237,9 @@ func (t ticker) tickBlocksRandomly(tx *Tx, centres []tickCentre, tick int64) {
 	}
 
 	for pos, c := range tx.World().chunks {
-		if !ticked(pos, centres) {
-			// No loaders in this chunk that are within the simulation distance, so proceed to the next.
+		if !inReach(pos) {
+			// No loaders in this chunk that are within the simulation distance, or a neighbour is
+			// still loading, so proceed to the next.
 			continue
 		}
 		blockEntities = append(blockEntities, slices.Collect(maps.Keys(c.BlockEntities))...)
@@ -248,7 +284,7 @@ func (t ticker) tickBlocksRandomly(tx *Tx, centres []tickCentre, tick int64) {
 
 // tickEntities ticks all entities in the world, making sure they are still located in the correct chunks and
 // updating where necessary.
-func (t ticker) tickEntities(tx *Tx, tick int64, centres []tickCentre) {
+func (t ticker) tickEntities(tx *Tx, tick int64, inReach func(ChunkPos) bool) {
 	for handle, lastPos := range tx.World().entities {
 		e := handle.mustEntity(tx)
 		chunkPos := chunkPosFromVec3(handle.data.Pos)
@@ -291,8 +327,9 @@ func (t ticker) tickEntities(tx *Tx, tick int64, centres []tickCentre) {
 		}
 
 		// Overmind fork: entities tick only within a loader's tick reach (tickCentres), not in every
-		// viewed chunk, so an entity at the edge of view cannot make the tick generate a chunk.
-		if tx.World().conf.Synchronous || len(c.viewers) > 0 && ticked(chunkPos, centres) {
+		// viewed chunk, and only once the chunks around theirs are loaded, so an entity at the edge
+		// of view or of the loaded ground cannot make the tick generate or wait for a chunk.
+		if tx.World().conf.Synchronous || len(c.viewers) > 0 && inReach(chunkPos) {
 			if te, ok := e.(TickerEntity); ok {
 				te.Tick(tx, tick)
 			}
