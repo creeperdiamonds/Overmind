@@ -48,13 +48,41 @@ var java4dPlacements = map[string]string{
 	"underwater_magma":                    "count:44..52/flat in_square height_range:-64..256/flat surface_relative_threshold_filter:OCEAN_FLOOR_WG:_:-2 biome",
 }
 
+// javaFixedPlacements are older placed features found differing from Java's files by the same check
+// in Task 4d's fix round, and corrected (worldgen/placed_feature/<name>.json).
+var javaFixedPlacements = map[string]string{
+	"flower_default":            "rarity_filter:32 in_square heightmap:MOTION_BLOCKING biome",
+	"flower_warm":               "rarity_filter:16 in_square heightmap:MOTION_BLOCKING biome",
+	"forest_flowers":            "rarity_filter:7 in_square heightmap:MOTION_BLOCKING count:0..1/shaped biome",
+	"flower_forest_flowers":     "rarity_filter:7 in_square heightmap:MOTION_BLOCKING count:0..3/shaped biome",
+	"brown_mushroom_old_growth": "count:3 rarity_filter:4 in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_bush":                "rarity_filter:4 in_square heightmap:MOTION_BLOCKING biome count:24 random_offset:-5..5/shaped:-3..3/shaped filter",
+	"patch_cactus_desert":       "rarity_filter:6 in_square heightmap:MOTION_BLOCKING biome count:10 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_cactus_decorated":    "rarity_filter:13 in_square heightmap:MOTION_BLOCKING biome count:10 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_melon":               "rarity_filter:6 in_square heightmap:MOTION_BLOCKING biome count:64 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_melon_sparse":        "rarity_filter:64 in_square heightmap:MOTION_BLOCKING biome count:64 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_pumpkin":             "rarity_filter:300 in_square heightmap:MOTION_BLOCKING biome count:96 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"patch_sugar_cane":          "rarity_filter:6 in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:0 filter",
+	"patch_sugar_cane_desert":   "in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:0 filter",
+	"patch_sugar_cane_badlands": "rarity_filter:5 in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:0 filter",
+	"patch_sugar_cane_swamp":    "rarity_filter:3 in_square heightmap:MOTION_BLOCKING biome count:20 random_offset:-4..4/shaped:0 filter",
+	"disk_grass":                "count:1 in_square heightmap:OCEAN_FLOOR_WG random_offset:0:-1 filter biome",
+	"ice_patch":                 "count:2 in_square heightmap:MOTION_BLOCKING random_offset:0:-1 filter biome",
+	"patch_grass_meadow":        "noise_threshold_count:-0.8:5:10 in_square heightmap:WORLD_SURFACE_WG biome count:16 random_offset:-7..7/shaped:-3..3/shaped filter",
+	"trees_plains":              "count:0..1/shaped in_square surface_water_depth_filter:0 heightmap:OCEAN_FLOOR filter biome",
+	"trees_birch":               "count:10..11/shaped in_square surface_water_depth_filter:0 heightmap:OCEAN_FLOOR biome filter",
+	"trees_snowy":               "count:0..1/shaped in_square surface_water_depth_filter:0 heightmap:OCEAN_FLOOR biome filter",
+	"trees_badlands":            "count:5..6/shaped in_square surface_water_depth_filter:0 heightmap:OCEAN_FLOOR biome filter",
+}
+
 // bedrock4dPlacements are where the Bedrock profile keeps Bedrock's own file values instead
 // (BEDROCK-NOTES section 5 row 9: magma 18 to 30 attempts).
 var bedrock4dPlacements = map[string]string{
 	"underwater_magma": "count:18..30/flat in_square height_range:-64..256/flat surface_relative_threshold_filter:OCEAN_FLOOR_WG:_:-2 biome",
 }
 
-// TestPlacementsFollowJava4d holds each of Task 4d's placed features, in both profiles, against
+// TestPlacementsFollowJava4d holds each of Task 4d's placed features, and the older ones corrected
+// with them, in both profiles, against
 // Java's placed feature file: modifier by modifier, with counts, rarities, heightmaps and offsets.
 // Block predicates are only checked to be where Java has one.
 func TestPlacementsFollowJava4d(t *testing.T) {
@@ -63,7 +91,7 @@ func TestPlacementsFollowJava4d(t *testing.T) {
 		for _, pl := range prof.placements {
 			byName[pl.name] = pl
 		}
-		for name, want := range java4dPlacements {
+		for name, want := range mergedMaps(java4dPlacements, javaFixedPlacements) {
 			if b, ok := bedrock4dPlacements[name]; ok && prof == ProfileBedrock {
 				want = b
 			}
@@ -77,6 +105,16 @@ func TestPlacementsFollowJava4d(t *testing.T) {
 			}
 		}
 	}
+}
+
+func mergedMaps(list ...map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, m := range list {
+		for k, v := range m {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // TestIcebergDrawsLikeJava replays the iceberg's shape draws in IcebergFeature's order: an ellipse
