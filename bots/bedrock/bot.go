@@ -63,6 +63,7 @@ type Bot struct {
 	swings  map[uint64]int                     // arm swings shown, by runtime ID
 	health  float32                            // our own, last sent
 	motion  []mgl32.Vec3                       // SetActorMotion for ourselves
+	rules   map[string]any                     // game rules from GameRulesChanged, by name
 }
 
 // Item is an item entity the bot was shown.
@@ -197,6 +198,13 @@ func (b *Bot) watch(pk packet.Packet) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	switch pk := pk.(type) {
+	case *packet.GameRulesChanged:
+		if b.rules == nil {
+			b.rules = map[string]any{}
+		}
+		for _, r := range pk.GameRules {
+			b.rules[r.Name] = r.Value
+		}
 	case *packet.AddPlayer:
 		b.others[pk.EntityRuntimeID] = &Seen{Name: pk.Username, Pos: vec64(pk.Position), Yaw: float64(pk.Yaw)}
 		b.meta[pk.EntityRuntimeID] = pk.EntityMetadata
@@ -665,4 +673,13 @@ func (b *Bot) ChangeSkin(s protocol.Skin) error {
 		return err
 	}
 	return b.conn.WritePacket(&packet.PlayerSkin{UUID: id, Skin: s, NewSkinName: "custom", OldSkinName: "custom"})
+}
+
+// GameRule is the last value the server sent for a game rule in
+// GameRulesChanged, and whether it sent one.
+func (b *Bot) GameRule(name string) (any, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	v, ok := b.rules[name]
+	return v, ok
 }

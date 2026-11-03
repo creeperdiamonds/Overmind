@@ -73,6 +73,10 @@ type Config struct {
 	// algorithms with Bedrock's data, or "overjava", Java's throughout. A world
 	// keeps the profile it was made with only if this is left unchanged.
 	Profile string
+	// ShowCoordinates turns on Bedrock's "Show coordinates" for every Bedrock
+	// player (the showcoordinates game rule), sent as they join. On by default;
+	// vanilla BDS defaults it to false. Java needs nothing: F3 shows them.
+	ShowCoordinates bool
 	// Skins is how skins cross between the editions ([skins] in the file).
 	Skins Skins `toml:"skins"`
 	// FlatWorld, set by tests (never read from the file), makes the Overworld
@@ -118,6 +122,7 @@ func Default() Config {
 		MaxPlayers:        50,
 		ResourcesFolder:   "resources",
 		Profile:           "bedrock",
+		ShowCoordinates:   true,
 		Skins:             Skins{UploadCache: "skins", UploadGapSeconds: 30},
 	}
 }

@@ -147,6 +147,7 @@ func Start(cfg config.Config) (*Server, error) {
 
 	h := newHub(log)
 	h.blockOddShapes = cfg.Skins.BlockOddShapes
+	h.showCoordinates = cfg.ShowCoordinates
 	if cfg.Skins.BlockOddShapes {
 		conf.JoinSkin = h.allowedSkin
 	}

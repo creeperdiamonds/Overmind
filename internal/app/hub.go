@@ -48,6 +48,9 @@ type hub struct {
 	// blockOddShapes replaces Bedrock skins that go beyond the standard player
 	// model with a default skin, for everyone (the skins.blockOddShapes setting).
 	blockOddShapes bool
+	// showCoordinates turns on Bedrock's coordinates for each Bedrock player as
+	// they join (the ShowCoordinates setting).
+	showCoordinates bool
 
 	mu      sync.Mutex
 	members map[memberKey]*member
@@ -103,6 +106,10 @@ func (h *hub) joined(p *player.Player, ed edition, playerChat func(sender, msg s
 	if ed == java {
 		// Bedrock lists its own players; a Java player has no Bedrock session.
 		session.List(p.H(), p.Name(), p.Skin())
+	}
+	if ed == bedrock && h.showCoordinates {
+		// The showcoordinates game rule; it only writes to the session.
+		p.ShowCoordinates()
 	}
 	chat.Global.Writet(chat.MessageJoin, p.Name())
 	h.log.Info("player joined", "name", p.Name(), "edition", ed)

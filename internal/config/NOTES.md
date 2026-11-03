@@ -7,3 +7,5 @@ Reads the settings file and holds the defaults. `JavaOffline` turns Mojang login
 `[skins]` (keys in camel case, as the owner named them): `blockOddShapes` (off) replaces Bedrock skins whose shape goes beyond the standard player model with a default skin for everyone; `uploadAccount` (empty, so no uploads) is the account file `overmind skin-account` writes, for signing Bedrock skins for Java viewers; `uploadCache` (`skins`) keeps what Mojang signed; `uploadGapSeconds` (30) paces uploads. See `internal/javafront/NOTES.md` before setting an account: it can be suspended. `Skins.Uploader` is for tests and never read from the file.
 
 `FlatWorld` is for tests and never read from the file: the Overworld is Dragonfly's flat world instead of worldgen's (internal/javafront's tests use it through `testserver.FlatWorld`).
+
+`ShowCoordinates` (on by default; vanilla BDS defaults it to false) turns on Bedrock's "Show coordinates" for each Bedrock player as they join, through the `showcoordinates` game rule. Java needs nothing: F3 shows coordinates, and the Java login does not send reduced debug info.
