@@ -250,7 +250,7 @@ func TestWaterFlows(t *testing.T) {
 	srv := testserver.StartIn(t, t.TempDir(), withSeed(5))
 	w := srv.World()
 	c := lab(t, w)
-	defer watch(t, w, c, 2)()
+	defer watch(t, w, c, 4)() // radius 4: a tick reach of 2, so the water's chunk and the next one tick
 
 	// A water source held back by one stone block, the way a lake bank holds it.
 	src, wall := c.Add(cube.Pos{-1, 1, 0}), c.Add(cube.Pos{0, 1, 0})
@@ -271,7 +271,7 @@ func TestSandFalls(t *testing.T) {
 	srv := testserver.StartIn(t, t.TempDir(), withSeed(6))
 	w := srv.World()
 	c := lab(t, w)
-	defer watch(t, w, c, 2)()
+	defer watch(t, w, c, 4)() // radius 4: a tick reach of 2 chunks
 
 	// Sand on a one-block pillar, three blocks up; take the pillar away.
 	pillar := c.Add(cube.Pos{0, 1, 0})

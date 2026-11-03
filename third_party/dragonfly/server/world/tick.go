@@ -93,25 +93,39 @@ func (t ticker) tick(tx *Tx) {
 			}
 		}
 	}
+	// Overmind fork: nothing past a tick reach changes, as on Bedrock, where chunks past the
+	// simulation distance stay loaded but do not tick. Lightning, scheduled ticks and neighbour
+	// updates wait there, so no tick creates an entity that would then never tick.
+	centres := tickCentres(tx, loaders)
+	inReach := func(pos ChunkPos) bool { return w.conf.Synchronous || ticked(pos, centres) }
 	if thunder {
-		w.tickLightning(tx)
+		w.tickLightning(tx, inReach)
 	}
 
-	t.tickEntities(tx, tick, tickCentres(tx, loaders))
-	w.scheduledUpdates.tick(tx, tick)
-	t.tickBlocksRandomly(tx, tickCentres(tx, loaders), tick)
-	t.performNeighbourUpdates(tx)
+	t.tickEntities(tx, tick, centres)
+	w.scheduledUpdates.tickIn(tx, tick, inReach)
+	t.tickBlocksRandomly(tx, centres, tick)
+	t.performNeighbourUpdates(tx, inReach)
 	w.redstone.tick(tx, tick)
 }
 
 // performNeighbourUpdates performs all block updates that came as a result of a neighbouring block being changed.
-func (t ticker) performNeighbourUpdates(tx *Tx) {
+// Overmind fork: an update past every tick reach waits while its chunk stays loaded, and is dropped
+// once the chunk unloads (reading it would load the chunk again on the tick).
+func (t ticker) performNeighbourUpdates(tx *Tx, inReach func(ChunkPos) bool) {
 	updates := slices.Clone(tx.World().neighbourUpdates)
 	clear(tx.World().neighbourUpdates)
 	tx.World().neighbourUpdates = tx.World().neighbourUpdates[:0]
 
+	var waiting []neighbourUpdate
 	for _, update := range updates {
 		pos, changedNeighbour := update.pos, update.neighbour
+		if c := chunkPosFromBlockPos(pos); !inReach(c) {
+			if _, loaded := tx.World().chunks[c]; loaded {
+				waiting = append(waiting, update)
+			}
+			continue
+		}
 		if ticker, ok := tx.Block(pos).(NeighbourUpdateTicker); ok {
 			ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
 		}
@@ -119,6 +133,14 @@ func (t ticker) performNeighbourUpdates(tx *Tx) {
 			if ticker, ok := liquid.(NeighbourUpdateTicker); ok {
 				ticker.NeighbourUpdateTick(pos, changedNeighbour, tx)
 			}
+		}
+	}
+	// Waiting updates are kept once each, so repeated changes at the edge cannot pile them up.
+	seen := make(map[neighbourUpdate]struct{}, len(waiting))
+	for _, update := range waiting {
+		if _, ok := seen[update]; !ok {
+			seen[update] = struct{}{}
+			tx.World().neighbourUpdates = append(tx.World().neighbourUpdates, update)
 		}
 	}
 }
@@ -224,19 +246,6 @@ func (t ticker) tickBlocksRandomly(tx *Tx, centres []tickCentre, tick int64) {
 	}
 }
 
-// anyWithinDistance checks if any of the ChunkPos loaded are within the distance r of the ChunkPos pos.
-func (t ticker) anyWithinDistance(pos ChunkPos, loaded []ChunkPos, r int32) bool {
-	for _, chunkPos := range loaded {
-		xDiff, zDiff := chunkPos[0]-pos[0], chunkPos[1]-pos[1]
-		if (xDiff*xDiff)+(zDiff*zDiff) <= r*r {
-			// The chunk was within the simulation distance of at least one viewer, so we can proceed to
-			// ticking the block.
-			return true
-		}
-	}
-	return false
-}
-
 // tickEntities ticks all entities in the world, making sure they are still located in the correct chunks and
 // updating where necessary.
 func (t ticker) tickEntities(tx *Tx, tick int64, centres []tickCentre) {
@@ -339,11 +348,21 @@ func newScheduledTickQueue(tick int64) *scheduledTickQueue {
 // block update that is scheduled for the tick passed, and removing it from the
 // queue.
 func (queue *scheduledTickQueue) tick(tx *Tx, tick int64) {
+	queue.tickIn(tx, tick, func(ChunkPos) bool { return true })
+}
+
+// tickIn is tick for the chunks inReach says are ticked (Overmind fork). A tick
+// due past every tick reach stays queued until its chunk is ticked; saved with
+// the chunk, it is still due when the chunk loads again.
+func (queue *scheduledTickQueue) tickIn(tx *Tx, tick int64, inReach func(ChunkPos) bool) {
 	queue.currentTick = tick
 
 	w := tx.World()
+	due := func(t scheduledTick) bool {
+		return t.t <= tick && inReach(chunkPosFromBlockPos(t.pos))
+	}
 	for _, t := range queue.ticks {
-		if t.t > tick {
+		if !due(t) {
 			continue
 		}
 		b := tx.Block(t.pos)
@@ -357,11 +376,9 @@ func (queue *scheduledTickQueue) tick(tx *Tx, tick int64) {
 	}
 
 	// Clear scheduled ticks that were processed from the queue.
-	queue.ticks = slices.DeleteFunc(queue.ticks, func(t scheduledTick) bool {
-		return t.t <= tick
-	})
+	queue.ticks = slices.DeleteFunc(queue.ticks, due)
 	maps.DeleteFunc(queue.furthestTicks, func(index scheduledTickIndex, t int64) bool {
-		return t <= tick
+		return t <= tick && inReach(chunkPosFromBlockPos(index.pos))
 	})
 }
 

@@ -188,14 +188,23 @@ func (w weather) enableWeatherCycle(v bool) {
 	w.w.set.WeatherCycle = v
 }
 
-// tickLightning iterates over all loaded chunks in the World, striking
-// lightning in each one with a 1/100,000 chance.
-func (w weather) tickLightning(tx *Tx) {
+// lightningChance is the 1 in n chance that a ticked chunk strikes each tick in a thunderstorm
+// (Overmind fork: a variable, so tests can raise it).
+var lightningChance = 100000
+
+// tickLightning iterates over the ticked chunks in the World, striking
+// lightning in each one with a 1/100,000 chance. Overmind fork: only chunks
+// within a tick reach (inReach), since a bolt struck past it would never tick,
+// so never close.
+func (w weather) tickLightning(tx *Tx, inReach func(ChunkPos) bool) {
 	positions := make([]ChunkPos, 0, len(w.w.chunks)/100000)
 	for pos := range w.w.chunks {
+		if !inReach(pos) {
+			continue
+		}
 		// Wiki: For each loaded chunk, every tick there is a 1⁄100,000 chance
 		// of an attempted lightning strike during a thunderstorm
-		if w.w.r.IntN(100000) == 0 {
+		if w.w.r.IntN(lightningChance) == 0 {
 			positions = append(positions, pos)
 		}
 	}
