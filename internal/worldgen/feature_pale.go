@@ -14,28 +14,44 @@ var (
 
 var mossSides = [3]string{"none", "low", "tall"}
 
+// carpetForm is a pale moss carpet's shape: bottom or topper, and a side kind (0 none, 1 low, 2 tall)
+// for each horizontal direction (north, east, south, west).
+type carpetForm struct {
+	bottom bool
+	sides  [4]int
+}
+
+// carpetStates holds every pale moss carpet state by bottom and sides, and carpetForms the way back.
+// Both are made once, so placing a carpet reads no state names and takes no lock.
+var carpetStates, carpetForms = func() (t [2][3][3][3][3]bs, back map[bs]carpetForm) {
+	back = map[bs]carpetForm{}
+	for b := range 2 {
+		for n := range 3 {
+			for e := range 3 {
+				for so := range 3 {
+					for w := range 3 {
+						s := laterState("pale_moss_carpet[bottom=" + boolWord(b) + ",east=" + mossSides[e] + ",north=" + mossSides[n] +
+							",south=" + mossSides[so] + ",west=" + mossSides[w] + "]")
+						t[b][n][e][so][w] = s
+						back[s] = carpetForm{b == 1, [4]int{n, e, so, w}}
+					}
+				}
+			}
+		}
+	}
+	return t, back
+}()
+
 // paleCarpet is a pale moss carpet state: bottom or topper, with a side kind by horizontal direction
 // (north, east, south, west).
 func paleCarpet(bottom bool, sides [4]int) bs {
-	_ = sAir // Made after the base states, so air stays state zero.
-	return stateOf("pale_moss_carpet[bottom=" + boolWord(btoi(bottom)) + ",east=" + mossSides[sides[1]] + ",north=" + mossSides[sides[0]] +
-		",south=" + mossSides[sides[2]] + ",west=" + mossSides[sides[3]] + "]")
+	return carpetStates[btoi(bottom)][sides[0]][sides[1]][sides[2]][sides[3]]
 }
 
+// carpetSides is a state's carpet shape; any other block gives a topper with no sides.
 func carpetSides(s bs) (bottom bool, sides [4]int) {
-	if s.block() != paleCarpet(true, [4]int{}).block() {
-		return false, sides
-	}
-	bottom = propOf(s.name(), "bottom") == "true"
-	for i, a := range horizontal {
-		switch propOf(s.name(), dirName(a)) {
-		case "low":
-			sides[i] = 1
-		case "tall":
-			sides[i] = 2
-		}
-	}
-	return bottom, sides
+	f := carpetForms[s]
+	return f.bottom, f.sides
 }
 
 // carpetUpdated is the carpet's shape from its neighbours.
@@ -67,7 +83,7 @@ func carpetUpdated(d *decoration, bottom bool, sides [4]int, p pos, create bool)
 	return sides
 }
 
-var sPaleCarpetBlock = paleCarpet(true, [4]int{}).block()
+var sPaleCarpetBlock = carpetStates[1][0][0][0][0].block()
 
 // placeCarpet is the mossy carpet's own placement: a bottom carpet shaped by its neighbours, then
 // maybe a topper over it. Java's simple_block hands the carpet the level's random, not the feature's,
@@ -185,7 +201,7 @@ func creakingHeart(chance float32) treeDecorator {
 }
 
 func definePale(t *tableBuilder) {
-	carpet := laterState("pale_moss_carpet[bottom=true,east=none,north=none,south=none,west=none]")
+	carpet := paleCarpet(true, [4]int{})
 	paleVegetation := weightedStates(weightedState{25, carpet}, weightedState{25, stateOf("short_grass")}, weightedState{10, stateOf("tall_grass[half=lower]")})
 	plant := newNestedPlacement(func(d *decoration, p pos) bool {
 		s := paleVegetation(d, p)

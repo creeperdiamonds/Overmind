@@ -1463,15 +1463,15 @@ func attachedToLogs(prob float32, pv stateProvider, dirs []dir) treeDecorator {
 // mangroveRoots is the mangrove's root placer, which the study does not write up: written from
 // knowledge of Java 26.1 and unverified against a Java run (no traced chunk holds a mangrove swamp).
 type mangroveRoots struct {
-	offset          intProvider
-	root            bs
-	above           bs // Placed on a root by chance, if the block over it is air.
-	aboveChance     float32
-	through         map[uint16]bool // Roots also grow through these.
-	muddyIn         map[uint16]bool // Roots in these are muddy roots.
-	muddy           bs
-	width, length   int
-	skew            float32
+	offset        intProvider
+	root          bs
+	above         bs // Placed on a root by chance, if the block over it is air.
+	aboveChance   float32
+	through       map[uint16]bool // Roots also grow through these.
+	muddyIn       map[uint16]bool // Roots in these are muddy roots.
+	muddy         bs
+	width, length int
+	skew          float32
 }
 
 func (m *mangroveRoots) trunkOrigin(o pos, r *featRand) pos { return o.add(0, m.offset(r), 0) }

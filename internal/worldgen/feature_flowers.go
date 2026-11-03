@@ -43,10 +43,9 @@ func dualNoiseState(lo, hi int, slow *normalNoise, slowScale float32, main *norm
 // with weight one, as the game builds them.
 func segmented(block, key string, lo, hi int) stateProvider {
 	var list []weightedState
-	_ = sAir // Made after the base states, so air stays state zero.
 	for n := lo; n <= hi; n++ {
 		for _, a := range horizontal {
-			list = append(list, weightedState{1, stateOf(fmt.Sprintf("%s[facing=%s,%s=%d]", block, dirName(a), key, n))})
+			list = append(list, weightedState{1, laterState(fmt.Sprintf("%s[facing=%s,%s=%d]", block, dirName(a), key, n))})
 		}
 	}
 	return weightedStates(list...)

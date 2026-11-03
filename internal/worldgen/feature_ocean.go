@@ -19,7 +19,6 @@ var (
 )
 
 func init() {
-	_ = sAir
 	for i, k := range coralKinds {
 		coralBlocks[i] = stateOf(k + "_coral_block")
 		corals[i] = stateOf(k + "_coral[waterlogged=true]")
@@ -333,7 +332,7 @@ func (ib *icebergRun) smooth(width, height, ea int) {
 	if ib.ellipse {
 		a = ea
 	}
-	snow := stateOf("snow[layers=1]").block()
+	snow := sSnowLayer.block()
 	for x := -a; x <= a; x++ {
 		for z := -a; z <= a; z++ {
 			for y := 0; y <= height; y++ {
@@ -364,18 +363,18 @@ func (ib *icebergRun) smooth(width, height, ea int) {
 func (ib *icebergRun) cutOut(width, height, ea int) {
 	d, r := ib.d, &ib.d.r
 	sx, sz := 1, 1
-	if r.nextBoolean() {
+	if r.nextBool() {
 		sx = -1
 	}
-	if r.nextBoolean() {
+	if r.nextBool() {
 		sz = -1
 	}
 	xo := r.nextInt(max(width/2-2, 1))
-	if r.nextBoolean() {
+	if r.nextBool() {
 		xo = width/2 + 1 - r.nextInt(max(width-width/2-1, 1))
 	}
 	zo := r.nextInt(max(width/2-2, 1))
-	if r.nextBoolean() {
+	if r.nextBool() {
 		zo = width/2 + 1 - r.nextInt(max(width-width/2-1, 1))
 	}
 	if ib.ellipse {
@@ -403,7 +402,7 @@ func (ib *icebergRun) cutOut(width, height, ea int) {
 						d.set(p.x, p.y, p.z, sWater)
 					} else {
 						d.set(p.x, p.y, p.z, sAir)
-						if up := p.step(dUp); d.at(up).block() == stateOf("snow[layers=1]").block() {
+						if up := p.step(dUp); d.at(up).block() == sSnowLayer.block() {
 							d.set(up.x, up.y, up.z, sAir)
 						}
 					}
@@ -418,8 +417,6 @@ func (ib *icebergRun) cutOut(width, height, ea int) {
 		carve(radiusSteep(r, -y, height, width), y, true)
 	}
 }
-
-func (r *featRand) nextBoolean() bool { return r.nextBool() }
 
 func defineOcean(t *tableBuilder) {
 	reef := simpleSelector(newNestedPlacement(coralFeature(coralTree)), newNestedPlacement(coralFeature(coralClaw)), newNestedPlacement(coralFeature(coralMushroom)))

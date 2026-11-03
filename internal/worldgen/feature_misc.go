@@ -915,22 +915,20 @@ func bambooFeature(prob float32) feature {
 
 // kelpAges are a kelp top's states for ages 20 to 23, the ones generation picks.
 var kelpAges = func() (a [4]bs) {
-	_ = sAir // Air is state zero, so it must be made first.
 	for i := range a {
-		a[i] = stateOf("kelp[age=" + strconv.Itoa(i+20) + "]")
+		a[i] = laterState("kelp[age=" + strconv.Itoa(i+20) + "]")
 	}
 	return a
 }()
 
 // mushroomStates holds every face pattern of the three huge mushroom blocks, by faces as bits.
 var mushroomStates = func() map[string]*[64]bs {
-	_ = sAir // Air is state zero, so it must be made first.
 	m := map[string]*[64]bs{}
 	for _, name := range []string{"red_mushroom_block", "brown_mushroom_block", "mushroom_stem"} {
 		var t [64]bs
 		for i := range t {
 			f := func(b int) bool { return i>>b&1 != 0 }
-			t[i] = stateOf(fmt.Sprintf("%s[down=%v,east=%v,north=%v,south=%v,up=%v,west=%v]", name, f(1), f(4), f(2), f(3), f(0), f(5)))
+			t[i] = laterState(fmt.Sprintf("%s[down=%v,east=%v,north=%v,south=%v,up=%v,west=%v]", name, f(1), f(4), f(2), f(3), f(0), f(5)))
 		}
 		m[name] = &t
 	}
@@ -1140,7 +1138,7 @@ func blueIceFeature(d *decoration, p pos) bool {
 
 // freezeFeature is section 12's freeze.
 func freezeFeature(d *decoration, o pos) bool {
-	snow := stateOf("snow[layers=1]")
+	snow := sSnowLayer
 	for dx := range 16 {
 		for dz := range 16 {
 			x, z := o.x+dx, o.z+dz
@@ -1170,10 +1168,9 @@ func freezeFeature(d *decoration, o pos) bool {
 
 // lichenStates holds every glow lichen state, by its faces (bits in dir order) and water (bit 6).
 var lichenStates = func() (t [128]bs) {
-	_ = sAir // Air is state zero, so it must be made first.
 	for i := range t {
 		f := func(b int) bool { return i>>b&1 != 0 }
-		t[i] = stateOf(lichenName(f(int(dDown)), f(int(dUp)), f(int(dNorth)), f(int(dSouth)), f(int(dWest)), f(int(dEast)), f(6)))
+		t[i] = laterState(lichenName(f(int(dDown)), f(int(dUp)), f(int(dNorth)), f(int(dSouth)), f(int(dWest)), f(int(dEast)), f(6)))
 	}
 	return t
 }()

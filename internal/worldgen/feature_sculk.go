@@ -257,10 +257,12 @@ var cornerless = func() (l []pos) {
 // sculkPatch is the sculk_patch feature.
 type sculkPatch struct {
 	charges, perCharge, attempts, growthRounds, spreadRounds int
-	catalyst                                                   float32
+	catalyst                                                 float32
 }
 
-func fullCube(s bs) bool { return s.has(fMotion) && s.has(fSturdyUp) && s.has(fSturdyDown) && s.has(fSturdySide) }
+func fullCube(s bs) bool {
+	return s.has(fMotion) && s.has(fSturdyUp) && s.has(fSturdyDown) && s.has(fSturdySide)
+}
 
 func (c *sculkPatch) feature(d *decoration, o pos) bool {
 	if !sculkCanSpreadFrom(d, o) {

@@ -248,3 +248,14 @@ var (
 	sTerrWhite  = stateOf("white_terracotta")
 	sTerrLight  = stateOf("light_gray_terracotta")
 )
+
+// laterState makes a state after the base states. Naming air makes Go make it first, so it stays
+// state zero whatever order the package's variables are made in. Every state made by a package
+// variable outside this block goes through it.
+func laterState(name string) bs {
+	_ = sAir
+	return stateOf(name)
+}
+
+// sSnowLayer is the one snow layer generation places, made once for the features that test for it.
+var sSnowLayer = laterState("snow[layers=1]")
