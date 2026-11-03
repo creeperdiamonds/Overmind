@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/df-mc/dragonfly/server/cmd"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/player/chat"
 	"github.com/df-mc/dragonfly/server/player/skin"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft"
 
+	"github.com/creeperdiamonds/overmind/internal/give"
 	"github.com/creeperdiamonds/overmind/internal/javafront"
 	"github.com/creeperdiamonds/overmind/internal/skins"
 )
@@ -51,6 +53,8 @@ type hub struct {
 	// showCoordinates turns on Bedrock's coordinates for each Bedrock player as
 	// they join (the ShowCoordinates setting).
 	showCoordinates bool
+	// operators may use /give (the Operators setting).
+	operators give.Operators
 
 	mu      sync.Mutex
 	members map[memberKey]*member
@@ -95,6 +99,9 @@ func (h *hub) joined(p *player.Player, ed edition, playerChat func(sender, msg s
 		// session, so it may be called from any goroutine, as chat.Global does.
 		m.chat = func(sender, msg string) { p.Message("<" + sender + "> " + msg) }
 	}
+	// Before the player can run a command, or Bedrock's session lists its
+	// commands, which it does once this transaction is over.
+	give.Join(p.H(), give.Member{Operator: h.operators.Includes(p.Name(), ed == java, p.UUID(), p.XUID()), Java: ed == java})
 	h.mu.Lock()
 	h.members[memberKey{ed, p.UUID()}] = m
 	h.mu.Unlock()
@@ -125,6 +132,7 @@ func (h *hub) left(ed edition, id uuid.UUID) {
 	if !ok {
 		return
 	}
+	give.Leave(m.handle)
 	if f := h.java.Load(); f != nil {
 		f.Unlist(id)
 	}
@@ -243,6 +251,12 @@ type playerHandler struct {
 func (ph *playerHandler) HandleChat(ctx *player.Context, msg *string) {
 	ctx.Cancel()
 	ph.h.say(ph.ed, ctx.Player().Name(), *msg)
+}
+
+// HandleCommandExecution keeps the command line as the player typed it, for
+// /give to read its item from (give.Remember).
+func (ph *playerHandler) HandleCommandExecution(ctx *player.Context, _ cmd.Command, args []string) {
+	give.Remember(ctx.Player().H(), args)
 }
 
 // HandleSkinChange follows a Bedrock player's new skin: with blockOddShapes an

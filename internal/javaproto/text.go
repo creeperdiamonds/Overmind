@@ -13,6 +13,9 @@ type Text struct {
 	Translate string
 	With      []Text
 	Color     string
+	// Extra follows the component's own text, taking its colour unless it has
+	// one of its own.
+	Extra []Text
 }
 
 // NBT tag types used by text components.
@@ -29,7 +32,7 @@ const maxNBTString = 65535
 // appendText encodes a component as network NBT: a bare string tag for plain
 // text, a compound otherwise.
 func appendText(b []byte, t Text) []byte {
-	if t.Translate == "" && t.Color == "" && len(t.With) == 0 {
+	if t.Translate == "" && t.Color == "" && len(t.With) == 0 && len(t.Extra) == 0 {
 		b = append(b, tagString)
 		return appendNBTString(b, t.Text)
 	}
@@ -52,15 +55,20 @@ func appendTextBody(b []byte, t Text) []byte {
 	if t.Color != "" {
 		field("color", t.Color)
 	}
-	if len(t.With) > 0 {
+	list := func(name string, ts []Text) {
+		if len(ts) == 0 {
+			return
+		}
 		b = append(b, tagList)
-		b = appendNBTString(b, "with")
+		b = appendNBTString(b, name)
 		b = append(b, tagCompound)
-		b = binary.BigEndian.AppendUint32(b, uint32(len(t.With)))
-		for _, w := range t.With {
+		b = binary.BigEndian.AppendUint32(b, uint32(len(ts)))
+		for _, w := range ts {
 			b = appendTextBody(b, w)
 		}
 	}
+	list("with", t.With)
+	list("extra", t.Extra)
 	return append(b, tagEnd)
 }
 

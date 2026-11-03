@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/cmd"
 	"github.com/df-mc/dragonfly/server/entity"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/player/chat"
@@ -171,7 +170,10 @@ type conn struct {
 	nextEnt  int32
 	lastPing time.Time
 	joined   bool // Options.Joined was called, so Options.Left is owed
-	invs     inventories
+	// lastCommand is the command the player is running, without its slash, as
+	// it sent it; set and read on the player's world goroutine.
+	lastCommand string
+	invs        inventories
 	// usingSince is when the client started using the held item (eating).
 	usingSince time.Time
 	// keys is the last player_input: the keys the client holds.
@@ -345,6 +347,8 @@ func (c *conn) join() error {
 		}
 		// After Joined, which may set the player's handler.
 		c.wrapHandler(p)
+		// After Joined too, which tells /give whether the player is an operator.
+		c.sendCommands(p)
 		c.attackReset = time.Now()
 		return struct{}{}, nil
 	})
@@ -879,7 +883,10 @@ func (c *conn) handlePacket(pid int32, r *javaproto.Reader) error {
 		if !allowedInChat(command) {
 			return errKick{"Illegal characters in chat."}
 		}
-		return c.onPlayer(func(_ *world.Tx, p *player.Player) { p.ExecuteCommand("/" + command) })
+		return c.onPlayer(func(_ *world.Tx, p *player.Player) {
+			c.lastCommand = command // for SendCommandOutput, called within
+			p.ExecuteCommand("/" + command)
+		})
 	case javaproto.PlayHeldSlotIn:
 		slot, err := javaproto.ReadHeldSlot(r)
 		if err != nil {
@@ -1389,16 +1396,6 @@ func (c *conn) SendTranslation(t chat.Translation, l language.Tag, a []any) {
 // to verify, whether the sender logged in with Mojang or not.
 func (c *conn) PlayerChat(sender, msg string) {
 	c.send(javaproto.DisguisedChat(javaproto.Text{Text: msg}, chatType(), javaproto.Text{Text: sender}))
-}
-
-// SendCommandOutput shows what a command said as system chat, errors in red.
-func (c *conn) SendCommandOutput(o *cmd.Output, _ language.Tag) {
-	for _, m := range o.Messages() {
-		c.send(javaproto.SystemChat(javaproto.Text{Text: m.String()}))
-	}
-	for _, e := range o.Errors() {
-		c.send(javaproto.SystemChat(javaproto.Text{Text: e.Error(), Color: "red"}))
-	}
 }
 
 // javaTranslations are Dragonfly messages Java has under its own key, each

@@ -1,6 +1,7 @@
 package javafront
 
 import (
+	"image/color"
 	"strings"
 	"sync"
 
@@ -544,12 +545,16 @@ var (
 	componentMaxDamage    = java261.ComponentType("max_damage")
 	componentCustomName   = java261.ComponentType("custom_name")
 	componentEnchantments = java261.ComponentType("enchantments")
+	componentLore         = java261.ComponentType("lore")
+	componentUnbreakable  = java261.ComponentType("unbreakable")
+	componentDyedColour   = java261.ComponentType("dyed_color")
 	barrierItem, _        = java261.JavaItem("minecraft:barrier", 0)
 )
 
 // javaItem is a Dragonfly stack as a Java slot: the Java item by the item
-// tables, with durability, a custom name and enchantments as components. An
-// item Java has no counterpart for shows as a barrier named after it.
+// tables, with durability, a custom name, lore, enchantments, unbreakable and
+// leather's dye as components. An item Java has no counterpart for shows as a
+// barrier named after it.
 func javaItem(s item.Stack) javaproto.Item {
 	if s.Empty() {
 		return javaproto.Item{}
@@ -583,7 +588,40 @@ func javaItem(s item.Stack) javaproto.Item {
 	if len(ench) > 0 {
 		out.Components = append(out.Components, javaproto.EnchantmentsComponent(componentEnchantments, ench))
 	}
+	if lore := s.Lore(); len(lore) > 0 {
+		lines := make([]javaproto.Text, len(lore))
+		for i, l := range lore {
+			lines[i] = javaproto.Text{Text: l}
+		}
+		out.Components = append(out.Components, javaproto.LoreComponent(componentLore, lines))
+	}
+	if s.Unbreakable() {
+		out.Components = append(out.Components, javaproto.Component{Type: componentUnbreakable})
+	}
+	if rgb, ok := leatherColour(s.Item()); ok {
+		out.Components = append(out.Components, javaproto.IntComponent(componentDyedColour, rgb))
+	}
 	return out
+}
+
+// leatherColour is dyed leather armour's colour as 0xRRGGBB.
+func leatherColour(it world.Item) (int32, bool) {
+	var tier item.ArmourTier
+	switch a := it.(type) {
+	case item.Helmet:
+		tier = a.Tier
+	case item.Chestplate:
+		tier = a.Tier
+	case item.Leggings:
+		tier = a.Tier
+	case item.Boots:
+		tier = a.Tier
+	}
+	l, ok := tier.(item.ArmourTierLeather)
+	if !ok || l.Colour == (color.RGBA{}) {
+		return 0, false
+	}
+	return int32(l.Colour.R)<<16 | int32(l.Colour.G)<<8 | int32(l.Colour.B), true
 }
 
 // dragonflyItem is the item a creative client chose, by the item tables, with
