@@ -15,7 +15,7 @@ var (
 	// coralBlocks, corals (plants then fans) and wallFans in the game's tag order.
 	coralBlocks [5]bs
 	corals      [10]bs
-	wallFans            [5][4]bs // By kind and facing north, east, south, west.
+	wallFans    [5][4]bs // By kind and facing north, east, south, west.
 )
 
 func init() {
@@ -160,25 +160,42 @@ func coralMushroom(d *decoration, o pos, block bs) bool {
 	return true
 }
 
+// icebergDims are an iceberg's shape draws, the first the feature makes.
+type icebergDims struct {
+	snowy, ellipse             bool
+	angle                      float64
+	ea, ec, over, under, width int
+}
+
+// icebergShape draws an iceberg's shape. An ellipse draws its height above water from 6 to 11, a
+// round one from 3 to 17 and maybe a tall extra: one draw or the other, never both.
+func icebergShape(r *featRand) (s icebergDims) {
+	s.snowy = r.nextDouble() > 0.7
+	s.angle = r.nextDouble() * 2 * math.Pi
+	s.ea = 11 - r.nextInt(5)
+	s.ec = 3 + r.nextInt(3)
+	s.ellipse = r.nextDouble() > 0.7
+	if s.ellipse {
+		s.over = r.nextInt(6) + 6
+	} else {
+		s.over = r.nextInt(15) + 3
+		if r.nextDouble() > 0.9 {
+			s.over += r.nextInt(19) + 7
+		}
+	}
+	s.under = min(s.over+r.nextInt(11), 18)
+	s.width = min(s.over+r.nextInt(7)-r.nextInt(5), 11)
+	return s
+}
+
 // iceberg is the iceberg feature, of packed or blue ice.
 func iceberg(main bs) feature {
 	return func(d *decoration, o pos) bool {
 		r := &d.r
 		o.y = SeaLevel
-		snowy := r.nextDouble() > 0.7
-		angle := r.nextDouble() * 2 * math.Pi
-		ea := 11 - r.nextInt(5)
-		ec := 3 + r.nextInt(3)
-		ellipse := r.nextDouble() > 0.7
-		over := r.nextInt(15) + 3
-		if ellipse {
-			over = r.nextInt(6) + 6
-		}
-		if !ellipse && r.nextDouble() > 0.9 {
-			over += r.nextInt(19) + 7
-		}
-		under := min(over+r.nextInt(11), 18)
-		width := min(over+r.nextInt(7)-r.nextInt(5), 11)
+		dims := icebergShape(r)
+		snowy, angle, ea, ec, ellipse := dims.snowy, dims.angle, dims.ea, dims.ec, dims.ellipse
+		over, under, width := dims.over, dims.under, dims.width
 		a := 11
 		if ellipse {
 			a = ea
