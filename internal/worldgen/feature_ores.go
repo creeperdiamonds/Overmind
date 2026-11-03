@@ -40,6 +40,8 @@ type oreScratch struct {
 	seen  [1 << 15]uint32
 	far   map[int]struct{}
 	d     [64][4]float64
+	// The Bedrock ore's spheres (bedrock_ores.go).
+	bspheres, bactive []oreSphere
 }
 
 // see marks a key and says whether it was marked already in this blob.

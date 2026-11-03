@@ -1,5 +1,7 @@
 package worldgen
 
+import "strings"
+
 
 // Profile holds what differs between Bedrock's and Java's placement rules. The algorithms are the
 // same; only values differ. The default is Bedrock; Overjava is "Overmind as a Java server".
@@ -36,6 +38,11 @@ type Profile struct {
 	climate *climateTable
 
 	placements []*placement
+
+	// bedrockDeco decorates in Bedrock's order with Bedrock's passes (bedrock_deco.go); the
+	// placements named in bedrockReplaces are Java's versions of rules those passes run.
+	bedrockDeco     bool
+	bedrockReplaces map[string]bool
 }
 
 var (
@@ -43,11 +50,24 @@ var (
 	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true, surfaceBedrock: true,
 		ironSize: 10, diamondMediumSize: 4, dirtReplaces: "stone", gravelReplaces: "stone deepslate", rockReplaces: "stone",
 		oresSkipTuff: true, infestedBedrock: true, extraMountainCoal: true, climate: &bedrockClimates,
-		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30}})
+		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30},
+		bedrockDeco: true, bedrockReplaces: javaOresReplaced()})
 	// ProfileOverjava uses Java's values throughout.
 	ProfileOverjava = newProfile(&Profile{Name: "overjava", bedrockFloorTop: minY + 5, deepslateName: "minecraft:deepslate", ironSize: 9, diamondMediumSize: 8, climate: &biomeClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{44, 52}})
 )
+
+// javaOresReplaced names the Java ore and rock placements whose place Bedrock's underground pass takes
+// (bedrock_ores.go): every ore_ placement of Java's ore step, and the profile's extra mountain coal.
+func javaOresReplaced() map[string]bool {
+	m := map[string]bool{"ore_coal_mountains": true}
+	for _, n := range fieldsOf(featureOrder[oreStep]) {
+		if strings.HasPrefix(n, "ore_") {
+			m[n] = true
+		}
+	}
+	return m
+}
 
 func newProfile(p *Profile) *Profile {
 	p.placements = buildPlacements(p)

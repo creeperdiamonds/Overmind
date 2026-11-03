@@ -248,6 +248,9 @@ type decoration struct {
 	preLen  int
 	ore     oreScratch
 	decSeed int64
+	// The Bedrock profile's two generators of a rule (section 2) and a chunk's biome list.
+	br1, br2  bmt
+	biomeList []uint8
 	placed  bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.
 	lastCX, lastCZ     int
@@ -742,6 +745,10 @@ func (d *decoration) runSource(cx, cz int) {
 	d.mapsReady(l)
 	l.primed = true
 	biomes := d.biomesAround(cx, cz)
+	if d.g.profile.bedrockDeco {
+		d.runSourceBedrock(cx, cz, &biomes)
+		return
+	}
 	for _, pl := range d.g.profile.placements {
 		if !placementInBiomes(pl, &biomes) {
 			continue

@@ -37,6 +37,7 @@ type Generator struct {
 	regionFac seedFactory
 	profile   *Profile
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
+	bseeds    bedrockSeeds    // Bedrock's decoration seeds.
 	geodeOnce sync.Once
 	geode     *normalNoise
 }
@@ -64,6 +65,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 		aquiferFac: aquifer.forkFactory(),
 		surface:    newSurfaceNoises(w),
 		blocks:     newBlocks(),
+		bseeds:     newBedrockSeeds(seed),
 	}
 	if profile.surfaceBedrock {
 		g.bsurf = newBedrockSurface(seed, w)
@@ -133,6 +135,9 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 
 // finalCells makes a chunk's finished blocks, in the scratch.
 func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
+	if g.profile.bedrockDeco {
+		return g.finalCellsParity(s, cx, cz)
+	}
 	final := &s.final
 	g.cachedBase(s, cx, cz).expandCells(final)
 	var sources [9][]sourceChange
@@ -369,6 +374,9 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 	}
 	var grounds []ground
 	for i, c := range s.changes {
+		if d.g.profile.bedrockDeco {
+			break // In the Bedrock order a source's ground is what the finished world has.
+		}
 		if !standsOnBelow(c.now) || c.cell < 256 {
 			continue
 		}
