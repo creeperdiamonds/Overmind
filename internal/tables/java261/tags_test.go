@@ -31,7 +31,7 @@ func TestTags(t *testing.T) {
 		ids = append(ids, r.ID)
 	}
 	slices.Sort(ids)
-	if !slices.Equal(ids, []string{"minecraft:block", "minecraft:damage_type", "minecraft:enchantment", "minecraft:entity_type", "minecraft:fluid", "minecraft:item", "minecraft:timeline"}) {
+	if !slices.Equal(ids, []string{"minecraft:block", "minecraft:damage_type", "minecraft:dialog", "minecraft:enchantment", "minecraft:entity_type", "minecraft:fluid", "minecraft:item", "minecraft:timeline"}) {
 		t.Fatalf("tag registries %v", ids)
 	}
 	if water := find("minecraft:fluid", "minecraft:water"); len(water) != 2 {
@@ -138,4 +138,26 @@ func TestHandTags(t *testing.T) {
 	if got := names("minecraft:enchantment", "minecraft:in_enchanting_table"); len(got) != 36 || slices.Contains(got, "minecraft:mending") {
 		t.Fatalf("in_enchanting_table = %v", got)
 	}
+}
+
+// A real 26.1 client refused to join with "Unbound tags in registry
+// minecraft:dialog: [pause_screen_additions, quick_actions]": both must be sent,
+// even though vanilla's are empty.
+func TestDialogTagsAreBound(t *testing.T) {
+	for _, r := range Tags() {
+		if r.ID != "minecraft:dialog" {
+			continue
+		}
+		got := map[string]bool{}
+		for _, tg := range r.Tags {
+			got[tg.Name] = true
+		}
+		for _, want := range []string{"minecraft:pause_screen_additions", "minecraft:quick_actions"} {
+			if !got[want] {
+				t.Fatalf("dialog tag %s not sent", want)
+			}
+		}
+		return
+	}
+	t.Fatal("no dialog tag registry sent")
 }

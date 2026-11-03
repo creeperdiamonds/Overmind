@@ -24,6 +24,14 @@ var handTags = []struct {
 		{"in_nether", "#universal"},
 		{"in_overworld", "#universal day moon early_game"},
 	}},
+	// The client refuses to join while these two are unbound ("Unbound tags in
+	// registry minecraft:dialog", seen on a real 26.1 client on 2026-11-04).
+	// Both are empty in vanilla: minecraft.wiki "Dialog" (Java Edition), tags
+	// section, lists them with no entries.
+	{"minecraft:dialog", `minecraft.wiki "Dialog" (Java Edition), tags section; required bound by the 26.1 client`, [][2]string{
+		{"pause_screen_additions", ""},
+		{"quick_actions", ""},
+	}},
 	{"minecraft:damage_type", `minecraft.wiki "Damage type tag (Java Edition)" oldid=3498996`, [][2]string{
 		{"is_explosion", "fireworks explosion player_explosion bad_respawn_point"},
 		{"is_player_attack", "player_attack spear mace_smash"},
