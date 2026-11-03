@@ -225,10 +225,15 @@ type signedSkip interface {
 	skipSigned(t *treeRun, dx, y, dz, rr int, dbl bool) (bool, bool)
 }
 
+// validPos is the trunk placer's test of a block a log may go in: the game's tree test, and for an
+// upwards branching trunk the blocks it grows through.
 func (t *treeRun) validPos(p pos) bool {
 	s := t.d.at(p)
-	return s.isAir() || s.tagged(tagTreeSwap) || (t.cfg.validExtra != nil && t.cfg.validExtra[stateBlock[s]])
+	return treeReplaceable(s) || (t.cfg.validExtra != nil && t.cfg.validExtra[stateBlock[s]])
 }
+
+// treeReplaceable is the game's tree test alone, which leaves and roots use.
+func treeReplaceable(s bs) bool { return s.isAir() || s.tagged(tagTreeSwap) }
 
 func (t *treeRun) isFree(p pos) bool {
 	return t.validPos(p) || t.d.at(p).tagged(tagLogs)
@@ -272,7 +277,7 @@ func (t *treeRun) tryLeaf(p pos) bool {
 	if strings.Contains(cur.name(), "persistent=true") {
 		return false
 	}
-	if !t.validPos(p) {
+	if !treeReplaceable(cur) {
 		return false
 	}
 	s := t.cfg.foliageState(t.d, p)
@@ -794,9 +799,9 @@ type branchingTrunk struct {
 	chance        float32
 }
 
+// place grows the upwards branching trunk. It sets no dirt under itself: the mangrove's roots hold it.
 func (s branchingTrunk) place(t *treeRun, h int, o pos) {
 	r := &t.d.r
-	t.belowTrunk(o.add(0, -1, 0))
 	for hp := range h {
 		cy := o.y + hp
 		if t.log(pos{o.x, cy, o.z}) && hp < h-1 && r.nextFloat() < s.chance {
@@ -1455,12 +1460,106 @@ func attachedToLogs(prob float32, pv stateProvider, dirs []dir) treeDecorator {
 	}
 }
 
-// mangroveRoots marks the one placer of roots, which the study did not write up: such a tree is a
-// known gap, and is placed without its roots.
-type mangroveRoots struct{}
+// mangroveRoots is the mangrove's root placer, which the study does not write up: written from
+// knowledge of Java 26.1 and unverified against a Java run (no traced chunk holds a mangrove swamp).
+type mangroveRoots struct {
+	offset          intProvider
+	root            bs
+	above           bs // Placed on a root by chance, if the block over it is air.
+	aboveChance     float32
+	through         map[uint16]bool // Roots also grow through these.
+	muddyIn         map[uint16]bool // Roots in these are muddy roots.
+	muddy           bs
+	width, length   int
+	skew            float32
+}
 
-func (m *mangroveRoots) trunkOrigin(o pos, _ *featRand) pos { return o }
-func (m *mangroveRoots) place(*treeRun, pos, pos) bool      { return true }
+func (m *mangroveRoots) trunkOrigin(o pos, r *featRand) pos { return o.add(0, m.offset(r), 0) }
+
+func (m *mangroveRoots) canPlace(t *treeRun, p pos) bool {
+	s := t.d.at(p)
+	return treeReplaceable(s) || m.through[stateBlock[s]]
+}
+
+func (m *mangroveRoots) place(t *treeRun, o, trunk pos) bool {
+	for p := o; p.y < trunk.y; p = p.step(dUp) {
+		if !m.canPlace(t, p) {
+			return false
+		}
+	}
+	list := []pos{trunk.step(dDown)}
+	for _, a := range horizontal {
+		q := trunk.step(a)
+		var l []pos
+		if !m.simulate(t, q, a, trunk, &l, 0) {
+			return false
+		}
+		list = append(list, l...)
+		list = append(list, q)
+	}
+	for _, q := range list {
+		m.placeRoot(t, q)
+	}
+	return true
+}
+
+func (m *mangroveRoots) simulate(t *treeRun, p pos, a dir, origin pos, l *[]pos, layer int) bool {
+	if layer == m.length || len(*l) > m.length {
+		return false
+	}
+	for _, q := range m.potential(t, p, a, origin) {
+		if m.canPlace(t, q) {
+			*l = append(*l, q)
+			if !m.simulate(t, q, a, origin, l, layer+1) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (m *mangroveRoots) potential(t *treeRun, p pos, a dir, origin pos) []pos {
+	r := &t.d.r
+	below, side := p.step(dDown), p.step(a)
+	dist := absInt(p.x-origin.x) + absInt(p.y-origin.y) + absInt(p.z-origin.z)
+	switch {
+	case dist > m.width-3 && dist <= m.width:
+		if r.nextFloat() < m.skew {
+			return []pos{below, side.step(dDown)}
+		}
+		return []pos{below}
+	case dist > m.width:
+		return []pos{below}
+	case r.nextFloat() < m.skew:
+		return []pos{below}
+	case r.nextBool():
+		return []pos{side}
+	}
+	return []pos{below}
+}
+
+func (m *mangroveRoots) put(t *treeRun, p pos, s bs) {
+	if hasProp(s, "waterlogged") {
+		s = withProp(s, "waterlogged", boolWord(btoi(t.d.at(p).has(fWater))))
+	}
+	t.rootSet.add(p)
+	t.d.set(p.x, p.y, p.z, s)
+}
+
+func (m *mangroveRoots) placeRoot(t *treeRun, p pos) {
+	if m.muddyIn[stateBlock[t.d.at(p)]] {
+		m.put(t, p, m.muddy)
+		return
+	}
+	if !m.canPlace(t, p) {
+		return
+	}
+	m.put(t, p, m.root)
+	up := p.step(dUp)
+	if t.d.r.nextFloat() < m.aboveChance && t.d.at(up).isAir() {
+		m.put(t, up, m.above)
+	}
+}
 
 func absInt(v int) int {
 	if v < 0 {

@@ -25,6 +25,9 @@ func TestUntracedFeaturesAppear(t *testing.T) {
 		{"wildflowers", []string{"meadow", "birch_forest"}, func(n string, _ int16) bool { return n == "wildflowers" }, 1},
 		{"dry grass", []string{"desert"}, func(n string, _ int16) bool { return n == "short_dry_grass" || n == "tall_dry_grass" }, 1},
 		{"firefly bushes", []string{"swampland"}, func(n string, _ int16) bool { return n == "firefly_bush" }, 1},
+		{"mangrove roots", []string{"mangrove_swamp"}, func(n string, _ int16) bool { return n == "mangrove_roots" }, 50},
+		{"mangrove trunks", []string{"mangrove_swamp"}, func(n string, _ int16) bool { return n == "mangrove_log" }, 50},
+		{"mangrove propagules", []string{"mangrove_swamp"}, func(n string, _ int16) bool { return n == "mangrove_propagule" }, 1},
 		{"huge mushrooms", []string{"mushroom_island"}, func(n string, _ int16) bool { return strings.HasSuffix(n, "_mushroom_block") }, 20},
 	}
 	for _, c := range cases {

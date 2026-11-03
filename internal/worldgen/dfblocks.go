@@ -205,6 +205,15 @@ func lushOwnBlocks() {
 			addOwn(k+"_coral_wall_fan[facing="+f+",waterlogged=true]", k+"_coral_wall_fan", map[string]any{"coral_direction": coralDir[f]}, false)
 		}
 	}
+	for _, w := range bools {
+		plain("mangrove_roots[waterlogged="+w+"]", "mangrove_roots", true)
+		for age := range 5 {
+			for _, hang := range bools {
+				addOwn(fmt.Sprintf("mangrove_propagule[age=%d,hanging=%s,stage=0,waterlogged=%s]", age, hang, w), "mangrove_propagule",
+					map[string]any{"hanging": uint8(btoi(hang == "true")), "propagule_stage": int32(age)}, false)
+			}
+		}
+	}
 	plain("sculk", "sculk", true)
 	addOwn("sculk_catalyst[bloom=false]", "sculk_catalyst", map[string]any{"bloom": uint8(0)}, true)
 	for _, w := range bools {
@@ -493,6 +502,15 @@ func dragonflyBlock(name string) world.Block {
 		return block.Coral{Type: coralTypes[strings.TrimSuffix(base, "_coral")]}
 	case "tube_coral_block", "brain_coral_block", "bubble_coral_block", "fire_coral_block", "horn_coral_block":
 		return block.CoralBlock{Type: coralTypes[strings.TrimSuffix(base, "_coral_block")]}
+	case "muddy_mangrove_roots":
+		a := cube.Y
+		switch propOf(name, "axis") {
+		case "x":
+			a = cube.X
+		case "z":
+			a = cube.Z
+		}
+		return block.MuddyMangroveRoots{Axis: a}
 	case "pink_petals":
 		n, _ := strconv.Atoi(propOf(name, "flower_amount"))
 		return block.PinkPetals{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}

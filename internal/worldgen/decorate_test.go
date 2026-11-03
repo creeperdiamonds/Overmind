@@ -680,6 +680,8 @@ func isTreeSoil(n string) bool {
 	switch n {
 	case "dirt", "grass_block", "coarse_dirt", "podzol", "mycelium", "dirt_with_roots", "moss_block", "pale_moss_block", "mud", "muddy_mangrove_roots":
 		return true
+	case "mangrove_roots":
+		return true // A mangrove's trunk stands on its own roots, as in Java.
 	}
 	return false
 }

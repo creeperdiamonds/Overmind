@@ -235,6 +235,24 @@ func defineSteps(t *tableBuilder) {
 		cherryFoliage{foliageBase{constInt(4), constInt(0)}, constInt(5), 0.25, 0.5, 0.16666667, 0.33333334}, 1, 0, 2, true, bee5)
 	t.def("trees_cherry", newNestedOnly(checked(cherry, "cherry_sapling")), treeBase(countExtra(10, 10, 1), 0)...)
 
+	// Mangroves: an upwards branching trunk on roots, unverified against a Java run (no traced chunk
+	// holds a mangrove swamp).
+	propagule := randomizedProp(simpleState("mangrove_propagule[age=0,hanging=true,stage=0,waterlogged=false]"), "age", uniInt(0, 4))
+	mangrove := func(base, a, b int, steps intProvider, limit int) *treeCfg {
+		through := blockSet("mud muddy_mangrove_roots mangrove_roots mangrove_leaves mangrove_log mangrove_propagule moss_carpet vine")
+		c := treeOf("mangrove_log", "mangrove_leaves", branchingTrunk{h(base, a, b), steps, uniInt(0, 1), 0.5},
+			spreadFoliage{foliageBase{constInt(3), constInt(0)}, constInt(2), 70}, limit, 0, 2, true,
+			leaveVine(0.125), attachedToLeaves(0.14, 1, 0, propagule, 2, []dir{dDown}), beehive(0.01))
+		c.validExtra = through
+		c.roots = &mangroveRoots{offset: uniInt(1, 3), root: stateOf("mangrove_roots[waterlogged=false]"), above: stateOf("moss_carpet"), aboveChance: 0.5,
+			through: blockSet("mud muddy_mangrove_roots mangrove_roots moss_carpet vine mangrove_propagule snow"), muddyIn: blockSet("mud muddy_mangrove_roots"),
+			muddy: stateOf("muddy_mangrove_roots[axis=y]"), width: 8, length: 15, skew: 0.2}
+		return c
+	}
+	mangroveShort, mangroveTall := checked(mangrove(2, 1, 4, uniInt(1, 4), 2), "mangrove_propagule"), checked(mangrove(4, 1, 9, uniInt(1, 6), 3), "mangrove_propagule")
+	t.def("trees_mangrove", treeSel(mangroveShort, selEntry{0.85, mangroveTall}),
+		mods(countMod{constInt(25)}, inSquareMod{}, waterDepthMod{5}, heightmapMod{hmOceanFloor}, biomeMod{}, filterMod{wouldSurvive("mangrove_propagule")})...)
+
 	// Plants. A patch is a count, an offset, a filter and simple_block.
 	grass := func(n int, name string, f predicate) {
 		t.def(name, simpleBlock(simpleState("short_grass")), chain(mods(countMod{constInt(n)}, inSquareMod{}, heightmapMod{hmWorldSurfaceWG}, biomeMod{}), patch(32, 7, 3, f))...)

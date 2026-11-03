@@ -525,6 +525,11 @@ func canSurvive(d *decoration, s bs, p pos) bool {
 		return here.has(fWater) && here.has(fSource) && below.tagged(tagDirtLike)
 	case "spore_blossom":
 		return d.at(p.step(dUp)).has(fSturdyDown) && !d.at(p).has(fWater)
+	case "mangrove_propagule":
+		if propOf(s.name(), "hanging") == "true" {
+			return d.at(p.step(dUp)).block() == stateOf(leafName("mangrove_leaves")).block()
+		}
+		return below.tagged(tagDirtLike) || blockName[stateBlock[below]] == "clay"
 	case "leaf_litter":
 		return below.has(fSturdyUp)
 	case "hanging_roots":
