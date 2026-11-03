@@ -25,28 +25,35 @@ func sameIDs(t *testing.T, what string, a, b []uint32) {
 func TestReuseBasesChangesNothing(t *testing.T) {
 	order := [][2]int32{{5, 5}, {6, 5}, {5, 6}, {-40, 30}, {6, 6}, {4, 5}}
 	for _, profile := range []*Profile{ProfileBedrock, ProfileOverjava} {
-		bare := NewWithProfile(100, profile)
-		bare.SetCacheBytes(4 << 20)
-		want := map[[2]int32][]uint32{}
-		for _, p := range order {
-			want[p] = chunkRuntimeIDs(bare, p[0], p[1])
-		}
-		kept := NewWithProfile(100, profile)
-		for i := len(order) - 1; i >= 0; i-- {
-			p := order[i]
-			sameIDs(t, profile.Name+" cached, reversed order", want[p], chunkRuntimeIDs(kept, p[0], p[1]))
-		}
-		racing := NewWithProfile(100, profile)
-		var wg sync.WaitGroup
-		got := make([][]uint32, len(order))
-		for i, p := range order {
-			wg.Add(1)
-			go func() { defer wg.Done(); got[i] = chunkRuntimeIDs(racing, p[0], p[1]) }()
-		}
-		wg.Wait()
-		for i, p := range order {
-			sameIDs(t, profile.Name+" cached, workers", want[p], got[i])
-		}
+		t.Run(profile.Name, func(t *testing.T) {
+			t.Parallel() // Each profile has its own generators and cache.
+			reuseChangesNothing(t, profile, order)
+		})
+	}
+}
+
+func reuseChangesNothing(t *testing.T, profile *Profile, order [][2]int32) {
+	bare := NewWithProfile(100, profile)
+	bare.SetCacheBytes(4 << 20)
+	want := map[[2]int32][]uint32{}
+	for _, p := range order {
+		want[p] = chunkRuntimeIDs(bare, p[0], p[1])
+	}
+	kept := NewWithProfile(100, profile)
+	for i := len(order) - 1; i >= 0; i-- {
+		p := order[i]
+		sameIDs(t, profile.Name+" cached, reversed order", want[p], chunkRuntimeIDs(kept, p[0], p[1]))
+	}
+	racing := NewWithProfile(100, profile)
+	var wg sync.WaitGroup
+	got := make([][]uint32, len(order))
+	for i, p := range order {
+		wg.Add(1)
+		go func() { defer wg.Done(); got[i] = chunkRuntimeIDs(racing, p[0], p[1]) }()
+	}
+	wg.Wait()
+	for i, p := range order {
+		sameIDs(t, profile.Name+" cached, workers", want[p], got[i])
 	}
 }
 

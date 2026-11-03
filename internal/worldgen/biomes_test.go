@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -96,8 +97,18 @@ func TestNoHardClimateJumps(t *testing.T) {
 }
 
 func TestBiomesStoredInChunk(t *testing.T) {
-	var chunks [][3]int // seed, chunk x, chunk z
 	for seed := int64(1); seed <= 3; seed++ {
+		t.Run(fmt.Sprint("seed ", seed), func(t *testing.T) {
+			t.Parallel() // Each seed has its own generator; the cave biome search is single-threaded.
+			biomesStoredInChunk(t, seed)
+		})
+	}
+}
+
+func biomesStoredInChunk(t *testing.T, seed int64) {
+	// The search runs on a generator of its own.
+	var chunks [][3]int // seed, chunk x, chunk z
+	{
 		g := New(seed)
 		for _, p := range [][2]int32{{0, 0}, {-37, 12}} {
 			chunks = append(chunks, [3]int{int(seed), int(p[0]), int(p[1])})
@@ -138,7 +149,7 @@ func TestBiomesStoredInChunk(t *testing.T) {
 		}
 	}
 	if caveBlocks == 0 {
-		t.Error("no cave biome blocks were stored in any tested chunk")
+		t.Errorf("seed %d: no cave biome blocks were stored in any tested chunk", seed)
 	}
 }
 

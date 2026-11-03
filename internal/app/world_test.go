@@ -103,25 +103,32 @@ func TestDefaultSpawnOnLandForEverySeed(t *testing.T) {
 	// No server per seed: Dragonfly adds its creative items and recipes to global lists every time
 	// a server is made, so a test process that makes many of them breaks later joins.
 	for _, seed := range testSeeds {
-		gen := worldgen.New(seed)
-		spawn := gen.DefaultSpawn(world.Overworld)
-		c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-		gen.GenerateChunk(world.ChunkPos{int32(spawn.X() >> 4), int32(spawn.Z() >> 4)}, c)
-		at := func(dy int) world.Block {
-			b, ok := world.BlockByRuntimeID(c.Block(uint8(spawn.X()&15), int16(spawn.Y()+dy), uint8(spawn.Z()&15), 0))
-			require.True(t, ok, "seed %d: unknown block at %v", seed, spawn)
-			return b
-		}
-		name, _ := at(-1).EncodeBlock()
-		require.Greater(t, spawn.Y(), 62, "seed %d: spawn %v is not above sea level", seed, spawn)
-		require.False(t, strings.Contains(name, "leaves") || strings.Contains(name, "log") || strings.Contains(name, "water") ||
-			strings.Contains(name, "lava") || name == "minecraft:air", "seed %d: spawn %v stands on %s", seed, spawn, name)
-		require.True(t, at(-1).Model().FaceSolid(cube.Pos{}, cube.FaceUp, nil), "seed %d: spawn %v stands on %s, which has no solid top", seed, spawn, name)
-		_, feet := at(0).(block.Air)
-		_, head := at(1).(block.Air)
-		require.True(t, feet && head, "seed %d: spawn %v has no two air blocks above the ground", seed, spawn)
-		require.LessOrEqual(t, abs(spawn.X())+abs(spawn.Z()), 4096, "seed %d: spawn %v is very far from the origin", seed, spawn)
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Parallel() // Each seed is a lone chunk with all its sources to build.
+			spawnOnLand(t, seed)
+		})
 	}
+}
+
+func spawnOnLand(t *testing.T, seed int64) {
+	gen := worldgen.New(seed)
+	spawn := gen.DefaultSpawn(world.Overworld)
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	gen.GenerateChunk(world.ChunkPos{int32(spawn.X() >> 4), int32(spawn.Z() >> 4)}, c)
+	at := func(dy int) world.Block {
+		b, ok := world.BlockByRuntimeID(c.Block(uint8(spawn.X()&15), int16(spawn.Y()+dy), uint8(spawn.Z()&15), 0))
+		require.True(t, ok, "seed %d: unknown block at %v", seed, spawn)
+		return b
+	}
+	name, _ := at(-1).EncodeBlock()
+	require.Greater(t, spawn.Y(), 62, "seed %d: spawn %v is not above sea level", seed, spawn)
+	require.False(t, strings.Contains(name, "leaves") || strings.Contains(name, "log") || strings.Contains(name, "water") ||
+		strings.Contains(name, "lava") || name == "minecraft:air", "seed %d: spawn %v stands on %s", seed, spawn, name)
+	require.True(t, at(-1).Model().FaceSolid(cube.Pos{}, cube.FaceUp, nil), "seed %d: spawn %v stands on %s, which has no solid top", seed, spawn, name)
+	_, feet := at(0).(block.Air)
+	_, head := at(1).(block.Air)
+	require.True(t, feet && head, "seed %d: spawn %v has no two air blocks above the ground", seed, spawn)
+	require.LessOrEqual(t, abs(spawn.X())+abs(spawn.Z()), 4096, "seed %d: spawn %v is very far from the origin", seed, spawn)
 }
 
 func abs(v int) int {
