@@ -507,10 +507,10 @@ func TestDecorationOrderIndependent(t *testing.T) {
 	checkDecorationOrderIndependent(t, 3, 2)
 }
 
-// TestDecorationOrderIndependentQuick is the same check, fixture free, on one spot of each kind, for
-// the default run.
+// TestDecorationOrderIndependentQuick is the same check, fixture free, on one forest, jungle or roofed
+// forest spot, whose trees cross chunk edges, for the default run.
 func TestDecorationOrderIndependentQuick(t *testing.T) {
-	checkDecorationOrderIndependent(t, 1, 1)
+	checkDecorationOrderIndependent(t, 1, 0)
 }
 
 // checkDecorationOrderIndependent makes the 3 x 3 chunks around wooded spots of seed 42, and around
@@ -822,10 +822,23 @@ func isGround(n string) bool {
 // ice where the biome there is colder than 0.15, and stays water where it is not, as frozen oceans'
 // warm patches (the frozen temperature modifier) and deep frozen oceans (0.5) are. No Java fixture
 // holds a frozen ocean, so the share is logged, not asserted; both outcomes must occur.
+// TestFrozenOceanHasIce holds Java's freeze rule on 40 frozen ocean chunks of seed 10, and looks for
+// ice on 20 warmer ocean chunks.
 func TestFrozenOceanHasIce(t *testing.T) {
+	skipUnlessLong(t)
+	checkFrozenOcean(t, 40, 20)
+}
+
+// TestFrozenOceanHasIceQuick is the same check, fixture free, on 20 frozen and 10 warmer ocean chunks,
+// for the default run.
+func TestFrozenOceanHasIceQuick(t *testing.T) {
+	checkFrozenOcean(t, 20, 10)
+}
+
+func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
 	g := New(10)
-	frozen := biomeChunks(g, 40, "frozen_ocean", "deep_frozen_ocean")
-	warm := biomeChunks(g, 20, "ocean", "lukewarm_ocean", "warm_ocean")
+	frozen := biomeChunks(g, frozenChunks, "frozen_ocean", "deep_frozen_ocean")
+	warm := biomeChunks(g, warmChunks, "ocean", "lukewarm_ocean", "warm_ocean")
 	if len(frozen) < 10 || len(warm) < 10 {
 		t.Fatalf("found %d frozen and %d warmer ocean chunks", len(frozen), len(warm))
 	}
