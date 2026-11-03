@@ -651,22 +651,15 @@ func (w *columnWalk) top(carved *carveMask, lakes []lake) int {
 	return minY - 1
 }
 
-// noiseHeight is the top of the ground with noise caves but without carvers or lakes. It is
-// what the study measured, and much cheaper than SurfaceHeight because no tunnels are walked.
+// noiseHeight is the top of the solid ground at the noise stage, without any later pass. It is what the
+// study measured, and much cheaper than SurfaceHeight because no tunnels are walked.
 func (g *Generator) noiseHeight(x, z int) int {
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
 	s.startColumnOnly(g)
-	return g.startWalk(s, x, z).top(nil, nil)
+	solid, _ := g.startWalk(s, x, z).rawTops()
+	return solid
 }
 
 // NoiseHeight is noiseHeight for tools that draw maps.
 func (g *Generator) NoiseHeight(x, z int) int { return g.noiseHeight(x, z) }
-
-// carveMask marks the blocks of one column that tunnels pass through.
-type carveMask [(maxY - minY + 1) / 64]uint64
-
-func (m *carveMask) has(y int) bool {
-	i := y - minY
-	return m[i>>6]&(1<<(i&63)) != 0
-}

@@ -23,6 +23,7 @@ const (
 // Generator builds Overworld chunks from a seed. It holds only data that never changes
 // after New, so any number of workers can share it.
 type Generator struct {
+	seed       int64
 	zoomSeed   int64
 	climate    climateNoises
 	caves      caveNoises
@@ -50,6 +51,7 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 	aquifer := w.named("minecraft:aquifer")
 	ore := w.named("minecraft:ore")
 	return &Generator{
+		seed:        seed,
 		sf:          newSurfaceFactories(w),
 		oreFac:      ore.forkFactory(),
 		profile:     profile,
@@ -87,6 +89,7 @@ type chunkScratch struct {
 	quarts      [quartSlots]quartColumn
 	rule        ruleContext
 	base        baseChunk
+	masks       [256]carveMask
 }
 
 const cellsAcross = 16 / cellXZ
@@ -113,7 +116,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
 	b := &s.base
-	g.buildBase(b, s, int(pos[0]), int(pos[1]), stageSurface, 0, 15, 0, 15)
+	g.buildBase(b, s, int(pos[0]), int(pos[1]), stageCarvers, 0, 15, 0, 15)
 	g.writeChunk(c, b)
 	var top [16][16]int16
 	for x := range 16 {
@@ -132,7 +135,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 			highest = max(highest, int(top[x][z]))
 		}
 	}
-	g.applyCarvers(c, s, originX, originZ, &noiseTop)
+	_ = noiseTop
 	g.applyLakes(c, s, originX, originZ, highest)
 	g.placeGeodes(c, int(pos[0]), int(pos[1]))
 	g.placeVeins(c, pos, highest, true)

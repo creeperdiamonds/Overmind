@@ -345,3 +345,32 @@ func TestGoldenBiomeStage(t *testing.T) {
 		}
 	}
 }
+
+func TestGoldenCarverStage(t *testing.T) {
+	compareStage(t, goldenFeaturesDir(t), "carvers", stageCarvers, ProfileOverjava)
+}
+
+// TestSurfaceHeightMatchesCarverStage: one column cut alone equals the same column of the whole chunk,
+// so the mask contract holds. Fixtures are not needed.
+func TestSurfaceHeightMatchesCarverStage(t *testing.T) {
+	g := NewWithProfile(100, ProfileOverjava)
+	s := new(chunkScratch)
+	for _, p := range [][2]int{{0, 0}, {30, -18}, {-7, 44}} {
+		g.buildBase(&s.base, s, p[0], p[1], stageCarvers, 0, 15, 0, 15)
+		var tops [256]int
+		for i := range tops {
+			tops[i] = minY - 1
+			for y := maxY; y >= minY; y-- {
+				if st := s.base.b[cellIndex(i&15, y, i>>4)]; !st.isAir() && st != sWater {
+					tops[i] = y
+					break
+				}
+			}
+		}
+		for i := 0; i < 256; i += 5 {
+			if got := g.SurfaceHeight(p[0]*16+i&15, p[1]*16+i>>4); got != tops[i] {
+				t.Errorf("chunk %v column %d: SurfaceHeight %d, chunk %d", p, i, got, tops[i])
+			}
+		}
+	}
+}

@@ -13,16 +13,15 @@ import (
 // notes give no measured output for carvers (addendum A6). The air in full chunks is tuned to
 // Bedrock's, measured with carvers on 4 seeds (TestCaveAirMatchesBedrock).
 const (
-	carverReach  = 8    // Source chunks this far away can reach a chunk (notes).
-	caveChance   = 0.15 // Per chunk (notes).
-	caveExtra    = 0.07 // Per chunk, low caves only (notes).
-	canyonChance = 0.01 // Per chunk (notes).
-	caveBottom   = -56
-	caveTop      = 180
-	caveExtraTop = 47
-	canyonBottom = 10
-	canyonTop    = 67
-	carverLavaY  = -56 // Carved space at or under this is lava.
+	oldCarverReach = 8    // Source chunks this far away can reach a chunk (notes).
+	caveChance     = 0.15 // Per chunk (notes).
+	caveExtra      = 0.07 // Per chunk, low caves only (notes).
+	canyonChance   = 0.01 // Per chunk (notes).
+	caveBottom     = -56
+	caveTop        = 180
+	caveExtraTop   = 47
+	canyonBottom   = 10
+	canyonTop      = 67
 )
 
 // Own numbers for the size of a tunnel. A tunnel runs both ways from its start, so its full
@@ -36,7 +35,7 @@ const (
 	canyonBendMax  = 6.0
 	canyonWidthMax = 10.0
 	// A source chunk's nearest block outside carverReach is carverReach*16 + 1 blocks away.
-	carverReachBlocks = carverReach * 16
+	carverReachBlocks = oldCarverReach * 16
 )
 
 // These fail to compile if a tunnel's size could overrun the reach.
@@ -46,11 +45,6 @@ const (
 )
 
 func (r *rng) intn(n int) int { return int(r.next() % uint64(n)) }
-
-func (m *carveMask) set(y int) {
-	i := y - minY
-	m[i>>6] |= 1 << (i & 63)
-}
 
 func (m *carveMask) any() bool {
 	for _, v := range m {
@@ -62,13 +56,13 @@ func (m *carveMask) any() bool {
 }
 
 // carveSink collects what tunnels cut, either for a chunk or for one column.
-type carveSink struct {
+type oldCarveSink struct {
 	x0, x1, z0, z1 int // Block bounds, inclusive.
 	chunk          *[carvedSize][carvedSize]carveMask
 	column         *carveMask
 }
 
-func (s *carveSink) mark(x, y, z int) {
+func (s *oldCarveSink) mark(x, y, z int) {
 	if s.column != nil {
 		s.column.set(y)
 		return
@@ -78,11 +72,11 @@ func (s *carveSink) mark(x, y, z int) {
 
 // carveAround is the reach of walkCarvers for a chunk: one chunk more than carverReach, because the
 // columns around the chunk that trees ask about (treeMargin of them) may be in the next chunk over.
-const carveAround = carverReach + 1
+const carveAround = oldCarverReach + 1
 
 // sphere cuts an ellipsoid. floor keeps blocks low in the sphere solid, so caves have flat
 // floors; walls, if not zero, seeds a canyon's wall ledges.
-func (s *carveSink) sphere(cx, cy, cz, rh, rv, floor float64, walls uint64) {
+func (s *oldCarveSink) sphere(cx, cy, cz, rh, rv, floor float64, walls uint64) {
 	if cx+rh < float64(s.x0) || cx-rh > float64(s.x1)+1 || cz+rh < float64(s.z0) || cz-rh > float64(s.z1)+1 {
 		return
 	}
@@ -120,7 +114,7 @@ func canyonLedge(walls uint64, y int) float64 {
 }
 
 // walkCarvers cuts every tunnel from chunks within reach of the chunk at cx, cz.
-func (g *Generator) walkCarvers(cx, cz, reach int, s *carveSink) {
+func (g *Generator) oldWalkCarvers(cx, cz, reach int, s *oldCarveSink) {
 	for sx := cx - reach; sx <= cx+reach; sx++ {
 		for sz := cz - reach; sz <= cz+reach; sz++ {
 			h := posHash(g.carveSeed, sx, 0, sz)
@@ -142,7 +136,7 @@ func (g *Generator) walkCarvers(cx, cz, reach int, s *carveSink) {
 // four with a room of thickness 1 to 7 and up to 3 extra tunnels; the ranges of the radius,
 // vertical, floor and y scales. The count's distribution (startScale), and the room's height,
 // are our own.
-func caveStart(sx, sz int, seed uint64, top int, s *carveSink) {
+func caveStart(sx, sz int, seed uint64, top int, s *oldCarveSink) {
 	r := rng(seed)
 	starts := min(int(-math.Log(1-r.float())*startScale), maxStarts)
 	for range starts {
@@ -238,7 +232,7 @@ func (p *tunnelPath) at(t float64) (x, y, z float64) {
 }
 
 // alongRange gives the span of the path's axis, from its start, that can touch the sink.
-func (p *tunnelPath) alongRange(s *carveSink, slack float64) (lo, hi float64) {
+func (p *tunnelPath) alongRange(s *oldCarveSink, slack float64) (lo, hi float64) {
 	lo, hi = math.Inf(1), math.Inf(-1)
 	for _, x := range [2]int{s.x0, s.x1 + 1} {
 		for _, z := range [2]int{s.z0, s.z1 + 1} {
@@ -251,7 +245,7 @@ func (p *tunnelPath) alongRange(s *carveSink, slack float64) (lo, hi float64) {
 
 // cut carves the path as a chain of ellipsoids, about a block apart. The radius tapers to the
 // ends and varies a little along the way, by at most 1/20 of the middle radius each way.
-func (p *tunnelPath) cut(s *carveSink, radius, height, floor float64, walls uint64) {
+func (p *tunnelPath) cut(s *oldCarveSink, radius, height, floor float64, walls uint64) {
 	margin := p.half + 2*p.bend + radius*1.1 + 1
 	if p.x+margin < float64(s.x0) || p.x-margin > float64(s.x1)+1 || p.z+margin < float64(s.z0) || p.z-margin > float64(s.z1)+1 {
 		return
@@ -276,7 +270,7 @@ func (p *tunnelPath) cut(s *carveSink, radius, height, floor float64, walls uint
 // canyonStart rolls one canyon. From the notes: y scale 3, thickness 0 to 6
 // (the notes say a trapezoid with a plateau of 2; ours is even), distance factor 0.75 to 1,
 // vertical rotation within 0.125. How thickness becomes a radius is ours.
-func canyonStart(sx, sz int, seed uint64, s *carveSink) {
+func canyonStart(sx, sz int, seed uint64, s *oldCarveSink) {
 	r := rng(seed)
 	x := float64(sx*16 + r.intn(16))
 	y := float64(canyonBottom + r.intn(canyonTop-canyonBottom+1))
@@ -311,8 +305,8 @@ func (g *Generator) carveFill(a *aquiferCache, x, y, z int) fillKind {
 // cutCarvers marks what tunnels cut in a chunk and the treeMargin columns around it.
 func (g *Generator) cutCarvers(s *chunkScratch, originX, originZ int) {
 	s.carved = [carvedSize][carvedSize]carveMask{}
-	sink := carveSink{x0: originX - treeMargin, x1: originX + 15 + treeMargin, z0: originZ - treeMargin, z1: originZ + 15 + treeMargin, chunk: &s.carved}
-	g.walkCarvers(originX>>4, originZ>>4, carveAround, &sink)
+	sink := oldCarveSink{x0: originX - treeMargin, x1: originX + 15 + treeMargin, z0: originZ - treeMargin, z1: originZ + 15 + treeMargin, chunk: &s.carved}
+	g.oldWalkCarvers(originX>>4, originZ>>4, carveAround, &sink)
 }
 
 // applyCarvers cuts the tunnels into a chunk. noiseTop holds each column's highest noise
@@ -463,20 +457,4 @@ func (g *Generator) applyLakes(c *chunk.Chunk, s *chunkScratch, originX, originZ
 			}
 		}
 	}
-}
-
-// SurfaceHeight returns the Y of the highest solid block of terrain in a column, with caves,
-// carvers and lakes taken into account: the same answer as the generated chunk, not counting trees,
-// plants and snow, without needing the chunk to exist. It walks
-// every tunnel that could reach the column, so it costs far more than noiseHeight.
-func (g *Generator) SurfaceHeight(x, z int) int {
-	var mask carveMask
-	sink := carveSink{x0: x, x1: x, z0: z, z1: z, column: &mask}
-	g.walkCarvers(x>>4, z>>4, carverReach, &sink)
-	var buf [18]lake
-	lakes := g.lakesNear(x>>4, z>>4, buf[:0])
-	s := scratchPool.Get().(*chunkScratch)
-	defer scratchPool.Put(s)
-	s.startColumnOnly(g)
-	return g.startWalk(s, x, z).top(&mask, lakes)
 }

@@ -104,6 +104,3 @@ const (
 	stageSurface
 	stageCarvers
 )
-
-// applyJavaCarvers is filled in with the carver pass.
-func (g *Generator) applyJavaCarvers(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int) {}
