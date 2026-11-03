@@ -341,9 +341,14 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 					c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 					s := scratchPool.Get().(*chunkScratch)
 					defer scratchPool.Put(s)
-					s.startChunk(g, cx*16, cz*16)
+					g.buildBase(&s.base, s, cx, cz, stageNoise, 0, 15, 0, 15)
+					g.writeChunk(c, &s.base)
 					var top [16][16]int16
-					g.fillNoise(c, s, cx*16, cz*16, &top)
+					for tx := range 16 {
+						for tz := range 16 {
+							top[tx][tz] = s.base.wgFloor[tz<<4|tx] - 1
+						}
+					}
 					var a, w, l, n [9]float64
 					for x := uint8(0); x < 16; x += 5 {
 						for z := uint8(0); z < 16; z += 5 {
@@ -415,7 +420,7 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 					chunks[a][b] = chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 					s := new(chunkScratch)
 					s.startChunk(g, (cx+a)*16, (cz+b)*16)
-					g.fillNoise(chunks[a][b], s, (cx+a)*16, (cz+b)*16, &tops[a][b])
+					noiseOnly(g, chunks[a][b], s, (cx+a)*16, (cz+b)*16, &tops[a][b])
 				}
 			}
 			air := make([]bool, 32*32*height)
@@ -614,5 +619,16 @@ func TestSteepFlagAgreesAcrossChunkEdges(t *testing.T) {
 	}
 	if wrong > 0 {
 		t.Errorf("%d edge columns read a different steep flag from the two sides of a chunk edge", wrong)
+	}
+}
+
+// noiseOnly writes a chunk's noise stage and each column's highest solid block.
+func noiseOnly(g *Generator, c *chunk.Chunk, s *chunkScratch, originX, originZ int, top *[16][16]int16) {
+	g.buildBase(&s.base, s, originX>>4, originZ>>4, stageNoise, 0, 15, 0, 15)
+	g.writeChunk(c, &s.base)
+	for x := range 16 {
+		for z := range 16 {
+			top[x][z] = s.base.wgFloor[z<<4|x] - 1
+		}
 	}
 }

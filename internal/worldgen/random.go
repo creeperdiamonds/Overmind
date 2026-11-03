@@ -49,6 +49,11 @@ func (r *xoro) nextDouble() float64 {
 	return float64(float64(r.next()>>11) * (1.0 / (1 << 53)))
 }
 
+// nextFloat is the generator's direct float draw: the top 24 bits.
+func (r *xoro) nextFloat() float32 {
+	return float32(r.next()>>40) * (1.0 / (1 << 24))
+}
+
 // nextInt is the unbiased multiply-shift draw below bound.
 func (r *xoro) nextInt(bound uint32) int {
 	m := uint64(uint32(r.next())) * uint64(bound)
@@ -86,4 +91,47 @@ func positionSeed(x, y, z int32) int64 {
 	s := int64(x*3129871) ^ int64(z)*116129781 ^ int64(y)
 	s = s*s*42317861 + s*11
 	return s >> 16
+}
+
+// lcg is the 48-bit linear generator the study calls LCG: carvers, carver tunnels and the fixed
+// simplex noises use it (NOTES-exact-features.md section 2).
+type lcg struct{ state int64 }
+
+const (
+	lcgMul  = 0x5DEECE66D
+	lcgMask = (1 << 48) - 1
+)
+
+func newLCG(seed int64) lcg { return lcg{(seed ^ lcgMul) & lcgMask} }
+
+func (r *lcg) setSeed(seed int64) { r.state = (seed ^ lcgMul) & lcgMask }
+
+func (r *lcg) bits(n uint) int32 {
+	r.state = (r.state*lcgMul + 11) & lcgMask
+	return int32(r.state >> (48 - n))
+}
+
+func (r *lcg) nextLong() int64 {
+	hi := int64(r.bits(32))
+	return hi<<32 + int64(r.bits(32))
+}
+
+func (r *lcg) nextFloat() float32 { return float32(r.bits(24)) * (1.0 / (1 << 24)) }
+
+func (r *lcg) nextDouble() float64 {
+	hi := int64(r.bits(26))
+	return float64(hi<<27+int64(r.bits(27))) * (1.0 / (1 << 53))
+}
+
+func (r *lcg) nextInt(n int32) int32 {
+	if n&(n-1) == 0 {
+		return int32((int64(n) * int64(r.bits(31))) >> 31)
+	}
+	for {
+		s := r.bits(31)
+		m := s % n
+		if s-m+(n-1) >= 0 {
+			return m
+		}
+	}
 }

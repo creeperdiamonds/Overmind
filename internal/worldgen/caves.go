@@ -218,9 +218,12 @@ type node struct {
 	core, toggle float64
 	thick, a, b  float64
 	vein         float64
+	ridgeA       float64
+	ridgeB       float64
 	haveCore     bool
 	haveNoodle   bool
 	haveVein     bool
+	haveRidge    bool
 }
 
 func (n *node) needCore(g *Generator, s *columnShape, x, y, z int) {
@@ -238,9 +241,24 @@ func (n *node) needNoodle(g *Generator, x, y, z int) {
 
 func (n *node) needVein(g *Generator, x, y, z int) {
 	if !n.haveVein {
-		n.vein, n.haveVein = plain(g.caves.veinToggle, x, y, z, 1.5, 1.5), true
+		n.vein, n.haveVein = 0, true
+		if inVeinBand(y) {
+			n.vein = plain(g.caves.veinToggle, x, y, z, 1.5, 1.5)
+		}
 	}
 }
+
+func (n *node) needRidge(g *Generator, x, y, z int) {
+	if !n.haveRidge {
+		n.ridgeA, n.ridgeB, n.haveRidge = 0, 0, true
+		if inVeinBand(y) {
+			n.ridgeA, n.ridgeB = plain(g.caves.veinA, x, y, z, 4, 4), plain(g.caves.veinB, x, y, z, 4, 4)
+		}
+	}
+}
+
+// inVeinBand is where the vein noises read: Y -60 up to but not including 51. Elsewhere they are 0.
+func inVeinBand(y int) bool { return y >= -60 && y < 51 }
 
 // edges holds one value of a cell blended on x, at the four edges that run along x. Blending x first,
 // then y, then z is the game's order, and changing it would change the low bits.
@@ -345,64 +363,64 @@ func cellHasVeins(baseY int) bool {
 	return baseY+cellY > veinIronBottom && baseY <= veinCopperTop
 }
 
-// veinBlockAt gives the block an ore vein makes of solid rock, or zero for none. Rules and
-// numbers from the study: copper in granite, iron in tuff.
-func (g *Generator) veinBlockAt(x, y, z int, toggle float64) uint32 {
+// veinState is the block a solid position of a vein cell gets, following Mojang's algorithm from the
+// study (NOTES-exact-features.md section 3). Stone is the default; deepslate comes from surface rules.
+func (g *Generator) veinState(c *cellCorners, blend *columnBlend, cellX, cellBaseY, cellZ, x, y, z int, fx, fy, fz float64) bs {
+	toggle := blend.veinAt(fy)
 	copperVein := toggle > 0
 	lo, hi := veinIronBottom, veinIronTop
+	ore, raw, filler := sDIron, sRawFe, sTuff
 	if copperVein {
 		lo, hi = veinCopperBottom, veinCopperTop
+		ore, raw, filler = sCopper, sRawCu, sGranite
 	}
 	if y < lo || y > hi {
-		return 0
+		return sStone
 	}
-	t := math.Abs(toggle)
-	margin := float64(min(y-lo, hi-y))
-	if t < veinStrength+0.2*clamp(1-margin/20, 0, 1) {
-		return 0
+	a := math.Abs(toggle)
+	edge := clampedMap(float64(min(hi-y, y-lo)), 0, 20, -0.2, 0)
+	if a+edge < float64(float32(0.4)) {
+		return sStone
 	}
-	if unit(posHash(g.veinSeed^1, x, y, z)) >= 0.7 {
-		return 0
+	r := g.oreFac.at(int32(x), int32(y), int32(z))
+	if r.nextFloat() > 0.7 {
+		return sStone
 	}
-	a := plain(g.caves.veinA, x, y, z, 4, 4)
-	b := plain(g.caves.veinB, x, y, z, 4, 4)
-	if max(math.Abs(a), math.Abs(b)) >= 0.08 {
-		return 0
-	}
-	ids := &g.blocks
-	rich := lerp(0.1, 0.3, clamp((t-0.4)/0.2, 0, 1))
-	if unit(posHash(g.veinSeed^2, x, y, z)) < rich && plain(g.caves.veinGap, x, y, z, 1, 1) > -0.3 {
-		h := unit(posHash(g.veinSeed^3, x, y, z))
-		switch {
-		case !copperVein && h < 0.02:
-			return ids.rawIron
-		case !copperVein:
-			return ids.veins[veinIron][1]
-		case h < 0.02:
-			return ids.rawCopper
+	for i := range 2 {
+		for k := range 2 {
+			for j := range 2 {
+				c[i][k][j].needRidge(g, cellX+i*cellXZ, cellBaseY+k*cellY, cellZ+j*cellXZ)
+			}
 		}
-		if g.stoneAt(x, y, z) == ids.deepslate {
-			return ids.veins[veinCopper][1]
+	}
+	ea, eb := c.blendX(fx, readRidgeA), c.blendX(fx, readRidgeB)
+	ridge := float64(float32(-0.08)) + max(math.Abs(ea.at(fy, fz)), math.Abs(eb.at(fy, fz)))
+	if ridge >= 0 {
+		return sStone
+	}
+	rich := clampedMap(a, float64(float32(0.4)), float64(float32(0.6)), float64(float32(0.1)), float64(float32(0.3)))
+	if float64(r.nextFloat()) < rich && g.caves.veinGap.at(float64(x), float64(y), float64(z)) > float64(float32(-0.3)) {
+		if r.nextFloat() < 0.02 {
+			return raw
 		}
-		return ids.veins[veinCopper][0]
+		return ore
 	}
-	if copperVein {
-		return ids.granite
-	}
-	return ids.tuff
+	return filler
 }
 
-// solidBlockAt gives the block of a solid position in the noise pass.
-func (g *Generator) solidBlockAt(x, y, z int, vein float64) uint32 {
-	if y == minY || g.isBedrock(x, y, z) {
-		return g.blocks.bedrock
+func readRidgeA(n *node) float64 { return n.ridgeA }
+func readRidgeB(n *node) float64 { return n.ridgeB }
+
+// clampedMap maps v from a..b onto c..d, held at the ends.
+func clampedMap(v, a, b, c, d float64) float64 {
+	t := (v - a) / (b - a)
+	if t < 0 {
+		return c
 	}
-	if vein != 0 {
-		if id := g.veinBlockAt(x, y, z, vein); id != 0 {
-			return id
-		}
+	if t > 1 {
+		return d
 	}
-	return g.stoneAt(x, y, z)
+	return lerp(c, d, t)
 }
 
 func floorDiv(a, b int) int {

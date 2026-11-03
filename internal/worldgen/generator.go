@@ -29,19 +29,30 @@ type Generator struct {
 	aquiferFac seedFactory
 	surface    surfaceNoises
 	blocks     blocks
+	sf         surfaceFactories
+	oreFac     seedFactory
+	profile    *Profile
+	runtime    []uint32 // Dragonfly's runtime ID of each state, grown as states appear.
 	// bandTable is the world's terracotta band pattern.
 	bandTable [bandTableSize]uint8
 	// Seeds for our own position-based chances.
 	strataSeed, veinSeed, diskSeed, carveSeed, lakeSeed, featureSeed, treeSeed uint64
 }
 
-// New returns a Generator for a seed.
-func New(seed int64) *Generator {
+// New returns a Generator for a seed, with the default profile, Bedrock's.
+func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
+
+// NewWithProfile returns a Generator for a seed and a placement profile.
+func NewWithProfile(seed int64, profile *Profile) *Generator {
 	sub := func(id uint64) uint64 { return mix64(uint64(seed) ^ mix64(id)) }
 	root := xoroFromSeed(seed)
 	w := root.forkFactory()
 	aquifer := w.named("minecraft:aquifer")
+	ore := w.named("minecraft:ore")
 	return &Generator{
+		sf:          newSurfaceFactories(w),
+		oreFac:      ore.forkFactory(),
+		profile:     profile,
 		zoomSeed:    biomeZoomSeed(seed),
 		climate:     newClimateNoises(w),
 		caves:       newCaveNoises(w),
@@ -73,6 +84,9 @@ type chunkScratch struct {
 	walkCorners [walkCornerSlots]walkCorner
 	carved      [carvedSize][carvedSize]carveMask // The chunk and treeMargin columns around it.
 	lakes       []lake
+	quarts      [quartSlots]quartColumn
+	rule        ruleContext
+	base        baseChunk
 }
 
 const cellsAcross = 16 / cellXZ
@@ -92,23 +106,25 @@ func (s *chunkScratch) startColumnOnly(g *Generator) {
 
 var scratchPool = sync.Pool{New: func() any { return new(chunkScratch) }}
 
-// GenerateChunk runs noise (stone, caves, fluids, ore veins), then biomes, surface, carvers,
-// underground features, and trees, snow and plants. The game does biomes before noise; ours can do
-// them after, because density never reads a stored biome. Everything is worked out from the seed and
-// the chunk position, with no look at neighbouring chunks.
+// GenerateChunk builds a chunk. Noise and surface follow Mojang's algorithms; what comes after is
+// still being moved over. Everything is worked out from the seed and the chunk position.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	originX, originZ := int(pos[0])*16, int(pos[1])*16
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	s.startChunk(g, originX, originZ)
-
+	b := &s.base
+	g.buildBase(b, s, int(pos[0]), int(pos[1]), stageSurface, 0, 15, 0, 15)
+	g.writeChunk(c, b)
 	var top [16][16]int16
-	g.fillNoise(c, s, originX, originZ, &top)
+	for x := range 16 {
+		for z := range 16 {
+			top[x][z] = b.wgFloor[z<<4|x] - 1
+		}
+	}
 	noiseTop := top
 
 	var cols [4][4]biomeColumn
 	g.fillBiomes(c, originX, originZ, &cols)
-	g.applySurface(c, originX, originZ, &top, &cols)
 	g.placeDisks(c, int(pos[0]), int(pos[1]), &top)
 	highest := minY
 	for x := range top {
@@ -133,14 +149,17 @@ const (
 	cellMixed
 )
 
-// fillNoise is the noise pass. A cell's corners are read only if some block in it needs its density.
-// It works down each block column so that fluids can see what lies above them.
-func (g *Generator) fillNoise(c *chunk.Chunk, s *chunkScratch, originX, originZ int, top *[16][16]int16) {
+// fillNoise is the noise pass, for the columns x0 to x1, z0 to z1 of a chunk. A cell's corners are read
+// only if some block in it needs its density. It writes what the study says the game's noise stage
+// holds: stone, veins, water and lava, with nothing sealed.
+func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int) {
+	originX, originZ := b.cx*16, b.cz*16
 	for i := range cellsAcross + 1 {
 		for j := range cellsAcross + 1 {
 			s.shapes[i][j] = g.shapeAt(originX+i*cellXZ, originZ+j*cellXZ)
 			for n := range columnNodes {
-				s.nodes[i][j][n].haveCore, s.nodes[i][j][n].haveNoodle, s.nodes[i][j][n].haveVein = false, false, false
+				nd := &s.nodes[i][j][n]
+				nd.haveCore, nd.haveNoodle, nd.haveVein, nd.haveRidge = false, false, false, false
 			}
 		}
 	}
@@ -148,16 +167,14 @@ func (g *Generator) fillNoise(c *chunk.Chunk, s *chunkScratch, originX, originZ 
 	var kinds [cellsAcross][cellsAcross][columnNodes - 1]uint8
 	var noodles [cellsAcross][cellsAcross][columnNodes - 1]bool
 	var veins [cellsAcross][cellsAcross][columnNodes - 1]bool
-	for lx := range 16 {
+	for lx := x0; lx <= x1; lx++ {
 		i, dx := lx/cellXZ, lx%cellXZ
 		fx := float64(dx) / 4.0
 		wx := originX + lx
-		for lz := range 16 {
+		for lz := z0; lz <= z1; lz++ {
 			j, dz := lz/cellXZ, lz%cellXZ
 			fz := float64(dz) / 4.0
 			wz := originZ + lz
-			colTop := minY - 1
-			prevWater := false
 			for l := columnNodes - 2; l >= 0; l-- {
 				baseY := minY + l*cellY
 				kind := kinds[i][j][l]
@@ -167,20 +184,19 @@ func (g *Generator) fillNoise(c *chunk.Chunk, s *chunkScratch, originX, originZ 
 				}
 				switch kind {
 				case cellSky:
-					if baseY >= seaFluidTop && !prevWater {
+					if baseY >= seaFluidTop {
 						continue // Open air, which is what a new chunk already holds.
 					}
 					for dy := cellY - 1; dy >= 0; dy-- {
 						y := baseY + dy
-						colTop, prevWater = g.setFluid(c, globalFluid(y).at(y), uint8(lx), y, uint8(lz), wx, wz, colTop, prevWater)
+						if k := globalFluid(y).at(y); k != fillAir {
+							b.b[cellIndex(lx, y, lz)] = fluidState(k)
+						}
 					}
 				case cellSolid:
 					for dy := cellY - 1; dy >= 0; dy-- {
-						y := baseY + dy
-						c.SetBlock(uint8(lx), int16(y), uint8(lz), 0, g.solidBlockAt(wx, y, wz, 0))
+						b.b[cellIndex(lx, baseY+dy, lz)] = sStone
 					}
-					colTop = max(colTop, baseY+cellY-1)
-					prevWater = false
 				default:
 					corners := s.cellAt(i, j, l)
 					blend := corners.blend(fx, fz, noodles[i][j][l], veins[i][j][l])
@@ -188,42 +204,34 @@ func (g *Generator) fillNoise(c *chunk.Chunk, s *chunkScratch, originX, originZ 
 						y := baseY + dy
 						fy := float64(dy) / 8.0
 						f := blend.final(fy)
-						if f > 0 {
-							c.SetBlock(uint8(lx), int16(y), uint8(lz), 0, g.solidBlockAt(wx, y, wz, blend.veinAt(fy)))
-							colTop = max(colTop, y)
-							prevWater = false
-							continue
+						var k fillKind = fillSolid
+						if !(f > 0) {
+							k = g.fluidAt(&s.aq, wx, y, wz, f)
 						}
-						colTop, prevWater = g.setFluid(c, g.fluidAt(&s.aq, wx, y, wz, f), uint8(lx), y, uint8(lz), wx, wz, colTop, prevWater)
+						st := fluidState(k)
+						if k == fillSolid {
+							st = sStone
+							if veins[i][j][l] {
+								st = g.veinState(&corners, &blend, originX+i*cellXZ, baseY, originZ+j*cellXZ, wx, y, wz, fx, fy, fz)
+							}
+						}
+						b.b[cellIndex(lx, y, lz)] = st
 					}
 				}
 			}
-			top[lx][lz] = int16(colTop)
 		}
 	}
 }
 
-// setFluid writes a block that the density left open. Water never hangs over air: the game lets it
-// flow later; a generated block here would stay hanging, so the wall closes under it instead. This
-// sealing is our own and is not in the game's noise stage.
-func (g *Generator) setFluid(c *chunk.Chunk, kind fillKind, lx uint8, y int, lz uint8, wx, wz, colTop int, prevWater bool) (int, bool) {
-	b := &g.blocks
-	switch kind {
-	case fillAir:
-		if prevWater {
-			c.SetBlock(lx, int16(y+1), lz, 0, g.stoneAt(wx, y+1, wz))
-			colTop = max(colTop, y+1)
-		}
-		return colTop, false
+// fluidState is the block of an open space.
+func fluidState(k fillKind) bs {
+	switch k {
 	case fillWater:
-		c.SetBlock(lx, int16(y), lz, 0, b.water)
-		return colTop, true
+		return sWater
 	case fillLava:
-		c.SetBlock(lx, int16(y), lz, 0, b.lava)
-		return colTop, false
+		return sLava
 	}
-	c.SetBlock(lx, int16(y), lz, 0, g.stoneAt(wx, y, wz))
-	return max(colTop, y), false
+	return sAir
 }
 
 // cellAt gives the corners of a cell. classifyCell has read them.
