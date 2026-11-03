@@ -33,7 +33,7 @@ type Config struct {
 	// tick. 0 is Dragonfly's normal speed, 3.
 	RandomTickSpeed int
 	// ChunkWorkers is how many background workers generate and load chunks.
-	// 0 picks half the processors, at least 1.
+	// 0 picks min(4, processors): each busy worker holds its own scratch.
 	ChunkWorkers int
 	// TickDistance is how many chunks around a player have their blocks ticked,
 	// Bedrock's tick-distance. It is held two under ViewDistance, so a ticked

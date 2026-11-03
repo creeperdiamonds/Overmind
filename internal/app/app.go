@@ -95,12 +95,13 @@ func Start(cfg config.Config) (*server.Server, error) {
 	return srv, nil
 }
 
-// chunkWorkers is how many chunk workers to run: the setting, or half the processors.
+// chunkWorkers is how many chunk workers to run: the setting, or min(4, processors). Each busy worker
+// holds its own generation scratch on top of the shared cache, so more workers cost memory (ruling 32).
 func chunkWorkers(set int) int {
 	if set > 0 {
 		return set
 	}
-	return max(1, runtime.NumCPU()/2)
+	return min(4, runtime.NumCPU())
 }
 
 // tickDistance is the tick range: the setting or Bedrock's default 4, held at least two under the view

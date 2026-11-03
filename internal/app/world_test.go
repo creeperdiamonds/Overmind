@@ -460,7 +460,7 @@ func TestGenerationDoesNotStallTicks(t *testing.T) {
 		sent += b.ChunksReceived()
 	}
 	t.Logf("5 bots walking apart (one at view distance 3), %d chunk workers per world, random ticks raised to 50: worst empty-transaction wait %v; ticks in 20 s: %d (20 is normal); chunks sent: %d",
-		max(1, runtime.NumCPU()/2), worst, ticks, sent)
+		min(4, runtime.NumCPU()), worst, ticks, sent)
 	require.Less(t, worst, 500*time.Millisecond, "a world transaction waited %v while chunks were generated", worst)
 	require.Greater(t, ticks, 20*17, "the world ran slow: %d ticks in 20 s", ticks)
 	require.Equal(t, onTick, app.GenerationsOnTick(), "chunks were generated on the world's tick")
