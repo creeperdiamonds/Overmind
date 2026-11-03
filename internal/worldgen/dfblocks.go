@@ -480,6 +480,9 @@ func dragonflyBlock(name string) world.Block {
 		return block.Bamboo{Thick: true, LeafSize: leaf, Ready: propOf(name, "stage") == "1"}
 	case "moss_carpet":
 		return block.MossCarpet{}
+	case "pink_petals":
+		n, _ := strconv.Atoi(propOf(name, "flower_amount"))
+		return block.PinkPetals{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}
 	case "spore_blossom":
 		return block.SporeBlossom{}
 	case "air", "cave_air", "void_air":

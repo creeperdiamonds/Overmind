@@ -525,6 +525,8 @@ func canSurvive(d *decoration, s bs, p pos) bool {
 		return here.has(fWater) && here.has(fSource) && below.tagged(tagDirtLike)
 	case "spore_blossom":
 		return d.at(p.step(dUp)).has(fSturdyDown) && !d.at(p).has(fWater)
+	case "leaf_litter":
+		return below.has(fSturdyUp)
 	case "hanging_roots":
 		return d.at(p.step(dUp)).has(fSturdyDown)
 	}
@@ -1000,7 +1002,7 @@ func hugeMushroom(red bool, fr int) feature {
 					for dz := -rr; dz <= rr; dz++ {
 						xe, ze := absInt(dx) == rr, absInt(dz) == rr
 						if dy >= h || xe != ze {
-							put(o.add(dx, dy, dz), mushroomState(cap, dy >= h, false, dz < -c, dz > c, dx > c, dx < -c))
+							put(o.add(dx, dy, dz), mushroomState(cap, dy >= h-1, false, dz < -c, dz > c, dx > c, dx < -c))
 						}
 					}
 				}

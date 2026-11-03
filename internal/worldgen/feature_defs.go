@@ -1,9 +1,6 @@
 package worldgen
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // The non-ore placed features. Parameters were transcribed from knowledge of the game and corrected
 // against the study's trace fixtures. Features the study does not write up are left out: see NOTES.md.
@@ -121,14 +118,9 @@ func darkOak(decos ...treeDecorator) *treeCfg {
 	return c
 }
 
-// leafLitter is the ground decorator of forest trees. Its numbers are inferred from the traces.
-func leafLitterProvider(d *decoration, _ pos) bs {
-	k := d.r.nextInt(16)
-	return stateOf(fmt.Sprintf("leaf_litter[facing=%s,segment_amount=%d]", dirName(horizontal[k%4]), k/4+1))
-}
-
-func litter(tries, radius int) treeDecorator {
-	return placeOnGround(tries, radius, 2, leafLitterProvider)
+// litter is the ground decorator of forest trees: leaf litter of one to most segments.
+func litter(tries, radius, most int) treeDecorator {
+	return placeOnGround(tries, radius, 2, segmented("leaf_litter", "segment_amount", 1, most))
 }
 
 func defineSteps(t *tableBuilder) {
@@ -203,7 +195,7 @@ func defineSteps(t *tableBuilder) {
 	fallenBirch := func(lo, hi int) *placement { return fallen("birch_log", lo, hi, birch) }
 	fallenSpruce := func() *placement { return fallen("spruce_log", 6, 10, "spruce_sapling") }
 	fallenJungle := func() *placement { return fallen("jungle_log", 4, 11, "jungle_sapling") }
-	lit := []treeDecorator{litter(96, 4), litter(150, 2)}
+	lit := []treeDecorator{litter(96, 4, 3), litter(150, 2, 4)}
 	withLit := func(extra ...treeDecorator) []treeDecorator {
 		return append(append([]treeDecorator{}, extra...), lit...)
 	}
