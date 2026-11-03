@@ -179,23 +179,23 @@ type skinCache struct {
 	mu      sync.Mutex
 	skins   map[string]skin.Skin
 	order   []string // oldest first
-	pending map[string][]func(skin.Skin, bool)
+	pending map[string][]func(skin.Skin, error)
 }
 
 func newSkinCache(fetch skinFetcher) *skinCache {
 	if fetch == nil {
 		fetch = fetchMojangSkin
 	}
-	return &skinCache{fetch: fetch, skins: map[string]skin.Skin{}, pending: map[string][]func(skin.Skin, bool){}}
+	return &skinCache{fetch: fetch, skins: map[string]skin.Skin{}, pending: map[string][]func(skin.Skin, error){}}
 }
 
 // get calls done with the skin at url, at once when it is kept, else when a
-// fetch is done (ok false if it failed). done runs on no particular goroutine.
-func (sc *skinCache) get(p profileSkin, done func(skin.Skin, bool)) {
+// fetch is done (with why, if it failed). done runs on no particular goroutine.
+func (sc *skinCache) get(p profileSkin, done func(skin.Skin, error)) {
 	sc.mu.Lock()
 	if s, ok := sc.skins[p.URL]; ok {
 		sc.mu.Unlock()
-		done(s, true)
+		done(s, nil)
 		return
 	}
 	waiting, busy := sc.pending[p.URL]
@@ -225,7 +225,7 @@ func (sc *skinCache) get(p profileSkin, done func(skin.Skin, bool)) {
 		}
 		sc.mu.Unlock()
 		for _, f := range calls {
-			f(s, err == nil)
+			f(s, err)
 		}
 	}()
 }
@@ -245,17 +245,29 @@ func (c *conn) joinSkin() skin.Skin {
 }
 
 // loadSkin fetches the player's Mojang skin, if it has one, and puts it on the
-// player once it is there; Dragonfly then shows it to Bedrock viewers.
+// player once it is there; Dragonfly then shows it to Bedrock viewers, and the
+// hub updates its Bedrock list rows. Each outcome is logged at Info, so a
+// player shown the stand-in on Bedrock can be told apart from one whose skin
+// never came.
 func (c *conn) loadSkin() {
-	p, ok := skinOf(c.id.Textures)
-	if !ok || c.f.skins == nil {
+	if c.f.skins == nil {
 		return
 	}
-	c.f.skins.get(p, func(s skin.Skin, ok bool) {
-		if !ok {
-			c.f.opts.Log.Debug("java skin not fetched; the stand-in stays", "name", c.id.Name)
+	p, ok := skinOf(c.id.Textures)
+	if !ok {
+		why := "no textures property"
+		if c.id.Textures != "" {
+			why = "the textures property names no skin"
+		}
+		c.f.opts.Log.Info("java profile has no skin; Bedrock shows the stand-in", "name", c.id.Name, "reason", why)
+		return
+	}
+	c.f.skins.get(p, func(s skin.Skin, err error) {
+		if err != nil {
+			c.f.opts.Log.Info("java skin not fetched; Bedrock shows the stand-in", "name", c.id.Name, "url", p.URL, "reason", err)
 			return
 		}
+		c.f.opts.Log.Info("java skin fetched", "name", c.id.Name, "url", p.URL, "slim", p.Slim)
 		player.Do(c.handle, func(_ *world.Tx, pl *player.Player) { pl.SetSkin(s) })
 	})
 }

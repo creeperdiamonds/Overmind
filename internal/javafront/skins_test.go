@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +25,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/stretchr/testify/require"
 
+	"github.com/overmind/overmind/internal/javalogin"
 	"github.com/overmind/overmind/internal/javawire"
 	"github.com/overmind/overmind/internal/skins"
 )
@@ -121,8 +126,8 @@ func TestSkinCache(t *testing.T) {
 	var oks atomic.Int32
 	for range 10 {
 		wg.Add(1)
-		sc.get(profileSkin{URL: "a"}, func(_ skin.Skin, ok bool) {
-			if ok {
+		sc.get(profileSkin{URL: "a"}, func(_ skin.Skin, err error) {
+			if err == nil {
 				oks.Add(1)
 			}
 			wg.Done()
@@ -133,13 +138,13 @@ func TestSkinCache(t *testing.T) {
 	require.EqualValues(t, 10, oks.Load())
 
 	done := make(chan bool, 1)
-	sc.get(profileSkin{URL: "bad"}, func(_ skin.Skin, ok bool) { done <- ok })
+	sc.get(profileSkin{URL: "bad"}, func(_ skin.Skin, err error) { done <- err == nil })
 	require.False(t, <-done)
 	require.Equal(t, 1, sc.len())
 
 	for i := range skinCacheSize + 5 {
 		ch := make(chan struct{})
-		sc.get(profileSkin{URL: fmt.Sprint("u", i)}, func(skin.Skin, bool) { close(ch) })
+		sc.get(profileSkin{URL: fmt.Sprint("u", i)}, func(skin.Skin, error) { close(ch) })
 		<-ch
 	}
 	require.Equal(t, skinCacheSize, sc.len())
@@ -209,4 +214,38 @@ func TestSkinRedirectsStayOnMojang(t *testing.T) {
 	for _, bad := range []string{"http://textures.minecraft.net/texture/abc", "https://evil.example/x", "https://textures.minecraft.net:444/x", "https://u@textures.minecraft.net/x"} {
 		require.ErrorIs(t, check(bad), errSkinHost, bad)
 	}
+}
+
+// Each outcome of a Java skin load is logged at Info with its reason: a
+// profile with no textures, one whose textures name no skin, and a fetch that
+// failed. (A fetch that worked is logged too: TestJavaSkinReachesBedrock.)
+func TestSkinLoadIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	log := slog.New(slog.NewTextHandler(&lockedWriter{w: &buf, mu: &mu}, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	f := &Front{opts: Options{Log: log}, skins: newSkinCache(func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("skin fetch: 503 Service Unavailable")
+	})}
+	logged := func() string { mu.Lock(); defer mu.Unlock(); return buf.String() }
+
+	(&conn{f: f, id: &javalogin.Identity{Name: "NoTextures"}}).loadSkin()
+	require.Contains(t, logged(), `level=INFO msg="java profile has no skin; Bedrock shows the stand-in" name=NoTextures reason="no textures property"`)
+	capeOnly := base64.StdEncoding.EncodeToString([]byte(`{"textures":{"CAPE":{"url":"http://textures.minecraft.net/texture/c"}}}`))
+	(&conn{f: f, id: &javalogin.Identity{Name: "CapeOnly", Textures: capeOnly}}).loadSkin()
+	require.Contains(t, logged(), `name=CapeOnly reason="the textures property names no skin"`)
+	(&conn{f: f, id: &javalogin.Identity{Name: "Unlucky", Textures: textures("http://textures.minecraft.net/texture/u", false)}}).loadSkin()
+	require.Eventually(t, func() bool {
+		return strings.Contains(logged(), `level=INFO msg="java skin not fetched; Bedrock shows the stand-in" name=Unlucky url=http://textures.minecraft.net/texture/u reason="skin fetch: 503 Service Unavailable"`)
+	}, 5*time.Second, 10*time.Millisecond, logged())
+}
+
+type lockedWriter struct {
+	w  io.Writer
+	mu *sync.Mutex
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
