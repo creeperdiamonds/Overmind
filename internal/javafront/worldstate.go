@@ -25,7 +25,7 @@ var overworldClock = registryIndex("minecraft:world_clock", "minecraft:overworld
 // everyone has slept.
 func (c *conn) ViewTime(t int) {
 	if c.viewing() {
-		c.dayTime = int64(t)
+		c.dayTime, c.worldAge = int64(t), c.viewW.Load().Age()
 		c.sendTime()
 	}
 }
@@ -33,13 +33,15 @@ func (c *conn) ViewTime(t int) {
 // ViewTimeCycle starts or stops the client's clock.
 func (c *conn) ViewTimeCycle(cycle bool) {
 	if c.viewing() {
+		// The world's age is the last one read: the world holds its settings while it calls this.
 		c.dayStill = !cycle
 		c.sendTime()
 	}
 }
 
-// sendTime sends the Overworld clock, advancing a clock tick a client tick while the day cycles. Only the
-// Overworld has a day: Dragonfly's Nether and End have no time cycle.
+// sendTime sends the Overworld clock, advancing a clock tick a client tick while the day cycles, with the
+// world's age, its ticks since it was made, as vanilla sends the level's game time. Only the Overworld has
+// a day: Dragonfly's Nether and End have no time cycle.
 func (c *conn) sendTime() {
 	if c.dim.name != overworldName {
 		return
@@ -48,7 +50,7 @@ func (c *conn) sendTime() {
 	if c.dayStill {
 		rate = 0
 	}
-	c.send(javaproto.UpdateTime(c.dayTime, overworldClock(), c.dayTime, rate))
+	c.send(javaproto.UpdateTime(c.worldAge, overworldClock(), c.dayTime, rate))
 }
 
 // ViewWeather shows rain and thunder when they change. The world calls it every 20 ticks.
@@ -89,6 +91,7 @@ func level(on bool) float32 {
 func (c *conn) sendWorldState(tx *world.Tx) {
 	w := tx.World()
 	c.dayTime, c.dayStill = int64(w.Time()), !w.TimeCycle()
+	c.worldAge = w.Age()
 	c.sendTime()
 	c.raining, c.thunder = false, false
 	if w.Dimension().WeatherCycle() {

@@ -9,6 +9,15 @@ import "github.com/df-mc/dragonfly/server/block/cube"
 // none (Config.RandomTickSpeed, after its default).
 func (w *World) RandomTickSpeed() int { return w.conf.RandomTickSpeed }
 
+// Age is the world's age: the ticks it has run since it was made (Settings.CurrentTick), which only go
+// up, whatever its time of day is set to. Java's update_time carries it. It is safe to call without a
+// transaction, except while the world's settings are held.
+func (w *World) Age() int64 {
+	w.set.Lock()
+	defer w.set.Unlock()
+	return w.set.CurrentTick
+}
+
 // Mechanics are a world's shared rules that differ by edition. The zero value is Bedrock's.
 type Mechanics struct {
 	// JavaLeafDecay gives leaves Java's decay: a leaf stays while a log is within 6 steps through leaves,

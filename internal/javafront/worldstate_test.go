@@ -2,6 +2,7 @@ package javafront_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 // worldSeen is what the Java bot was sent of the world's state.
 type worldSeen struct {
 	Time []struct {
+		Age    string `json:"age"`
 		Clocks []struct {
 			ID   int32   `json:"id"`
 			Time int64   `json:"time"`
@@ -66,7 +68,8 @@ func doWorld(t *testing.T, w *world.World, f func(tx *world.Tx)) {
 }
 
 // The time of day reaches Java as the Overworld clock, running while the day cycles and still while it
-// does not, and the weather as Java's game events: rain begins (its level 1), thunder (its level 1), and
+// does not, with the world's age, its ticks since it was made, which only goes up whatever the time is
+// set to; and the weather as Java's game events: rain begins (its level 1), thunder (its level 1), and
 // both end.
 func TestJavaSeesTimeAndWeather(t *testing.T) {
 	srv := testserver.Start(t)
@@ -79,6 +82,16 @@ func TestJavaSeesTimeAndWeather(t *testing.T) {
 		tm, rate, ok := lastClock(j.world())
 		return ok && tm >= 13000 && tm < 14000 && rate == 1
 	}, 5*time.Second, 50*time.Millisecond, "Java was not sent the night: %+v", j.world().Time)
+	w.SetTime(2000)
+	require.Eventually(t, func() bool { tm, _, ok := lastClock(j.world()); return ok && tm >= 2000 && tm < 3000 }, 5*time.Second, 50*time.Millisecond, "Java was not sent the morning")
+	var last int64 = -1
+	for _, u := range j.world().Time {
+		age, err := strconv.ParseInt(u.Age, 10, 64)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, age, last, "the world's age went back: %+v", j.world().Time)
+		require.Less(t, age, int64(13000), "the day time was sent as the world's age: %+v", j.world().Time)
+		last = age
+	}
 	w.StopTime()
 	require.Eventually(t, func() bool { _, rate, ok := lastClock(j.world()); return ok && rate == 0 }, 5*time.Second, 50*time.Millisecond, "the clock did not stop")
 	w.StartTime()

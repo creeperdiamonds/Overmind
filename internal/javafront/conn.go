@@ -163,6 +163,7 @@ type conn struct {
 	edits  map[cube.Pos]world.Block // blocks changed this tick: the first layer's block, nil for a change to the second only
 	// The world's state as the client was last shown it, and this tick's sounds (worldstate.go).
 	dayTime          int64
+	worldAge         int64 // the world's ticks since it was made, when last read
 	dayStill         bool
 	raining, thunder bool
 	sounds           []pendingSound
