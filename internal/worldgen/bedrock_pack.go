@@ -47,6 +47,7 @@ type BedrockData struct {
 	ores                 map[string]*bedrockOre // By rule identifier, for tests.
 	lastOre              *bedrockOre
 	surfaceBiomes        [len(biomeTableNames)]surfaceBiome
+	subsurface           [len(biomeTableNames)]*gradientDef // A biome's noise_gradient subsurface builder.
 	// Skipped counts the rules of the passes used that are not written yet, by reason.
 	Skipped map[string]int
 	// Problems names the rules whose data is broken (unreadable values, unknown blocks, absurd
@@ -684,7 +685,15 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	bd.lastOre = nil
 	feat, err := bd.fc.feature(r.Description.PlacesFeature)
 	if err != nil {
-		return skip("", err)
+		rule := skip("", err)
+		// A rule whose own scatter calls math.random still draws from the chunk's Random in BDS (T21):
+		// keep it for its draws, placing nothing, so the stream stays where BDS has it.
+		if isUnimpl(err) && distributionDraws(r.Distribution) {
+			if sc, err := parseScatterParams(r.Distribution, bd); err == nil {
+				rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, biomes: bd.ruleBiomes(r)}
+			}
+		}
+		return rule
 	}
 	sc, err := parseScatterParams(r.Distribution, bd)
 	if err != nil {
@@ -696,6 +705,16 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	}
 	rule.biomes = bd.ruleBiomes(r)
 	return rule
+}
+
+// distributionDraws says whether a rule's scatter evaluates math.random.
+func distributionDraws(dist map[string]json.RawMessage) bool {
+	for _, v := range dist {
+		if strings.Contains(strings.ToLower(string(v)), "math.random") {
+			return true
+		}
+	}
+	return false
 }
 
 // shortReason keeps the innermost part of a reason, for the Skipped counts.
@@ -761,6 +780,9 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 	for i := range biomeTableNames {
 		name := biomeRowDefs[i].String()
 		b := bd.biomes[name]
+		if b == nil && optionalBiome(i) {
+			continue // An older install: the profile keeps Java's biome table (NewWithData).
+		}
 		if b == nil {
 			return fmt.Errorf("the packs have no biome %s", name)
 		}
@@ -770,6 +792,19 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		json.Unmarshal(b.components["minecraft:surface_builder"], &sb)
 		var kind string
 		json.Unmarshal(sb.Builder["type"], &kind)
+		var sub struct {
+			Builder map[string]json.RawMessage `json:"builder"`
+		}
+		json.Unmarshal(b.components["minecraft:subsurface_builder"], &sub)
+		var subKind string
+		json.Unmarshal(sub.Builder["type"], &subKind)
+		if subKind == "minecraft:noise_gradient" {
+			gd, err := parseGradient(sub.Builder)
+			if err != nil {
+				return fmt.Errorf("biome %s: %w", name, err)
+			}
+			bd.subsurface[i] = gd
+		}
 		var depth int
 		json.Unmarshal(sb.Builder["sea_floor_depth"], &depth)
 		var cl struct {
@@ -781,6 +816,8 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		row := surfaceRow{biome: name, kind: strings.TrimPrefix(kind, "minecraft:"), top: str(sb.Builder, "top_material"),
 			mid: str(sb.Builder, "mid_material"), floor: str(sb.Builder, "sea_floor_material"),
 			foundation: str(sb.Builder, "foundation_material"), sea: str(sb.Builder, "sea_material"), seaDepth: depth, temperature: cl.T}
+		json.Unmarshal(sb.Builder["bryce_pillars"], &row.bryce)
+		json.Unmarshal(sb.Builder["has_forest"], &row.forest)
 		var mp struct {
 			Steep map[string]json.RawMessage `json:"steep_material_adjustment"`
 		}
@@ -801,6 +838,9 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		json.Unmarshal(b.components["minecraft:surface_material_adjustments"], &adj)
 		for _, a := range adj.A {
 			if len(a.H) > 0 {
+				if isNetherBiome(uint8(i)) {
+					continue // The Nether's surface reads its own (nether_surface.go).
+				}
 				return fmt.Errorf("biome %s: height ranges in surface adjustments are not written yet", name)
 			}
 			row.adjust = append(row.adjust, surfaceAdjust{a.Scale, a.Range[0], a.Range[1], str(a.M, "top_material"),

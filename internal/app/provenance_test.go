@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // TestGeneratorProvenance: a world folder records how its chunks were made (profile, and whether
@@ -26,5 +28,9 @@ func TestGeneratorProvenance(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, provenanceFile))
 	if strings.TrimSpace(string(got)) != b {
 		t.Errorf("record %q, want %q", got, b)
+	}
+	// The record names the generator's version, so an upgrade that changes generation warns too.
+	if id := provenanceIdent("bedrock", nil, "none"); !strings.Contains(id, "generator="+worldgen.GeneratorVersion+" ") {
+		t.Errorf("record %q does not name the generator version %q", id, worldgen.GeneratorVersion)
 	}
 }

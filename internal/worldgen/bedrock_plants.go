@@ -22,6 +22,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 			return codeFeat(forestFoliage{n: -3}.place), true, nil
 		case "flower_forest_foliage_feature":
 			return codeFeat(forestFoliage{n: -1}.place), true, nil
+		case "flower_forest_flower_feature":
+			return codeFeat(flowerForestFlower), true, nil
 		case "forest_flower_feature":
 			return legacyFlower(1), true, nil
 		case "overworld_flower_feature":
@@ -37,6 +39,22 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return nil, false, nil
 	}
 	switch id {
+	case "minecraft:pointed_dripstone_feature":
+		return codeFeat(bedrockPointedDripstone), true, nil
+	case "minecraft:delta_feature":
+		return codeFeat(deltaFeature), true, nil
+	case "minecraft:basalt_columns_feature":
+		return codeFeat(basaltColumns), true, nil
+	case "minecraft:_huge_crimson_fungus_feature":
+		return codeFeat(hugeFungus{sCrimsonStem, sNetherWart, true}.place), true, nil
+	case "minecraft:_huge_warped_fungus_feature":
+		return codeFeat(hugeFungus{sWarpedStem, sWarpedWart, false}.place), true, nil
+	case "minecraft:_weeping_vines_cluster_feature":
+		return codeFeat(weepingVinesCluster), true, nil
+	case "minecraft:dripstone_cluster_feature":
+		return codeFeat(bedrockDripstoneCluster), true, nil
+	case "minecraft:large_dripstone_feature":
+		return codeFeat(bedrockLargeDripstone), true, nil
 	case "minecraft:dirt_feature":
 		// Measured, not read from the code (ruling 39): BDS's built-in dirt rule places like an ore of
 		// count 33 over stone with no air discard, 144/144 first blobs matching (NOTES-bedrock-exact 4b).
@@ -246,6 +264,32 @@ func legacyFlower(kind int) bfeat {
 		jitter(r, 7)
 		return true
 	})
+}
+
+// flowerForestFlowers is type 0's list (T19): the flower is picked by query.noise's octave.
+var flowerForestFlowers = func() (l []bs) {
+	for _, n := range []string{"dandelion", "poppy", "allium", "azure_bluet", "red_tulip", "orange_tulip", "white_tulip", "pink_tulip",
+		"oxeye_daisy", "cornflower", "lily_of_the_valley"} {
+		l = append(l, laterState(n))
+	}
+	return l
+}()
+
+// flowerForestFlower is LegacyFlowerFeature type 0 (T19, place 0x53fbc30, block choice 0xd901ce0): the
+// flower from Random(2345)'s simplex at (x, z) / 48 with no offsets, mapped to [0, 1) and clamped
+// below 1; one try in 1.26 worlds, then the six jitter words.
+func flowerForestFlower(d *decoration, r *bmt, p pos) bool {
+	v := float32(float32(queryNoiseOctave.at2(float32(p.x)/48, float32(p.z)/48)*70+1) * 0.5)
+	c := min(max(v, 0), 0.9999)
+	s := flowerForestFlowers[int(float32(c*float32(len(flowerForestFlowers))))]
+	ok := false
+	if p.y >= minY && p.y < maxY && d.at(p).isAir() && bnSoil.has(bname(d.at(p.add(0, -1, 0)))) {
+		ok = d.bput(p, s)
+	}
+	jitter(r, 7)
+	jitter(r, 3)
+	jitter(r, 7)
+	return ok
 }
 
 var (
@@ -662,6 +706,7 @@ func bBamboo(d *decoration, r *bmt, p pos) bool {
 type snapFeat struct {
 	f                              bfeat
 	ceiling                        bool
+	randomH, randomV               bool
 	rng                            int
 	allowAir, allowNonAir, allowUW bool
 	surface                        *bmatch
@@ -675,6 +720,10 @@ func (fc *featCompiler) snap(v map[string]json.RawMessage) (bfeat, error) {
 	case "", "floor":
 	case "ceiling":
 		f.ceiling = true
+	case "random_horizontal":
+		f.randomH = true // T14: a horizontal surface, floor or ceiling by nextBoolean.
+	case "random_vertical":
+		f.randomV = true // T14: a wall, the four sides shuffled by three raw words.
 	default:
 		return nil, unimpl("snap surface %s", s)
 	}
@@ -695,6 +744,14 @@ func (fc *featCompiler) snap(v map[string]json.RawMessage) (bfeat, error) {
 }
 
 func (f *snapFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
+	if f.randomH {
+		c := *f
+		c.randomH, c.ceiling = false, r.nextBool()
+		return c.place(d, r, p)
+	}
+	if f.randomV {
+		return f.placeWall(d, r, p)
+	}
 	if p.y < minY || p.y > maxY {
 		return p, false
 	}
@@ -745,6 +802,66 @@ func (f *snapFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 		off++
 	}
 	return f.f.place(d, r, pos{p.x, p.y + dy*off, p.z})
+}
+
+// placeWall is the random_vertical search (T14): the faces north, east, south, west shuffled with three
+// raw words, then the search along each until one finds its surface.
+func (f *snapFeat) placeWall(d *decoration, r *bmt, p pos) (pos, bool) {
+	a := [4]int{2, 5, 3, 4}
+	if r.u32()&1 == 0 {
+		a[0], a[1] = a[1], a[0]
+	}
+	if j := r.u32() % 3; j != 2 {
+		a[j], a[2] = a[2], a[j]
+	}
+	if j := r.u32() & 3; j != 3 {
+		a[j], a[3] = a[3], a[j]
+	}
+	if p.y < minY || p.y > maxY {
+		return p, false
+	}
+	b0 := d.at(p)
+	open := b0.isAir() || bWaterMat(b0)
+	allowedOpen := func(s bs) bool { return f.allowAir && s.isAir() || f.allowUW && bWaterMat(s) }
+	allowed := func(s bs) bool {
+		if open {
+			return allowedOpen(s)
+		}
+		return f.allowNonAir && !s.isAir() && !bWaterMat(s)
+	}
+	target := func(s bs) bool {
+		switch {
+		case f.surface != nil:
+			return f.surface.has(s)
+		case open:
+			return bSolid(s)
+		}
+		return allowedOpen(s)
+	}
+	if !allowed(b0) {
+		return p, false
+	}
+	bio := d.storedBiome(p.x, p.y, p.z)
+	for _, fi := range a {
+		v := facingVec[fi]
+		k, q := 0, p.add(v.x, v.y, v.z)
+		for k < f.rng-1 {
+			if q.y < minY || q.y > maxY || !allowed(d.at(q)) || d.storedBiome(q.x, q.y, q.z) != bio {
+				break
+			}
+			q = q.add(v.x, v.y, v.z)
+			k++
+		}
+		if q.y < minY || q.y > maxY || !target(d.at(q)) {
+			continue
+		}
+		off := k
+		if !open {
+			off++
+		}
+		return f.f.place(d, r, pos{p.x + v.x*off, p.y + v.y*off, p.z + v.z*off})
+	}
+	return p, false
 }
 
 // vegetationPatchFeat is VegetationPatchFeature::place (0xd8f3860).

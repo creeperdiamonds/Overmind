@@ -19,7 +19,7 @@ Skins: the hub gives `javafront.Front.List` a Bedrock player's skin and handle, 
 
 World:
 
-- **World:** the Overworld uses `worldgen.New(seed)`. The Nether and End are flat floors (Dragonfly builds all three worlds). A player-built Nether portal reaches the Nether; nothing generates an End portal yet.
+- **World:** the Overworld uses `worldgen.New(seed)`. The Nether and End are `gen.Nether()` and `gen.End()`, sharing its cache (Dragonfly builds all three worlds); with `FlatWorld` all three are Dragonfly's flat floors. A player-built Nether portal reaches the Nether; nothing generates an End portal yet, and there is no dragon fight.
 - **Seed** (`seed.go`): kept in `overmind-seed.txt` in the world folder. A new world takes `Config.Seed` or a random one. An existing world keeps its own, and a different `Config.Seed` is a start error, because saved chunks would not fit the new terrain. Any int64 works; Bedrock's own handling of negative seeds and seeds of 2^31 or more is not verified.
 - **Generator record** (`provenance.go`): `overmind-generator.txt` in the world folder holds the profile and whether Bedrock's feature data was read, with a SHA-256 of the files read (`BedrockData.Hash`). A start whose record differs logs a warning that new chunks will not fit the saved ones; the record then follows the start.
 - **Spawn:** Dragonfly asks the generator for a spawn only when it has no world database, so on a world with no `level.dat` yet `Start` sets `DefaultSpawn` itself. The search is deterministic, so a world that stopped before its first save finds the same spawn again.

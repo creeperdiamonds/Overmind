@@ -224,7 +224,7 @@ func TestTreesWholeAcrossEdgesQuick(t *testing.T) {
 
 func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 	g := New(41)
-	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops int
+	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops, ownOrphans int
 	seeds := biomeChunks(g, mixed, "forest", "roofed_forest", "jungle", "savanna", "taiga", "birch_forest")
 	seeds = append(seeds, biomeChunks(g, each, "roofed_forest")...)
 	seeds = append(seeds, biomeChunks(g, each, "savanna")...)
@@ -246,7 +246,7 @@ func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 							switch {
 							case isLeavesID(id):
 								leaves++
-								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) {
+								if !leafReachesLog(w, x, y, z) && !javaDecays(g, x, y, z) && !bedrockOwnTreeOrphan(g, x, y, z, &ownOrphans) {
 									if !cutOnlyByNeighbours(g, x, y, z) {
 										t.Fatalf("chunk %v: leaves at %d %d %d reach no log within 6 steps", p, x, y, z)
 									}
@@ -306,15 +306,64 @@ func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 			}
 		}
 	}
-	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge; allowed: %d leaves cut only by a missing neighbour level, %d trunk tops bare only beside one", leaves, tops, edgeTops, crossings, cutLeaves, bareTops)
+	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge; allowed: %d leaves cut only by a missing neighbour level, %d trunk tops bare only beside one, %d Bedrock leaves their own tree left with no log within 6", leaves, tops, edgeTops, crossings, cutLeaves, bareTops, ownOrphans)
 	// Bounds from fix round 2's measure, 63 of 52,987 leaves and 2 of 964 tops, with a small margin:
 	// the allowance covers what two levels of neighbours leave out, and must stay that rare.
+	if ownOrphans*200 > leaves {
+		t.Errorf("%d of %d leaves left with no log by their own tree; at most 0.5%%", ownOrphans, leaves)
+	}
 	if cutLeaves > 80 || bareTops > 4 {
 		t.Errorf("%d leaves cut and %d bare trunk tops allowed; at most 80 and 4", cutLeaves, bareTops)
 	}
 	if edgeTops < 30 || crossings < 100 {
 		t.Fatalf("only %d trunk tops on edges and %d crossings; the test would prove little", edgeTops, crossings)
 	}
+}
+
+// bedrockOwnTreeOrphan is javaDecays for the Bedrock profile, whose leaves carry no distance: whether
+// the source that placed a leaf placed no log within 6 steps of it through its own leaves, so its own
+// tree left it so. Bedrock's fancy oak puts foliage on every node and a limb only on nodes high enough
+// (min_altitude_factor), as Java's does; in the game such leaves decay later.
+func bedrockOwnTreeOrphan(g *Generator, x, y, z int, n *int) bool {
+	if !g.bedrockDeco() {
+		return false
+	}
+	s := newScratch()
+	cx, cz := x>>4, z>>4
+	for _, src := range g.paritySources(s, cx, cz, 4, cx, cz) {
+		own := map[pos]bs{}
+		for _, c := range src.changes {
+			q := pos{(src.sx-1+int(c.chunk)/3)*16 + int(c.cell)&15, int(c.cell)>>8 + minY, (src.sz-1+int(c.chunk)%3)*16 + int(c.cell)>>4&15}
+			own[q] = c.now
+		}
+		if !own[pos{x, y, z}].tagged(tagLeaves) {
+			continue
+		}
+		seen := map[pos]bool{{x, y, z}: true}
+		front := []pos{{x, y, z}}
+		for d := 0; d < 6 && len(front) > 0; d++ {
+			var next []pos
+			for _, p := range front {
+				for _, v := range dirVec {
+					q := p.add(v.x, v.y, v.z)
+					if seen[q] {
+						continue
+					}
+					seen[q] = true
+					if own[q].tagged(tagLogs) {
+						return false
+					}
+					if own[q].tagged(tagLeaves) {
+						next = append(next, q)
+					}
+				}
+			}
+			front = next
+		}
+		*n++
+		return true
+	}
+	return false
 }
 
 // javaDecays says whether the generator's own state for a leaf has distance 7: Java's tree feature found
@@ -842,7 +891,8 @@ func isGround(n string) bool {
 	return !isPlantName(n)
 }
 
-// TestFrozenOceanHasIce: the freeze pass follows Java's rule column by column. Open sea at Y 62 becomes
+// TestFrozenOceanHasIce: the freeze pass follows its profile's rule column by column (Java's, or with
+// Bedrock's data Bedrock's, which reads the stored 3D biome and no frozen-ocean modifier). Open sea at Y 62 becomes
 // ice where the biome there is colder than 0.15, and stays water where it is not, as frozen oceans'
 // warm patches (the frozen temperature modifier) and deep frozen oceans (0.5) are. No Java fixture
 // holds a frozen ocean, so the share is logged, not asserted; both outcomes must occur.
@@ -879,9 +929,17 @@ func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
 			if base.b[c] != sWater || int(base.wgTop[i]) != waterTop+1 {
 				continue // Not open sea at the carvers stage: under an iceberg, ice from the surface, or land.
 			}
+			if above := final[c+256]; !above.isAir() && above != sSnowLayer {
+				continue // Decoration covered it (an iceberg): the freeze pass works on the column's top.
+			}
 			wx, wz := cx*16+x, cz*16+z
 			// Java's freeze reads the biome at the open block above and the temperature at the water.
 			cold := g.coldEnough(s.blockBiome(g, wx, waterTop+1, wz), wx, waterTop, wz)
+			if g.bedrockDeco() {
+				// Bedrock's (S4, bedrock_freeze.go): the stored biome and its temperature at the cell above
+				// the water, under 0.15.
+				cold = g.bdata.surfaceBiomes[s.bedrockStoredBiome(g, wx, waterTop+1, wz)].temp < 0.15
+			}
 			switch got := final[c]; {
 			case got == sIce:
 				iced++

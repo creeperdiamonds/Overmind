@@ -117,14 +117,21 @@ func (s *chunkScratch) quartColumnAt(g *Generator, qx, qz int) *quartColumn {
 	q := &s.quarts[(qx&63)|(qz&63)<<6]
 	if q.owner != g || q.qx != int32(qx) || q.qz != int32(qz) {
 		q.owner, q.qx, q.qz = g, int32(qx), int32(qz)
+		if g.dim == dimNether {
+			b := g.netherN.biomes.quart(qx, qz)
+			for i := range q.ids {
+				q.ids[i] = b
+			}
+			return q
+		}
 		col := g.biomeColumnAt(qx*4, qz*4)
 		t := col.target
 		n := col.sky
 		for i := range q.ids {
 			d := quantize(depthAt(minY+i*4, col.offset))
 			t[biomeTargetDepth] = d
-			n = nearestBiomeFrom(&t, n)
-			id := uint8(biomeRows[n.row][0])
+			n = nearestBiomeFrom(col.tree, &t, n)
+			id := n.id
 			q.ids[i] = id
 			if d < 0 && n.bounds[biomeTargetDepth][0] == 0 {
 				for j := i + 1; j < len(q.ids); j++ {

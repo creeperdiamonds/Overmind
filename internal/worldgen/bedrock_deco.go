@@ -49,11 +49,12 @@ const cacheParity cacheKind = 7
 
 // cachedParity gives what a source chunk's decoration did, in the Bedrock order.
 func (g *Generator) cachedParity(s *chunkScratch, sx, sz int) *sourceResult {
-	e := g.cache.get(cacheKey{cacheParity, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
+	e := g.cache.get(cacheKey{cacheParity, g.dim, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
 		pre := g.parityPre(s, sx, sz)
 		d := s.startDecoration(g, sx, sz)
 		d.pre = pre
 		e.src = s.runSourceChanges(d, sx, sz)
+		notePlacements(placementBudget - d.budget)
 		d.pre = nil
 		return int64(cap(e.src.changes))*changeBytes + resultBytes
 	})
@@ -184,6 +185,20 @@ func (b bedrockSeeds) chunk(cx, cz int) uint32 { return bedrockChunkSeed(b.level
 func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	ox, oz := cx*16, cz*16
 	bd := d.g.bdata
+	d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
+	if d.g.dim == dimNether {
+		// The Nether runs its own code's decoration (nether_deco.go), then Bedrock's passes on a
+		// reseeded MT: no Java placement stands in, and no freeze pass.
+		d.netherDecorate(&d.chunkR, cx, cz)
+		d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
+		if bd == nil {
+			return // Without an install there are no rules (the app logs it).
+		}
+		for i := range bd.passes {
+			d.bedrockPass(bd.passes[i])
+		}
+		return
+	}
 	under, surf := false, false
 	for _, pl := range d.g.profile.placements {
 		if !under && pl.step >= oreStep {
@@ -230,7 +245,7 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	switch pl.name {
 	case "glow_lichen":
 		return false
-	case "forest_rock", "ore_infested", "freeze_top_layer":
+	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode", "large_dripstone", "dripstone_cluster", "pointed_dripstone":
 		return true
 	}
 	return pl.step == vegetationStep
@@ -246,6 +261,11 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"swamp_surface_swamp_foliage", "trees_swamp"},
 	{"mangrove_swamp_", "trees_mangrove"},
 	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
+	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"}, // eyeblossom_feature is code, not read.
+	{"amethyst_geode_feature", "amethyst_geode"},
+	{"dripstone_cluster_feature", "dripstone_cluster"},
+	{"large_dripstone_feature", "large_dripstone"},
+	{"small_dripstone_feature", "pointed_dripstone"},
 	{"swamp_surface_waterlily", "patch_waterlily"},
 	{"plains_surface_flowers", "flower_plains"},
 	{"flower_forest_surface_flowers", "flower_flower_forest flower_forest_flowers"},
@@ -280,6 +300,28 @@ const oreStep = 6
 // 0xcfae6b0): sub-chunks bottom up, each in its storage order, first appearance only. Our stored
 // biomes are by quart, so a sub-chunk's order is quart y, then z, then x.
 func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
+	if d.g.dim == dimNether {
+		// The Nether's biomes are 2D: the list is a layer's, z then x, first appearance only.
+		list := d.biomeList[:0]
+		var seen [4]uint64
+		for z := range 16 {
+			for x := range 16 {
+				if b := d.g.netherN.biome(cx*16+x, cz*16+z); seen[b>>6]&(1<<(b&63)) == 0 {
+					seen[b>>6] |= 1 << (b & 63)
+					list = append(list, b)
+				}
+			}
+		}
+		d.biomeList = list
+		return list
+	}
+	if d.g.bedrockBiomes {
+		if k := (listKey{d.g, cx, cz}); d.listOf != k {
+			d.biomeList = d.s.bedrockBiomeList(d.g, cx, cz, d.s.bedrockTopSectionOf(d.g, cx, cz), d.biomeList)
+			d.listOf = k
+		}
+		return d.biomeList
+	}
 	list := d.biomeList[:0]
 	var seen [2]uint64
 	for q := range (maxY - minY + 1) / 4 {
@@ -297,8 +339,20 @@ func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
 	return list
 }
 
+// listKey names a chunk's biome list: a pure function of the generator and the chunk.
+type listKey struct {
+	g      *Generator
+	cx, cz int
+}
+
 // storedBiome is the biome stored at a block, which the scatter's biome test reads (section 3).
 func (d *decoration) storedBiome(x, y, z int) uint8 {
+	if d.g.dim == dimNether {
+		return d.g.netherN.biome(x, z)
+	}
+	if d.g.bedrockBiomes {
+		return d.s.bedrockStoredBiome(d.g, x, y, z)
+	}
 	return d.s.quartColumnAt(d.g, x>>2, z>>2).ids[(y-minY)>>2]
 }
 
@@ -394,7 +448,7 @@ func (d *decoration) bedrockPass(rules []*bedrockRule) {
 	for i := range list {
 		b := list[i]
 		ox, oz := float32(d.cx*16), float32(d.cz*16)
-		*e = molangEnv{d: d, r1: &d.br1, originX: ox, originZ: oz, worldX: ox, worldZ: oz, biome: b}
+		*e = molangEnv{d: d, r1: &d.chunkR, originX: ox, originZ: oz, worldX: ox, worldZ: oz, biome: b}
 		for _, rule := range rules {
 			if rule.biomes[b>>6]&(1<<(b&63)) == 0 {
 				continue
@@ -419,13 +473,15 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		return
 	}
 	n := sc.count(e)
-	for i := n - 1; i >= 0; i-- {
+	for i := n - 1; i >= 0 && d.spend(); i-- {
 		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16})
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
 		// position outside the world still places, and its feature still draws.
 		if multi && (p[1] < minY || p[1] > maxY || d.storedBiome(p[0], p[1], p[2]) != b) {
 			continue
 		}
-		rule.feat.place(d, &d.br2, pos{p[0], p[1], p[2]})
+		if rule.feat != nil { // A rule kept for its draws only (compileRule): it places nothing.
+			rule.feat.place(d, &d.br2, pos{p[0], p[1], p[2]})
+		}
 	}
 }

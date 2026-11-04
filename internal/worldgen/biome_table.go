@@ -61,6 +61,16 @@ var biomeTableNames = [...]string{
 	"dripstone_caves",
 	"lush_caves",
 	"deep_dark",
+	// Bedrock's own cave biome, which no Java row names: only the Bedrock profile's tree has a row for it
+	// (bedrock_sulfur.go).
+	"sulfur_caves",
+	"dappled_forest", // Bedrock's too: BDS's variant of some plains rows (bedrockLeaves).
+	// The Nether's (nether_biomes.go), outside the Overworld's table.
+	"nether_wastes",
+	"soul_sand_valley",
+	"crimson_forest",
+	"warped_forest",
+	"basalt_deltas",
 }
 
 var biomeIntervals = [...][2]int16{

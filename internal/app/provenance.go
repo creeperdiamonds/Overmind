@@ -5,12 +5,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
-// provenanceFile records, inside the world folder, how the world's chunks are made: the profile and
-// whether Bedrock's feature data was read, with a hash of it. Chunks made with other data do not fit
+// provenanceFile records, inside the world folder, how the world's chunks are made: the generator's
+// version, the profile and whether Bedrock's feature data was read, with a hash of it. Chunks made with other data do not fit
 // the ones saved before, so a start whose record differs warns that new chunks will seam against old.
 const provenanceFile = "overmind-generator.txt"
+
+// provenanceIdent is the record for a start: generator version, profile and data.
+func provenanceIdent(profile string, bd *worldgen.BedrockData, structs string) string {
+	data := "none"
+	if bd != nil {
+		data = "sha256:" + bd.Hash()
+	}
+	return "generator=" + worldgen.GeneratorVersion + " profile=" + profile + " data=" + data + " structures=" + structs
+}
 
 // recordProvenance writes the current record and gives the one there was ("" for none) and whether it
 // differs.

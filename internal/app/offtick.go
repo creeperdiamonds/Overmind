@@ -44,6 +44,21 @@ func (o *offTick) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 	o.g.GenerateChunk(pos, c)
 }
 
+// GenerateColumn passes a column generator (structure chests) through, with the same tick check.
+func (o *offTick) GenerateColumn(pos world.ChunkPos, col *chunk.Column) {
+	cg, ok := o.g.(world.ColumnGenerator)
+	if !ok {
+		o.GenerateChunk(pos, col.Chunk)
+		return
+	}
+	if id := o.tick.Load(); id != 0 && goroutineID() == id {
+		if generationsOnTick.Add(1) == 1 {
+			slog.Default().Warn("A chunk was generated on the world's tick", "X", pos[0], "Z", pos[1])
+		}
+	}
+	cg.GenerateColumn(pos, col)
+}
+
 func (o *offTick) DefaultSpawn(dim world.Dimension) cube.Pos { return o.g.DefaultSpawn(dim) }
 
 // NearestStronghold passes the generator's strongholds through, for eyes of ender.

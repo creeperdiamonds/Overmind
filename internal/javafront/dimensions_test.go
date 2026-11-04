@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/config"
 	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
@@ -205,4 +206,42 @@ func TestJavaRejoinsInTheNether(t *testing.T) {
 	onJava(t, srv, "JNetherSaver", func(p *player.Player) { in = p.Tx().World().Dimension() })
 	require.Equal(t, world.Nether, in)
 	require.Eventually(t, func() bool { c := again.column(1, 1, 64, 64); return c.Loaded && c.Blocks[64].Block == "netherrack" }, 20*time.Second, 50*time.Millisecond)
+}
+
+// A Java player taken into the generated Nether (Bedrock's 128 rows, sent as Java's 256) and the
+// generated End, and back, stays connected and gets their chunks: the Nether's bedrock floor and the
+// End's arrival platform under its spawn.
+func TestJavaEntersGeneratedNetherAndEnd(t *testing.T) {
+	srv := testserver.StartWith(t, func(c *config.Config) { c.FlatWorld = false })
+	j := startBot(t, srv, "JWanderer")
+	kicked := func() bool {
+		select {
+		case r := <-j.kicked:
+			t.Fatalf("the Java player was disconnected: %s", r)
+		default:
+		}
+		return false
+	}
+
+	moveTo(t, srv, "JWanderer", srv.Nether(), mgl64.Vec3{0.5, 140, 0.5})
+	require.Eventually(t, func() bool { return dimensionOfBot(j) == "minecraft:the_nether" }, 20*time.Second, 50*time.Millisecond, "no respawn into the Nether")
+	require.Eventually(t, func() bool {
+		c := j.column(0, 0, 0, 127)
+		return !kicked() && c.Loaded && c.Blocks[0].Block == "bedrock"
+	}, 30*time.Second, 100*time.Millisecond, "the generated Nether's chunk did not arrive: %+v", j.column(0, 0, 0, 3))
+
+	moveTo(t, srv, "JWanderer", srv.End(), mgl64.Vec3{100.5, 49, 0.5})
+	require.Eventually(t, func() bool { return dimensionOfBot(j) == "minecraft:the_end" }, 20*time.Second, 50*time.Millisecond, "no respawn into the End")
+	require.Eventually(t, func() bool {
+		c := j.column(100, 0, 48, 48)
+		return !kicked() && c.Loaded && c.Blocks[48].Block == "obsidian"
+	}, 30*time.Second, 100*time.Millisecond, "the End's platform did not arrive: %+v", j.column(100, 0, 48, 48))
+	require.Eventually(t, func() bool {
+		pos, onGround, ok := srv.JavaPosition("JWanderer")
+		return ok && onGround && pos.Y() > 48.9 && pos.Y() < 49.1
+	}, 15*time.Second, 50*time.Millisecond, "the player did not stand on the End's platform: %v", fmt.Sprint(srv.JavaPosition("JWanderer")))
+
+	moveTo(t, srv, "JWanderer", srv.World(), srv.World().Spawn().Vec3Centre())
+	require.Eventually(t, func() bool { return dimensionOfBot(j) == "minecraft:overworld" }, 20*time.Second, 50*time.Millisecond)
+	kicked()
 }

@@ -235,6 +235,35 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
+## Order after Task 5 (ruling 38, owner 2026-11-04)
+
+The owner asked to "finish off world with EVERYTHING a singleplayer would have" first. Task 4e (Bedrock-exact Overworld) keeps taking study findings in rounds. Tasks 9, 10 and 11 come next, then Tasks 6, 7 and 8. The "no structures, Nether or End" constraint above no longer applies to Tasks 9-11.
+
+Rules shared by Tasks 9-11:
+- Mojang files (structure templates, loot tables, feature data) are read at startup from `BedrockDataDir`. None go in the repo or the test fixtures. Without the install, structures are skipped with one log line, and the Nether and End still generate.
+- Placement, piece choice, loot rolls and terrain are our own Go code, written from the study notes outside the repo. Every constant cites the note it came from. Fitted values stay only under ruling 39 (N/N measured matches, labelled "measured").
+- Acceptance is block for block against the BDS worlds in the study's `golden-bedrock` folders, outside BDS's unstable mask, on every seed that has a world (ruling 37). A comparison tool reads those worlds from outside the repo.
+- Overjava keeps Java behaviour where it differs, and says so in the code.
+- Generation stays off the tick goroutine and inside the shared 30 MB cache cap. Each chunk is still built from the seed and its position alone; a structure piece that crosses chunks is rebuilt from its start, not kept.
+
+## Task 9: Structures and loot
+
+**Files:** Create `internal/structures/` (placement, jigsaw, templates, loot, `NOTES.md`). Modify `internal/worldgen` to place pieces during decoration and to fill `NearestStronghold`.
+
+Every Overworld structure: villages, pillager outposts, ancient cities, trail ruins, trial chambers, strongholds, mineshafts, desert and jungle temples, witch huts, igloos, ocean monuments, woodland mansions, shipwrecks, ocean ruins, ruined portals, buried treasure and fossils (desert wells already exist). Placement by region seed and salt (Java LCG for the ones the study found use it), pieces from the install's templates, jigsaw assembly from the study's notes, code-built pieces (stronghold, mineshaft, monument, mansion, fortress) from their notes. Chests get their loot table and loot seed so the loot is rolled when opened, as on Bedrock. Accept: structure starts match BDS exactly on every measured seed; pieces and chest contents match outside the unstable mask; the eye of ender points at the nearest real stronghold.
+
+## Task 10: The Nether
+
+**Files:** Modify `internal/worldgen` (a Nether generator), `internal/app` (dimension wiring), `internal/structures` (fortress, bastion, Nether fossils, ruined portals).
+
+Nether terrain, biomes, features and structures, Bedrock-exact on the measured Nether worlds (seeds 1 and 100). Portals already link players between dimensions. Accept: block for block against the BDS Nether worlds outside the mask.
+
+## Task 11: The End
+
+**Files:** Modify `internal/worldgen` (an End generator), `internal/structures` (End cities, gateways), `internal/app`.
+
+End terrain and outer islands, obsidian spikes with crystals and cages, the exit portal frame, End cities with ships and elytra, gateways. The dragon fight itself (dragon, respawn, gateway spawning on kill) belongs to stage 5. Accept: block for block against the BDS End worlds outside the mask.
+
 ## Task 6: Safe saves and backups
 
 **Files:** Create `internal/app/saving.go`, `backup.go`, `saving_test.go`, `backup_test.go`, `cmd/crashtest/main.go`.

@@ -66,6 +66,14 @@ var (
 	dripstoneCaves = def{biome.DripstoneCaves{}}
 	lushCaves      = def{biome.LushCaves{}}
 	deepDark       = def{biome.DeepDark{}}
+	sulfurCaves    = def{biome.SulfurCaves{}} // Bedrock's; no Java row names it.
+	dappledForest  = def{biome.DappledForest{}} // Bedrock's variant of some plains rows.
+
+	netherWastes   = def{biome.NetherWastes{}}
+	soulSandValley = def{biome.SoulSandValley{}}
+	crimsonForest  = def{biome.CrimsonForest{}}
+	warpedForest   = def{biome.WarpedForest{}}
+	basaltDeltas   = def{biome.BasaltDeltas{}}
 
 	frozenOcean       = def{biome.FrozenOcean{}}
 	coldOcean         = def{biome.ColdOcean{}}
@@ -92,7 +100,8 @@ var biomeDefs = map[string]def{
 	"stony_peaks": stonyPeaks, "windswept_hills": windsweptHills, "windswept_forest": windsweptForest,
 	"windswept_gravelly_hills": gravellyHills, "beach": beach, "snowy_beach": snowyBeach, "stony_shore": stonyShore,
 	"river": river, "frozen_river": frozenRiver, "mushroom_fields": mushroom, "dripstone_caves": dripstoneCaves,
-	"lush_caves": lushCaves, "deep_dark": deepDark, "frozen_ocean": frozenOcean, "cold_ocean": coldOcean, "ocean": ocean,
+	"lush_caves": lushCaves, "deep_dark": deepDark, "sulfur_caves": sulfurCaves, "dappled_forest": dappledForest, "nether_wastes": netherWastes, "soul_sand_valley": soulSandValley,
+	"crimson_forest": crimsonForest, "warped_forest": warpedForest, "basalt_deltas": basaltDeltas, "frozen_ocean": frozenOcean, "cold_ocean": coldOcean, "ocean": ocean,
 	"lukewarm_ocean": lukewarmOcean, "warm_ocean": warmOcean, "deep_frozen_ocean": deepFrozenOcean,
 	"deep_cold_ocean": deepColdOcean, "deep_ocean": deepOcean, "deep_lukewarm_ocean": deepLukewarmOcean,
 }
@@ -117,6 +126,7 @@ type biomeNode struct {
 	bounds [6][2]int16
 	kids   []*biomeNode
 	row    int32
+	id     uint8 // The leaf's biome, an index into biomeTableNames.
 }
 
 func (n *biomeNode) center(d int) int64 {
@@ -126,7 +136,7 @@ func (n *biomeNode) center(d int) int64 {
 	return (int64(n.bounds[d][0]) + int64(n.bounds[d][1])) / 2
 }
 
-func (n *biomeNode) def() def { return biomeRowDefs[biomeRows[n.row][0]] }
+func (n *biomeNode) def() def { return biomeRowDefs[n.id] }
 
 // biomeRowDefs gives a def by index into biomeTableNames.
 var biomeRowDefs = func() (out [len(biomeTableNames)]def) {
@@ -262,31 +272,34 @@ func cmpInt64(a, b int64) int {
 
 // biomeTree is shared by every generator: it depends on no seed. It is built the first time it is
 // needed, and a process holds one however many worlds it has.
-var biomeTree = sync.OnceValue(func() *biomeNode {
+var biomeTree = sync.OnceValue(func() *biomeNode { return buildBiomeTree(biomeLeaves()) })
+
+// biomeLeaves is a leaf for each row of the table, in its order.
+func biomeLeaves() []*biomeNode {
 	list := make([]*biomeNode, len(biomeRows))
 	for i, row := range biomeRows {
-		n := &biomeNode{row: int32(i)}
+		n := &biomeNode{row: int32(i), id: row[0]}
 		for d := range n.bounds {
 			n.bounds[d] = biomeIntervals[row[d+1]]
 		}
 		list[i] = n
 	}
-	return buildBiomeTree(list)
-})
+	return list
+}
 
 // nearestBiome finds a target's biome from scratch, with no remembered result. The game remembers a
 // thread's last leaf, which can change the answer at an exact tie (about 0.05% of lookups); a world
 // here must not depend on which worker asked or what it asked last, so this is always the cold search.
-func nearestBiome(t *biomeTarget) *biomeNode {
-	n, _ := biomeTree().search(t, nil, math.MaxInt64)
+func nearestBiome(tree *biomeNode, t *biomeTarget) *biomeNode {
+	n, _ := tree.search(t, nil, math.MaxInt64)
 	return n
 }
 
 // nearestBiomeFrom is nearestBiome with a leaf known to be close, which prunes most of the tree. The
 // answer is the same: the search's answer is the first nearest leaf in tree order, and a limit just
 // over a leaf's distance can never prune a subtree holding a nearest leaf.
-func nearestBiomeFrom(t *biomeTarget, near *biomeNode) *biomeNode {
-	n, _ := biomeTree().search(t, nil, near.dist(t, math.MaxInt64)+1)
+func nearestBiomeFrom(tree *biomeNode, t *biomeTarget, near *biomeNode) *biomeNode {
+	n, _ := tree.search(t, nil, near.dist(t, math.MaxInt64)+1)
 	return n
 }
 
@@ -297,6 +310,7 @@ type biomeColumn struct {
 	ground  float64 // Nominal ground Y, from the offset spline.
 	surface def     // The biome over the ground, which surface rules and decoration read.
 	sky     *biomeNode
+	tree    *biomeNode // The generator's table.
 }
 
 const biomeTargetDepth = 4
@@ -306,12 +320,12 @@ func (g *Generator) biomeColumnAt(x, z int) biomeColumn {
 	bx, bz := (x>>2)*4, (z>>2)*4
 	cl := g.Climate(bx, bz)
 	in := coordsOf(cl.Continentalness, cl.Erosion, cl.Weirdness)
-	c := biomeColumn{offset: offsetFrom(&in)}
+	c := biomeColumn{offset: offsetFrom(&in), tree: g.biomeTree}
 	c.ground = nominalGround(c.offset)
 	c.target = biomeTarget{quantize(cl.Temperature), quantize(cl.Humidity), quantize(cl.Continentalness), quantize(cl.Erosion), 0, quantize(cl.Weirdness)}
 	t := c.target
 	t[biomeTargetDepth] = quantize(depthAt((maxY>>2)*4, c.offset))
-	c.sky = nearestBiome(&t)
+	c.sky = nearestBiome(c.tree, &t)
 	c.surface = c.sky.def()
 	return c
 }
@@ -320,7 +334,7 @@ func (g *Generator) biomeColumnAt(x, z int) biomeColumn {
 func (c *biomeColumn) at(y int) def {
 	t := c.target
 	t[biomeTargetDepth] = quantize(depthAt((y>>2)*4, c.offset))
-	return nearestBiomeFrom(&t, c.sky).def()
+	return nearestBiomeFrom(c.tree, &t, c.sky).def()
 }
 
 // BiomeAt returns the biome at a block, by its 4 x 4 x 4 quart, as chunks store it.

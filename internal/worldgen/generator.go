@@ -9,6 +9,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/biome"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
@@ -39,11 +40,46 @@ type Generator struct {
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
 	// climateT is the biome temperatures: the profile's table, with the pack's values when the data is read.
 	climateT *climateTable
-	bseeds    bedrockSeeds    // Bedrock's decoration seeds.
-	bdata     *BedrockData    // Bedrock's feature data, nil when no install was read.
-	geodeOnce sync.Once
-	geode     *normalNoise
+	bseeds   bedrockSeeds // Bedrock's decoration seeds.
+	bdata    *BedrockData // Bedrock's feature data, nil when no install was read.
+	geode    *lazyNoise   // The geodes' noise, made on first use; shared by a world's dimensions.
+	// dim is the dimension generated: the Overworld, or the Nether or End of Nether and End.
+	dim     uint8
+	netherN *netherGen    // The Nether's terrain, biomes, surface and caves, for dim == dimNether.
+	endN    *endGenerator // The End's terrain and spikes, for dim == dimEnd.
+	// biomeTree is the biome table's search tree: Java's, or Bedrock's with its own cave biome.
+	biomeTree *biomeNode
+	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
+	// biomes (bedrock_biomes.go) rather than quarts.
+	bedrockBiomes bool
+
+	structs StructurePlacer // Structures placed after decoration (structures_api.go), nil for none.
 }
+
+// Dimensions a Generator makes.
+const (
+	dimOverworld = 0
+	dimNether    = 1
+	dimEnd       = 2
+)
+
+// lazyNoise is a noise made on first use.
+type lazyNoise struct {
+	once sync.Once
+	n    *normalNoise
+}
+
+// dimension is this world's generator of another dimension: a copy sharing every noise, the data and
+// the cache (whose keys carry the dimension), with no structures.
+func (g *Generator) dimension(dim uint8) *Generator {
+	n := *g
+	n.dim, n.structs = dim, nil
+	return &n
+}
+
+// parityDeco says whether decoration runs in Bedrock's parity order: the Bedrock profile with data in
+// the Overworld; the Nether and End always, whose decoration is mostly code.
+func (g *Generator) parityDeco() bool { return g.dim != dimOverworld || g.bedrockDeco() }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
 func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
@@ -77,6 +113,7 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 		surface:    newSurfaceNoises(w),
 		blocks:     newBlocks(),
 		bseeds:     newBedrockSeeds(seed),
+		geode:      &lazyNoise{},
 	}
 	if !profile.bedrockDeco && !profile.surfaceBedrock && !profile.carversBedrock {
 		bd = nil
@@ -92,8 +129,18 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 		}
 		g.climateT = &t
 	}
+	g.biomeTree = biomeTree()
 	if profile.surfaceBedrock && bd != nil {
 		g.bsurf = newBedrockSurface(seed, w, bd)
+		g.bedrockBiomes = true
+		k := 0
+		if bd.biomes[sulfurCaves.String()] != nil {
+			k |= 1
+		}
+		if bd.biomes[dappledForest.String()] != nil {
+			k |= 2
+		}
+		g.biomeTree = bedrockBiomeTrees()[k]
 	}
 	return g
 }
@@ -115,6 +162,9 @@ type chunkScratch struct {
 	walk        columnWalk
 	walkCorners [walkCornerSlots]walkCorner
 	quarts      [quartSlots]quartColumn
+	bsamples    [bSampleSlots]bSampleColumn // Bedrock's biome samples (bedrock_biomes.go).
+	btops       [64]bTopEntry
+	blist       []uint8
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
@@ -127,6 +177,9 @@ type chunkScratch struct {
 	changeKeys  []int64 // Each change's working-set key, slot and cell.
 	merge       merger
 	firstOld    map[int64]bs
+
+	adjustIn []TerrainAdjustment // Structure terrain adaptation of the chunk being filled (structures_terrain.go).
+	adapt    []adaptDesc
 }
 
 const cellsAcross = 16 / cellXZ
@@ -155,18 +208,40 @@ func newScratch() *chunkScratch {
 // reads no real neighbour. Bases and source results go in the shared cache, which empties once no
 // chunk is being asked for.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
-	cx, cz := int(pos[0]), int(pos[1])
+	g.generateInto(int(pos[0]), int(pos[1]), c, nil)
+}
+
+// generateInto is GenerateChunk, with the structures' block entities put in col when it is not nil.
+func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
 	g.cache.begin()
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
+	switch g.dim {
+	case dimNether:
+		writeRows(c, g.finalCells(s, cx, cz), netherHeight)
+		g.netherN.storeBiomes(c, cx, cz)
+		return
+	case dimEnd:
+		cells := g.finalCells(s, cx, cz)
+		if endPodiumChunk(cx, cz) {
+			placeEndPodium(cells, cx, cz, g.endPodiumTop(s))
+		}
+		if endPlatformChunk(cx, cz) {
+			placeEndPlatform(cells, cx, cz)
+		}
+		writeRows(c, cells, 256)
+		storeUniformBiome(c, uint32(biome.End{}.EncodeBiome()), 256)
+		return
+	}
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
+	g.placeStructures(cx, cz, c, col)
 }
 
 // finalCells makes a chunk's finished blocks, in the scratch.
 func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
-	if g.bedrockDeco() {
+	if g.parityDeco() {
 		return g.finalCellsParity(s, cx, cz)
 	}
 	final := &s.final
@@ -405,7 +480,7 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 	}
 	var grounds []ground
 	for i, c := range s.changes {
-		if d.g.bedrockDeco() {
+		if d.g.parityDeco() {
 			break // In the Bedrock order a source's ground is what the finished world has.
 		}
 		if !standsOnBelow(c.now) || c.cell < 256 {
@@ -478,6 +553,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 		}
 	}
 	skip := g.skipAbove(&s.aq)
+	adapt := g.terrainAdaptation(s, b.cx, b.cz)
 	var kinds [cellsAcross][cellsAcross][columnNodes - 1]uint8
 	var noodles [cellsAcross][cellsAcross][columnNodes - 1]bool
 	var veins [cellsAcross][cellsAcross][columnNodes - 1]bool
@@ -493,7 +569,14 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 				baseY := minY + l*cellY
 				kind := kinds[i][j][l]
 				if kind == cellUnknown {
-					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, skip)
+					cellSkip := skip
+					if adapt != nil && adapt.touchesCell(originX+i*cellXZ, baseY, originZ+j*cellXZ) {
+						cellSkip = maxY + cellY // A structure's terrain term: no sky shortcut, and no solid one below.
+					}
+					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, cellSkip)
+					if kind == cellSolid && cellSkip != skip {
+						kind = cellMixed
+					}
 					kinds[i][j][l] = kind
 				}
 				switch kind {
@@ -517,7 +600,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 					for dy := cellY - 1; dy >= 0; dy-- {
 						y := baseY + dy
 						fy := float64(dy) / 8.0
-						f := blend.final(fy)
+						f := blend.final(fy) + adapt.at(wx, y, wz)
 						var k fillKind = fillSolid
 						if !(f > 0) {
 							k = g.fluidAt(&s.aq, wx, y, wz, f)
@@ -645,6 +728,12 @@ func (g *Generator) spawnClear(x, y, z int) bool {
 // DefaultSpawn searches outward from the origin for such ground, with room to stand on it. A
 // candidate costs one chunk, and only those that pass the cheap tests get that far.
 func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
+	switch g.dim {
+	case dimNether:
+		return cube.Pos{0, 64, 0} // Players reach the Nether through portals, which find their own place.
+	case dimEnd:
+		return cube.Pos{endPlatformX, endPlatformY, endPlatformZ} // On the arrival platform (end_gen.go).
+	}
 	const step, reach = 32, 2048
 	for r := 0; r <= reach; r += step {
 		for a := -r; a <= r; a += step {
@@ -694,5 +783,12 @@ func (s *chunkScratch) giveBuffer(b *baseChunk) { s.copies = append(s.copies, b)
 // startDecoration readies the working set around a chunk.
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 	s.deco.startTarget(g, s, cx, cz)
+	s.deco.listOf = listKey{}
+	s.deco.budget = placementBudget
 	return &s.deco
 }
+
+// GeneratorVersion names what the generator makes. Change it with every change to what any profile
+// generates: the world folder records it (internal/app's provenance file), so a server started on a
+// world made by another version warns that new chunks will seam against saved ones.
+const GeneratorVersion = "2026-11-05.t11n4"

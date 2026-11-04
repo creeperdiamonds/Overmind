@@ -138,7 +138,7 @@ func TestCacheBuildsOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got[i] = c.get(cacheKey{cacheLevel, 1, 2}, func(e *cacheEntry) int64 {
+			got[i] = c.get(cacheKey{kind: cacheLevel, cx: 1, cz: 2}, func(e *cacheEntry) int64 {
 				builds.Add(1)
 				time.Sleep(20 * time.Millisecond)
 				e.src = &sourceResult{changes: make([]sourceChange, 3)}
@@ -160,16 +160,16 @@ func TestCacheBuildsOnce(t *testing.T) {
 // TestCacheDropsOldest: past its cap the cache drops the least recently used entry.
 func TestCacheDropsOldest(t *testing.T) {
 	c := newSharedCache(3 * (100 + entryBytes))
-	put := func(x int32) { c.get(cacheKey{cacheLevel, x, 0}, func(*cacheEntry) int64 { return 100 }) }
+	put := func(x int32) { c.get(cacheKey{kind: cacheLevel, cx: x}, func(*cacheEntry) int64 { return 100 }) }
 	put(1)
 	put(2)
 	put(3)
 	put(1) // Now the most recent.
 	put(4)
-	if _, ok := c.entries[cacheKey{cacheLevel, 2, 0}]; ok {
+	if _, ok := c.entries[cacheKey{kind: cacheLevel, cx: 2}]; ok {
 		t.Fatal("the least recently used entry was kept")
 	}
-	if _, ok := c.entries[cacheKey{cacheLevel, 1, 0}]; !ok {
+	if _, ok := c.entries[cacheKey{kind: cacheLevel, cx: 1}]; !ok {
 		t.Fatal("a recently used entry was dropped")
 	}
 	if c.used > c.limit {

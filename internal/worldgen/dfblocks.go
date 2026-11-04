@@ -72,7 +72,32 @@ func boolWord(v int) string { return strconv.FormatBool(v != 0) }
 func ownBlocksList() {
 	plain := func(java, name string, solid bool) { addOwn(java, name, map[string]any{}, solid) }
 	plain("moss_block", "moss_block", true)
+	// The Nether's blocks Dragonfly has no type for (Task 10).
+	// Weeping and twisting vines: Bedrock keeps the age on every block of the column (Java's
+	// *_vines[age=N] heads; Java's *_vines_plant bodies have no age, and take age 0 here).
+	for a := range 26 {
+		addOwn(fmt.Sprintf("weeping_vines[age=%d]", a), "weeping_vines", map[string]any{"weeping_vines_age": int32(a)}, false)
+		addOwn(fmt.Sprintf("twisting_vines[age=%d]", a), "twisting_vines", map[string]any{"twisting_vines_age": int32(a)}, false)
+	}
+	addOwn("weeping_vines_plant", "weeping_vines", map[string]any{"weeping_vines_age": int32(0)}, false)
+	addOwn("twisting_vines_plant", "twisting_vines", map[string]any{"twisting_vines_age": int32(0)}, false)
+	plain("crimson_nylium", "crimson_nylium", true)
+	plain("warped_nylium", "warped_nylium", true)
+	plain("crimson_fungus", "crimson_fungus", false)
+	plain("warped_fungus", "warped_fungus", false)
+	plain("crimson_roots", "crimson_roots", false)
+	plain("warped_roots", "warped_roots", false)
 	plain("powder_snow", "powder_snow", true)
+	// The End's (Task 11). Bedrock's chorus plant keeps its six connections as states.
+	for m := range 64 {
+		props := map[string]any{}
+		for i, side := range [6]string{"down", "up", "north", "south", "west", "east"} {
+			props["minecraft:connection_"+side] = uint8(m >> i & 1)
+		}
+		addOwn(chorusName(m), "chorus_plant", props, false)
+	}
+	addOwn("chorus_flower[age=5]", "chorus_flower", map[string]any{"age": int32(5)}, false)
+	plain("end_gateway", "end_gateway", false)
 	plain("budding_amethyst", "budding_amethyst", true)
 	plain("spawner", "mob_spawner", true)
 	plain("bush", "bush", false)
@@ -381,7 +406,7 @@ func dragonflyBlock(name string) world.Block {
 	case "lava":
 		return block.Lava{Still: true, Depth: 8}
 	case "bedrock":
-		return block.Bedrock{}
+		return block.Bedrock{InfiniteBurning: propOf(name, "infiniburn") == "true"}
 	case "deepslate":
 		return block.Deepslate{}
 	case "dirt":
@@ -424,6 +449,61 @@ func dragonflyBlock(name string) world.Block {
 		return block.Andesite{}
 	case "tuff":
 		return block.Tuff{}
+	case "netherrack":
+		return block.Netherrack{}
+	case "end_stone":
+		return block.EndStone{}
+	case "fire":
+		return block.Fire{Type: block.NormalFire()}
+	case "crimson_stem":
+		return block.Log{Wood: block.CrimsonWood(), Axis: cube.Y}
+	case "warped_stem":
+		return block.Log{Wood: block.WarpedWood(), Axis: cube.Y}
+	case "soul_fire":
+		return block.Fire{Type: block.SoulFire()}
+	case "obsidian":
+		return block.Obsidian{}
+	case "iron_bars":
+		// Dragonfly keeps the connections unexported: the block comes from its registry by state.
+		b, ok := world.BlockByName("minecraft:iron_bars", map[string]any{
+			"minecraft:connection_north": propOf(name, "north") == "true", "minecraft:connection_east": propOf(name, "east") == "true",
+			"minecraft:connection_south": propOf(name, "south") == "true", "minecraft:connection_west": propOf(name, "west") == "true"})
+		if ok {
+			return b
+		}
+	case "wall_torch":
+		// Java's facing is away from the wall; Dragonfly's is towards it.
+		return block.Torch{Type: block.NormalFire(), Facing: cubeDir(propOf(name, "facing")).Opposite().Face()}
+	case "soul_sand":
+		return block.SoulSand{}
+	case "soul_soil":
+		return block.SoulSoil{}
+	case "basalt":
+		return block.Basalt{Axis: cube.Y}
+	case "blackstone":
+		return block.Blackstone{}
+	case "glowstone":
+		return block.Glowstone{}
+	case "nether_gold_ore":
+		return block.NetherGoldOre{}
+	case "nether_quartz_ore":
+		return block.NetherQuartzOre{}
+	case "ancient_debris":
+		return block.AncientDebris{}
+	case "nether_wart_block":
+		return block.NetherWartBlock{}
+	case "warped_wart_block":
+		return block.NetherWartBlock{Warped: true}
+	case "shroomlight":
+		return block.Shroomlight{}
+	case "bone_block":
+		return block.Bone{Axis: cube.Y}
+	case "nether_sprouts":
+		return block.NetherSprouts{}
+	case "cinnabar":
+		return block.Cinnabar{}
+	case "sulfur":
+		return block.Sulfur{}
 	case "clay":
 		return block.Clay{}
 	case "raw_copper_block":

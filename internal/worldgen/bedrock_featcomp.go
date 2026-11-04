@@ -14,7 +14,9 @@ import (
 func (fc *featCompiler) feature(id string) (bfeat, error) {
 	if s, ok := fc.slots[id]; ok {
 		if s.on {
-			return featRef{s}, nil
+			// Only broken data names a feature from inside itself: vanilla has no cycles, and a cycle
+			// would recurse without end at the first placement.
+			return nil, fmt.Errorf("feature %s names itself through its parts", id)
 		}
 		return s.f, s.err
 	}
@@ -39,6 +41,9 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 	}
 	var v map[string]json.RawMessage
 	if err := json.Unmarshal(pf.body, &v); err != nil {
+		return nil, fmt.Errorf("%s: %w", id, err)
+	}
+	if err := checkDataNumbers(pf.body); err != nil {
 		return nil, fmt.Errorf("%s: %w", id, err)
 	}
 	var f bfeat
@@ -69,6 +74,8 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.vegetationPatch(v)
 	case "minecraft:growing_plant_feature":
 		f, err = fc.growingPlant(v)
+	case "minecraft:geode_feature":
+		f, err = fc.geode(v)
 	case "minecraft:tree_feature":
 		f, err = fc.tree(v)
 	default:
@@ -222,18 +229,28 @@ func (fc *featCompiler) weighted(v map[string]json.RawMessage) (bfeat, error) {
 // searchFeat tries its feature along the search volume until enough succeed (the study's reading for
 // the beehive search: the +y axis over a one-column volume, from the bottom up; approximate).
 type searchFeat struct {
-	f      bfeat
-	y0, y1 int
-	need   int
+	f        bfeat
+	min, max [3]int
+	need     int
 }
 
+// place tries the volume along +y; across x and z (the creaking heart's 3 x 3 columns) the order is not
+// read: y outer, then x, then z, the study's approximation (T17). Every try costs one placement of the
+// source's budget, so no volume the limits allow can stall a worker.
 func (f *searchFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	got := 0
-	for dy := f.y0; dy <= f.y1; dy++ {
-		if _, ok := f.f.place(d, r, p.add(0, dy, 0)); ok {
-			got++
-			if got >= f.need {
-				return p, true
+	for dy := f.min[1]; dy <= f.max[1]; dy++ {
+		for dx := f.min[0]; dx <= f.max[0]; dx++ {
+			for dz := f.min[2]; dz <= f.max[2]; dz++ {
+				if !d.spend() {
+					return p, false
+				}
+				if _, ok := f.f.place(d, r, p.add(dx, dy, dz)); ok {
+					got++
+					if got >= f.need {
+						return p, true
+					}
+				}
 			}
 		}
 	}
@@ -250,14 +267,20 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 	json.Unmarshal(v["search_volume"], &vol)
 	json.Unmarshal(v["search_axis"], &axis)
 	json.Unmarshal(v["required_successes"], &need)
-	if axis != "+y" || vol.Min[0] != 0 || vol.Min[2] != 0 || vol.Max[0] != 0 || vol.Max[2] != 0 {
+	if axis != "+y" || vol.Min[0] > vol.Max[0] || vol.Min[1] > vol.Max[1] || vol.Min[2] > vol.Max[2] {
 		return nil, unimpl("search %s %v", axis, vol)
+	}
+	for _, a := range [2]int{0, 2} {
+		if vol.Min[a] < -maxDataRadius || vol.Max[a] > maxDataRadius {
+			// Across x and z a search is a radius (vanilla's widest is the creaking heart's 3 x 3).
+			return nil, fmt.Errorf("search volume %v..%v is wider than %d", vol.Min, vol.Max, maxDataRadius)
+		}
 	}
 	c, err := fc.child(v["places_feature"])
 	if err != nil {
 		return nil, err
 	}
-	return &searchFeat{c, vol.Min[1], vol.Max[1], max(need, 1)}, nil
+	return &searchFeat{c, vol.Min, vol.Max, max(need, 1)}, nil
 }
 
 // bCoord is one coordinate of a scatter: a number, a distribution over an extent (numbers or
@@ -484,12 +507,16 @@ func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	e := &d.menv
 	e.originX, e.originY, e.originZ = float32(p.x), float32(p.y), float32(p.z)
 	e.worldX, e.worldY, e.worldZ = float32(p.x), float32(p.y), float32(p.z)
+	// The copy's math.random draws from the feature's Random (T14, T21: MolangCtx_init with it).
+	saved := e.r1
+	e.r1 = r
+	defer func() { e.r1 = saved }()
 	if !f.sc.chance(r, e) {
 		return p, false
 	}
 	n := f.sc.count(e)
 	ok, last := false, p
-	for i := n - 1; i >= 0; i-- {
+	for i := n - 1; i >= 0 && d.spend(); i-- {
 		q := f.sc.position(r, e, [3]int{p.x, p.y, p.z})
 		if at, k := f.f.place(d, r, pos{q[0], q[1], q[2]}); k {
 			ok, last = true, at
@@ -692,6 +719,11 @@ var (
 	bnGrassFamily  = bnameSetOf("short_grass fern tall_grass poppy dandelion large_fern")
 	bnDoublePlants = bnameSetOf("tall_grass large_fern sunflower lilac rose_bush peony")
 	bnSporeBlossom = internBName("spore_blossom")
+	// Dry plants stand on sand, terracotta or the dirt family (the game's dry-vegetation ground).
+	bnDryPlants = bnameSetOf("short_dry_grass tall_dry_grass deadbush")
+	bnDryGround = bnameSetOf(bedrockTagMembers["dirt"] + " " + bedrockTagMembers["sand"] + " hardened_clay terracotta white_terracotta orange_terracotta " +
+		"magenta_terracotta light_blue_terracotta yellow_terracotta lime_terracotta pink_terracotta gray_terracotta light_gray_terracotta " +
+		"cyan_terracotta purple_terracotta blue_terracotta brown_terracotta green_terracotta red_terracotta black_terracotta")
 )
 
 func bnameSetOf(names string) (b bnameSet) {
@@ -707,6 +739,8 @@ func bedrockSurvives(d *decoration, name uint16, p pos) bool {
 		return bnSoil.has(bname(d.at(p.add(0, -1, 0))))
 	case name == bnSporeBlossom:
 		return bSolid(d.at(p.add(0, 1, 0)))
+	case bnDryPlants.has(name):
+		return bnDryGround.has(bname(d.at(p.add(0, -1, 0))))
 	}
 	return true
 }
@@ -715,5 +749,15 @@ func bedrockMayPlace(d *decoration, name uint16, p pos) bool {
 	if bnDoublePlants.has(name) {
 		return bnSoil.has(bname(d.at(p.add(0, -1, 0)))) && d.at(p.add(0, 1, 0)).isAir()
 	}
+	if bnNetherPlants.has(name) {
+		return bnNetherGround.has(bname(d.at(p.add(0, -1, 0))))
+	}
 	return true
 }
+
+// The Nether's small plants (fungi, roots, sprouts) are placed on nylium, soul soil or the dirt family
+// (the game's placement rule, by name as the other survival rules here).
+var (
+	bnNetherPlants = bnameSetOf("crimson_fungus warped_fungus crimson_roots warped_roots nether_sprouts")
+	bnNetherGround = bnameSetOf(bedrockTagMembers["dirt"] + " crimson_nylium warped_nylium soul_soil")
+)
