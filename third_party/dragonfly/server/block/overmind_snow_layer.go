@@ -58,12 +58,31 @@ func (SnowLayer) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	}
 }
 
-// canHoldSnow reports whether snow may lie on b at pos: a full top face, or a full stack of snow, but
-// not ice or blue ice (Bedrock's rule; snow may lie on packed ice).
+// canHoldSnow reports whether snow may lie on b at pos: a full top face, or a full stack of snow, but not
+// on some blocks, by edition.
+//   - Java 26.1 (world.Mechanics.JavaWeather, Overjava): not ice, packed ice or a barrier, the block tag
+//     cannot_support_snow_layer (minecraft.wiki "Block tag (Java Edition)": packed ice is in it until Java
+//     26.4); and always on soul sand and mud, from support_override_snow_layer (its honey block is not in
+//     the fork). Blue ice is in neither, so it holds snow.
+//   - Bedrock: not ice ("Snow": "a solid block that is not ice"), so on packed ice. The wiki says nothing
+//     of blue ice on Bedrock; it is kept off it, as before.
 func canHoldSnow(b world.Block, pos cube.Pos, tx *world.Tx) bool {
+	java := tx.World().Mechanics().JavaWeather
 	switch s := b.(type) {
-	case Ice, BlueIce:
+	case Ice:
 		return false
+	case PackedIce, Barrier:
+		if java {
+			return false
+		}
+	case BlueIce:
+		if !java {
+			return false
+		}
+	case SoulSand, Mud:
+		if java {
+			return true
+		}
 	case SnowLayer:
 		return s.Height == 7
 	}

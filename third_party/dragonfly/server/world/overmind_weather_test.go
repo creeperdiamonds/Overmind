@@ -101,6 +101,45 @@ func TestSnowfallBuildsLayers(t *testing.T) {
 	})
 }
 
+// Snowfall lies on what each edition lets snow lie on. Java 26.1 keeps it off ice, packed ice and barriers
+// (the block tag cannot_support_snow_layer, minecraft.wiki "Block tag (Java Edition)": packed ice is in it
+// until Java 26.4), and lets it lie on soul sand and mud (support_override_snow_layer; the fork has no honey block). Bedrock
+// keeps it off ice only ("Snow": "a solid block that is not ice"), and Overmind off blue ice too, as before.
+func TestSnowfallFloors(t *testing.T) {
+	for _, c := range []struct {
+		floor world.Block
+		java  bool
+		snow  bool
+	}{
+		{block.Ice{}, true, false},
+		{block.PackedIce{}, true, false},
+		{block.Barrier{}, true, false},
+		{block.BlueIce{}, true, true},
+		{block.SoulSand{}, true, true},
+		{block.Mud{}, true, true},
+		{block.Stone{}, true, true},
+		{block.Ice{}, false, false},
+		{block.BlueIce{}, false, false},
+		{block.PackedIce{}, false, true},
+		{block.Stone{}, false, true},
+	} {
+		t.Run(fmt.Sprintf("%T java %v", c.floor, c.java), func(t *testing.T) {
+			w := weatherWorld(t, c.java, true, biome.SnowyPlains{})
+			w.Do(func(tx *world.Tx) {
+				for x := range 16 {
+					for z := range 16 {
+						tx.SetBlock(cube.Pos{x, floorY, z}, c.floor, nil)
+					}
+				}
+			})
+			runTicks(w, 2000)
+			if d := snowDepths(w); c.snow && d[0] > 6 || !c.snow && d[0] != 256 {
+				t.Errorf("snow on %T (java %v): want snow %v, got %v", c.floor, c.java, c.snow, d)
+			}
+		})
+	}
+}
+
 // waterPool lays water sources over the floor, inside a ring of the floor's stone raised a block, and
 // returns the sources.
 func waterPool(w *world.World, edge world.Block) []cube.Pos {
