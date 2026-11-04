@@ -28,6 +28,10 @@ var (
 		// beside a leaf has it checked; Bedrock checks leaves only around a removed log or leaf (measured on
 		// a Bedrock Dedicated Server, Task W report).
 		JavaLeafDecay: true,
+		// Snowfall lays one layer (max_snow_accumulation_height 1) against Bedrock's biome heights of 1 to
+		// 12 ("Snow", oldid 3859371), and a waterlogged block beside water counts as water, so it does not
+		// let it freeze; on Bedrock it does ("Ice", oldid 3877975).
+		JavaWeather: true,
 	}}
 )
 

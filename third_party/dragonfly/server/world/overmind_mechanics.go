@@ -15,6 +15,10 @@ type Mechanics struct {
 	// and any change beside a leaf has it checked. Otherwise, Bedrock's: 4 steps, and only the removal of a
 	// log or a leaf nearby has leaves checked.
 	JavaLeafDecay bool
+	// JavaWeather gives the weather check of a chunk tick Java's rules: snowfall lays one layer at most, and
+	// a waterlogged block beside water counts as water, so it does not let the water freeze. Otherwise,
+	// Bedrock's: snow builds up to a height set by the biome, and a waterlogged block lets water freeze.
+	JavaWeather bool
 }
 
 // Mechanics returns the world's rules that differ by edition.

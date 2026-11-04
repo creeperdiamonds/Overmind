@@ -822,12 +822,11 @@ func (w *World) enableTimeCycle(v bool) {
 // temperature returns the temperature in the World at a specific position.
 // Higher altitudes and different biomes influence the temperature returned.
 func (tx *Tx) temperature(pos cube.Pos) float64 {
-	const (
-		tempDrop = 1.0 / 600
-		seaLevel = 64
-	)
-	diff := max(pos[1]-seaLevel, 0)
-	return tx.biome(pos).Temperature() - float64(diff)*tempDrop
+	// Overmind fork: above Y 80 the temperature drops by 0.05 every 40 blocks, as on both editions
+	// (minecraft.wiki "Biome", oldid 3878263; Bedrock's Biome::getTemperature, the study notes); the
+	// small noise term they add to the height is left out. Upstream dropped 1/600 a block above Y 64.
+	diff := max(pos[1]-80, 0)
+	return tx.biome(pos).Temperature() - float64(diff)*0.05/40
 }
 
 // addParticle spawns a Particle at a given position in the World. Viewers that
