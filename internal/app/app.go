@@ -77,9 +77,14 @@ func Start(cfg config.Config) (*server.Server, error) {
 		log.Warn("This saved world has no record of how it was generated; it is recorded from now on.", "now", ident)
 	}
 	guard := &offTick{g: gen}
+	// The Nether is Bedrock's for every profile (Task 10); Overjava's Java Nether is not written.
+	netherGuard := &offTick{g: worldgen.NewNetherWithData(seed, bd)}
 	conf.Generator = func(dim world.Dimension) world.Generator {
-		if dim == world.Overworld {
+		switch dim {
+		case world.Overworld:
 			return guard
+		case world.Nether:
+			return netherGuard
 		}
 		return unusedGenerator(dim)
 	}
@@ -99,6 +104,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 
 	srv := conf.New()
 	guard.watch(srv.World())
+	netherGuard.watch(srv.Nether())
 	if err := preloadSpawn(srv.World(), int(set.TickRange)+2); err != nil {
 		log.Warn("Spawn chunks did not load in time", "error", err)
 	}
@@ -129,12 +135,8 @@ func tickDistance(set, view int) int {
 	return max(1, min(set, view-2))
 }
 
-// unusedGenerator makes the Nether and End a flat floor. A player-built Nether portal reaches the
-// Nether; nothing generates an End portal yet.
+// unusedGenerator makes the End a flat floor; nothing generates an End portal yet.
 func unusedGenerator(dim world.Dimension) world.Generator {
-	if dim == world.Nether {
-		return generator.NewFlat(biome.NetherWastes{}, []world.Block{block.Netherrack{}, block.Bedrock{}})
-	}
 	return generator.NewFlat(biome.End{}, []world.Block{block.EndStone{}, block.Bedrock{}})
 }
 

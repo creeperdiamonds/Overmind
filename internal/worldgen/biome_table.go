@@ -65,6 +65,12 @@ var biomeTableNames = [...]string{
 	// (bedrock_sulfur.go).
 	"sulfur_caves",
 	"dappled_forest", // Bedrock's too: BDS's variant of some plains rows (bedrockLeaves).
+	// The Nether's (nether_biomes.go), outside the Overworld's table.
+	"nether_wastes",
+	"soul_sand_valley",
+	"crimson_forest",
+	"warped_forest",
+	"basalt_deltas",
 }
 
 var biomeIntervals = [...][2]int16{

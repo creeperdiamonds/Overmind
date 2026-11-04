@@ -72,6 +72,13 @@ func boolWord(v int) string { return strconv.FormatBool(v != 0) }
 func ownBlocksList() {
 	plain := func(java, name string, solid bool) { addOwn(java, name, map[string]any{}, solid) }
 	plain("moss_block", "moss_block", true)
+	// The Nether's blocks Dragonfly has no type for (Task 10).
+	plain("crimson_nylium", "crimson_nylium", true)
+	plain("warped_nylium", "warped_nylium", true)
+	plain("crimson_fungus", "crimson_fungus", false)
+	plain("warped_fungus", "warped_fungus", false)
+	plain("crimson_roots", "crimson_roots", false)
+	plain("warped_roots", "warped_roots", false)
 	plain("powder_snow", "powder_snow", true)
 	plain("budding_amethyst", "budding_amethyst", true)
 	plain("spawner", "mob_spawner", true)
@@ -424,6 +431,34 @@ func dragonflyBlock(name string) world.Block {
 		return block.Andesite{}
 	case "tuff":
 		return block.Tuff{}
+	case "netherrack":
+		return block.Netherrack{}
+	case "soul_sand":
+		return block.SoulSand{}
+	case "soul_soil":
+		return block.SoulSoil{}
+	case "basalt":
+		return block.Basalt{Axis: cube.Y}
+	case "blackstone":
+		return block.Blackstone{}
+	case "glowstone":
+		return block.Glowstone{}
+	case "nether_gold_ore":
+		return block.NetherGoldOre{}
+	case "nether_quartz_ore":
+		return block.NetherQuartzOre{}
+	case "ancient_debris":
+		return block.AncientDebris{}
+	case "nether_wart_block":
+		return block.NetherWartBlock{}
+	case "warped_wart_block":
+		return block.NetherWartBlock{Warped: true}
+	case "shroomlight":
+		return block.Shroomlight{}
+	case "bone_block":
+		return block.Bone{Axis: cube.Y}
+	case "nether_sprouts":
+		return block.NetherSprouts{}
 	case "cinnabar":
 		return block.Cinnabar{}
 	case "sulfur":

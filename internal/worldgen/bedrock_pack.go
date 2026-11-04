@@ -838,6 +838,9 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		json.Unmarshal(b.components["minecraft:surface_material_adjustments"], &adj)
 		for _, a := range adj.A {
 			if len(a.H) > 0 {
+				if isNetherBiome(uint8(i)) {
+					continue // The Nether's surface reads its own (nether_surface.go).
+				}
 				return fmt.Errorf("biome %s: height ranges in surface adjustments are not written yet", name)
 			}
 			row.adjust = append(row.adjust, surfaceAdjust{a.Scale, a.Range[0], a.Range[1], str(a.M, "top_material"),
