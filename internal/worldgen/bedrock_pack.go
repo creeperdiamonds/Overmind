@@ -47,6 +47,7 @@ type BedrockData struct {
 	ores                 map[string]*bedrockOre // By rule identifier, for tests.
 	lastOre              *bedrockOre
 	surfaceBiomes        [len(biomeTableNames)]surfaceBiome
+	subsurface           [len(biomeTableNames)]*gradientDef // A biome's noise_gradient subsurface builder.
 	// Skipped counts the rules of the passes used that are not written yet, by reason.
 	Skipped map[string]int
 	// Problems names the rules whose data is broken (unreadable values, unknown blocks, absurd
@@ -761,6 +762,9 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 	for i := range biomeTableNames {
 		name := biomeRowDefs[i].String()
 		b := bd.biomes[name]
+		if b == nil && i == int(sulfurBiome) {
+			continue // An older install: the profile keeps Java's biome table (NewWithData).
+		}
 		if b == nil {
 			return fmt.Errorf("the packs have no biome %s", name)
 		}
@@ -770,6 +774,19 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		json.Unmarshal(b.components["minecraft:surface_builder"], &sb)
 		var kind string
 		json.Unmarshal(sb.Builder["type"], &kind)
+		var sub struct {
+			Builder map[string]json.RawMessage `json:"builder"`
+		}
+		json.Unmarshal(b.components["minecraft:subsurface_builder"], &sub)
+		var subKind string
+		json.Unmarshal(sub.Builder["type"], &subKind)
+		if subKind == "minecraft:noise_gradient" {
+			gd, err := parseGradient(sub.Builder)
+			if err != nil {
+				return fmt.Errorf("biome %s: %w", name, err)
+			}
+			bd.subsurface[i] = gd
+		}
 		var depth int
 		json.Unmarshal(sb.Builder["sea_floor_depth"], &depth)
 		var cl struct {

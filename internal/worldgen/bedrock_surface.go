@@ -191,6 +191,7 @@ type surfaceAdj struct {
 // surfaceBiome is a biome's builder in our states.
 type surfaceBiome struct {
 	overworld                bool // The default builder; other kinds keep the Java rules here.
+	gradient                 bool // A noise_gradient builder: the subsurface pass builds the column.
 	mats                     surfaceMats
 	seaDepth                 int32
 	temp                     float32
@@ -205,6 +206,7 @@ type bedrockSurface struct {
 	depth  *bSimplexStack
 	adjust *bSimplexStack
 	biomes [len(biomeTableNames)]surfaceBiome
+	sub    [len(biomeTableNames)]*gradientDef // Subsurface builders, with this world's noises.
 }
 
 // surfaceState is a material's state. Bedrock's snow block is our snow_block, hardened clay terracotta.
@@ -222,6 +224,11 @@ func surfaceState(name string) bs {
 
 func newBedrockSurface(seed int64, w seedFactory, bd *BedrockData) *bedrockSurface {
 	bsf := &bedrockSurface{biomes: bd.surfaceBiomes}
+	for i, gd := range bd.subsurface {
+		if gd != nil {
+			bsf.sub[i] = gd.withNoise(w)
+		}
+	}
 	x := w.named("minecraft:surface")
 	bsf.depth = newBSimplexStack(4, x.nextFloat, func(n uint32) int32 { return int32(x.nextInt(n)) }, false)
 	m := newBMT(bedrockLevelSeed(seed))
@@ -235,6 +242,7 @@ func newBedrockSurface(seed int64, w seedFactory, bd *BedrockData) *bedrockSurfa
 // compile turns a biome's builder as read into our states.
 func (r *surfaceRow) compile() (sb surfaceBiome) {
 	sb.overworld = r.kind == "overworld"
+	sb.gradient = r.kind == "noise_gradient"
 	sb.mats = surfaceMats{surfaceState(r.top), surfaceState(r.mid), surfaceState(r.floor), surfaceState(r.foundation), surfaceState(r.sea)}
 	sb.seaDepth, sb.temp = int32(r.seaDepth), r.temperature
 	if r.steep.material != "" {
@@ -480,6 +488,12 @@ func (g *Generator) applyBedrockSurface(b *baseChunk, s *chunkScratch, floor *bm
 	var noise [256]float32
 	g.bsurf.depthNoise(b.cx, b.cz, &noise)
 	ox, oz := b.cx*16, b.cz*16
+	// The column's biome is the stored one at its top (T11), read through the copy rule of the sky
+	// sections; a part-chunk build has no whole-chunk top and reads it as computed.
+	topSec := 1 << 10
+	if x0 == 0 && x1 == 15 && z0 == 0 && z1 == 15 {
+		topSec = bedrockTopSection(&b.wgTop)
+	}
 	for lx := range 16 {
 		for lz := range 16 {
 			if lx < x0 || lx > x1 || lz < z0 || lz > z1 {
@@ -487,10 +501,18 @@ func (g *Generator) applyBedrockSurface(b *baseChunk, s *chunkScratch, floor *bm
 				continue
 			}
 			x, z := ox+lx, oz+lz
-			sb := &g.bsurf.biomes[s.blockBiome(g, x, int(b.wgTop[lz<<4|lx]), z)]
+			var bio uint8
+			if g.bedrockBiomes {
+				bio = s.bedrockBiome(g, x, storedY(int(b.wgTop[lz<<4|lx]), topSec), z)
+			} else {
+				bio = s.blockBiome(g, x, int(b.wgTop[lz<<4|lx]), z)
+			}
+			sb := &g.bsurf.biomes[bio]
 			if !sb.overworld {
 				floor.u32() // As a default column would; the other builders are not read yet.
-				g.surfaceRulesColumn(b, s, lx, lz)
+				if !sb.gradient {
+					g.surfaceRulesColumn(b, s, lx, lz)
+				}
 				continue
 			}
 			low := min(max(g.preliminarySurface(&s.prelims, x, z)-8, minY), maxY-1)

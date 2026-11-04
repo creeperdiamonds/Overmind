@@ -123,8 +123,8 @@ func (s *chunkScratch) quartColumnAt(g *Generator, qx, qz int) *quartColumn {
 		for i := range q.ids {
 			d := quantize(depthAt(minY+i*4, col.offset))
 			t[biomeTargetDepth] = d
-			n = nearestBiomeFrom(&t, n)
-			id := uint8(biomeRows[n.row][0])
+			n = nearestBiomeFrom(col.tree, &t, n)
+			id := n.id
 			q.ids[i] = id
 			if d < 0 && n.bounds[biomeTargetDepth][0] == 0 {
 				for j := i + 1; j < len(q.ids); j++ {

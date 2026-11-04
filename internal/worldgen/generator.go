@@ -38,11 +38,16 @@ type Generator struct {
 	profile   *Profile
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
 	// climateT is the biome temperatures: the profile's table, with the pack's values when the data is read.
-	climateT *climateTable
-	bseeds    bedrockSeeds    // Bedrock's decoration seeds.
-	bdata     *BedrockData    // Bedrock's feature data, nil when no install was read.
+	climateT  *climateTable
+	bseeds    bedrockSeeds // Bedrock's decoration seeds.
+	bdata     *BedrockData // Bedrock's feature data, nil when no install was read.
 	geodeOnce sync.Once
 	geode     *normalNoise
+	// biomeTree is the biome table's search tree: Java's, or Bedrock's with its own cave biome.
+	biomeTree *biomeNode
+	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
+	// biomes (bedrock_biomes.go) rather than quarts.
+	bedrockBiomes bool
 }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
@@ -92,8 +97,14 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 		}
 		g.climateT = &t
 	}
+	g.biomeTree = biomeTree()
 	if profile.surfaceBedrock && bd != nil {
 		g.bsurf = newBedrockSurface(seed, w, bd)
+		g.bedrockBiomes = true
+		g.biomeTree = bedrockBiomeTrees()[0]
+		if bd.biomes[sulfurCaves.String()] != nil {
+			g.biomeTree = bedrockBiomeTrees()[1]
+		}
 	}
 	return g
 }
@@ -115,6 +126,9 @@ type chunkScratch struct {
 	walk        columnWalk
 	walkCorners [walkCornerSlots]walkCorner
 	quarts      [quartSlots]quartColumn
+	bsamples    [bSampleSlots]bSampleColumn // Bedrock's biome samples (bedrock_biomes.go).
+	btops       [64]bTopEntry
+	blist       []uint8
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
@@ -694,5 +708,6 @@ func (s *chunkScratch) giveBuffer(b *baseChunk) { s.copies = append(s.copies, b)
 // startDecoration readies the working set around a chunk.
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 	s.deco.startTarget(g, s, cx, cz)
+	s.deco.listOf = listKey{}
 	return &s.deco
 }

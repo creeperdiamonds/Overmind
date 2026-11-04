@@ -99,6 +99,7 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 	}
 	if g.bsurf != nil {
 		g.applyBedrockSurface(b, s, floor, x0, x1, z0, z1)
+		g.applySubsurface(b, s, x0, x1, z0, z1)
 	} else {
 		g.applySurfaceRules(b, s, x0, x1, z0, z1)
 	}

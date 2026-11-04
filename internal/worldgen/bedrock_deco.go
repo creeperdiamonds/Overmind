@@ -280,6 +280,13 @@ const oreStep = 6
 // 0xcfae6b0): sub-chunks bottom up, each in its storage order, first appearance only. Our stored
 // biomes are by quart, so a sub-chunk's order is quart y, then z, then x.
 func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
+	if d.g.bedrockBiomes {
+		if k := (listKey{d.g, cx, cz}); d.listOf != k {
+			d.biomeList = d.s.bedrockBiomeList(d.g, cx, cz, d.s.bedrockTopSectionOf(d.g, cx, cz), d.biomeList)
+			d.listOf = k
+		}
+		return d.biomeList
+	}
 	list := d.biomeList[:0]
 	var seen [2]uint64
 	for q := range (maxY - minY + 1) / 4 {
@@ -297,8 +304,17 @@ func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
 	return list
 }
 
+// listKey names a chunk's biome list: a pure function of the generator and the chunk.
+type listKey struct {
+	g      *Generator
+	cx, cz int
+}
+
 // storedBiome is the biome stored at a block, which the scatter's biome test reads (section 3).
 func (d *decoration) storedBiome(x, y, z int) uint8 {
+	if d.g.bedrockBiomes {
+		return d.s.bedrockStoredBiome(d.g, x, y, z)
+	}
 	return d.s.quartColumnAt(d.g, x>>2, z>>2).ids[(y-minY)>>2]
 }
 

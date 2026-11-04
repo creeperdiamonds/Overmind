@@ -424,6 +424,10 @@ func dragonflyBlock(name string) world.Block {
 		return block.Andesite{}
 	case "tuff":
 		return block.Tuff{}
+	case "cinnabar":
+		return block.Cinnabar{}
+	case "sulfur":
+		return block.Sulfur{}
 	case "clay":
 		return block.Clay{}
 	case "raw_copper_block":

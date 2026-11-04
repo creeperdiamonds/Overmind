@@ -267,14 +267,14 @@ func TestGoldenBiomes(t *testing.T) {
 				target.same(tg[d] == int64(gi(t, row, name)), "%s %d, want %s", name, tg[d], row[name])
 			}
 			name := func(n *biomeNode) string { return biomeTableNames[biomeRows[n.row][0]] }
-			cn := nearestBiome(&tg)
+			cn := nearestBiome(tree, &tg)
 			var someLeaf *biomeNode
 			forEachLeaf(tree, func(n *biomeNode) {
 				if n.row == int32(qx&4095) {
 					someLeaf = n
 				}
 			})
-			if from := nearestBiomeFrom(&tg, someLeaf); from != cn {
+			if from := nearestBiomeFrom(tree, &tg, someLeaf); from != cn {
 				t.Errorf("(%d,%d,%d): search from a known leaf found row %d, cold search row %d", qx, qy, qz, from.row, cn.row)
 			}
 			cold.same(name(cn) == row["biome_quart_rtree_cold"], "(%d,%d,%d) %s, want %s", qx, qy, qz, name(cn), row["biome_quart_rtree_cold"])
