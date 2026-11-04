@@ -3,6 +3,7 @@ package javafront_test
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,9 +58,29 @@ func seenByBoth(t *testing.T, srv *testserver.Server, j *javaBot, b *bedrock.Bot
 		rid := world.BlockRuntimeID(want)
 		got, ok := b.Block(pos)
 		js := j.block(pos).State
-		return ok && got == rid && js != nil && *js == int32(java261.JavaState(rid))
-	}, 5*time.Second, 50*time.Millisecond, "the two editions were not both shown the block at %v (server has %#v)", pos, want)
+		return ok && got == rid && js != nil && *js == javaStateOf(want)
+	}, 5*time.Second, 50*time.Millisecond, "the two editions were not both shown the block at %v", pos)
 	return want
+}
+
+// javaStateOf is the Java state a Java client should get for a block: the
+// tables' state, in its colour for a bed or banner, whose Bedrock state has
+// none (the tables give the black one).
+func javaStateOf(b world.Block) int32 {
+	s := java261.JavaState(world.BlockRuntimeID(b))
+	var c item.Colour
+	switch v := b.(type) {
+	case block.Bed:
+		c = v.Colour
+	case block.Banner:
+		c = v.Colour
+	default:
+		return int32(s)
+	}
+	if rest, ok := strings.CutPrefix(java261.BlockName(s), "minecraft:black_"); ok {
+		s, _ = java261.AsBlock(s, "minecraft:"+c.String()+"_"+rest)
+	}
+	return int32(s)
 }
 
 // A Java player places blocks through Dragonfly's own item use, so placement

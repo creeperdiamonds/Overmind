@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/creeperdiamonds/overmind/internal/config"
-	"github.com/creeperdiamonds/overmind/internal/tables/java261"
 	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
 
@@ -74,7 +73,7 @@ func shownToJava(t *testing.T, srv *testserver.Server, j *javaBot, pos cube.Pos)
 	require.Eventually(t, func() bool {
 		want = blockAt(t, srv, pos)
 		js := j.block(pos).State
-		return js != nil && *js == int32(java261.JavaState(world.BlockRuntimeID(want)))
+		return js != nil && *js == javaStateOf(want)
 	}, 5*time.Second, 50*time.Millisecond, "the client was not shown the block at %v (server has %#v)", pos, want)
 	return want
 }
