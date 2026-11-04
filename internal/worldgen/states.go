@@ -181,6 +181,7 @@ func addState(name string) bs {
 	case "snow":
 		fl = fSturdyDown | fReplaceable // One layer, the only height generation places.
 	case "pale_moss_carpet":
+		fl = 0 // A top carpet is thin and open.
 		if strings.Contains(props, "bottom=true") {
 			fl = fSturdyDown
 		}

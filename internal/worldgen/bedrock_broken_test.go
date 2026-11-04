@@ -141,3 +141,16 @@ func TestMissingDefinitionsWarns(t *testing.T) {
 	}
 	t.Log(bd.Warnings)
 }
+
+// TestPaleMossCarpetFlags: a pale moss carpet's top (bottom=false) is a thin, open block with no flags;
+// only the bottom carpet holds up what is on it from below (review Minor 4).
+func TestPaleMossCarpetFlags(t *testing.T) {
+	top := stateOf("pale_moss_carpet[bottom=false,east=none,north=none,south=none,west=none]")
+	if f := stateFlag[top]; f != 0 {
+		t.Errorf("top carpet flags %b, want 0", f)
+	}
+	bottom := stateOf("pale_moss_carpet[bottom=true,east=none,north=none,south=none,west=none]")
+	if f := stateFlag[bottom]; f != fSturdyDown {
+		t.Errorf("bottom carpet flags %b, want sturdy-down only", f)
+	}
+}
