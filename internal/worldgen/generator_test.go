@@ -43,6 +43,7 @@ func isDecorationID(r uint32) bool {
 }
 
 func TestSameSeedSameChunk(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	a, b := New(42), New(42)
 	for _, p := range [][2]int32{{0, 0}, {-3, 7}, {120, -80}} {
 		if !generate(a, p[0], p[1]).Equals(generate(b, p[0], p[1])) {
@@ -65,6 +66,7 @@ func TestOrderIndependent(t *testing.T) {
 
 // TestOrderIndependentQuick is the same check, fixture free, after 12 of the chunks, for the default run.
 func TestOrderIndependentQuick(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	checkOrderIndependent(t, 12)
 }
 
@@ -133,13 +135,17 @@ func measureSeams(g *Generator) []seamSteps {
 	var out []seamSteps
 	for _, origin := range [][2]int32{{0, 0}, {300, -200}, {-500, 400}, {700, 700}} {
 		var h [across][down][16][16]int
+		var pos [][2]int32
 		for cx := range across {
 			for cz := range down {
-				c := generate(g, origin[0]+int32(cx), origin[1]+int32(cz))
-				for x := range 16 {
-					for z := range 16 {
-						h[cx][cz][x][z] = topSolid(c, uint8(x), uint8(z))
-					}
+				pos = append(pos, [2]int32{origin[0] + int32(cx), origin[1] + int32(cz)})
+			}
+		}
+		for p, c := range generateAll(g, pos) { // In parallel; heights do not depend on the order.
+			cx, cz := p[0]-origin[0], p[1]-origin[1]
+			for x := range 16 {
+				for z := range 16 {
+					h[cx][cz][x][z] = topSolid(c, uint8(x), uint8(z))
 				}
 			}
 		}
@@ -186,6 +192,7 @@ func TestNoSeamAtChunkEdges(t *testing.T) {
 // TestNoSeamAtChunkEdgesQuick is the same check, fixture free, on seed 1234 alone, for the default
 // run. Fewer chunks give a wider standard error, so it is the same test with less power.
 func TestNoSeamAtChunkEdgesQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
 	checkNoSeams(t, 1234)
 }
 
@@ -214,6 +221,7 @@ func checkNoSeams(t *testing.T, seeds ...int64) {
 }
 
 func TestTerrainStatistics(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	const span, step = 4096, 32
 	// The seeds run side by side: each is a single-threaded sweep.
 	var wg sync.WaitGroup
@@ -326,6 +334,7 @@ func TestFillRulesCatchCaveTrees(t *testing.T) {
 }
 
 func TestBlocksFollowFillRules(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g, b := New(3), newBlocks()
 	// The blocks are the noise, surface and carver blocks and whatever Java's features place (ores,
 	// rock, glow lichen, geodes, rooms and the rest), so there is no closed list any more. A placed
@@ -387,6 +396,7 @@ func TestDefaultSpawnIsAboveTerrain(t *testing.T) {
 // chunk a player there stands on a block (ground, water or leaves) with air for feet and head, not
 // inside a tree, snow layer or plant, and nothing over their head.
 func TestDefaultSpawnFallbackHasRoom(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	// Each spot is a lone chunk with all its sources to build, so the spots run side by side.
 	var wg sync.WaitGroup
 	defer wg.Wait()

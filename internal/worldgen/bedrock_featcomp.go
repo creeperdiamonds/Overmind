@@ -479,9 +479,10 @@ type scatterFeat struct {
 }
 
 func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
+	// The copied context shares the run's variable map (0x5525c10 copies its pointer), and
+	// MolangCtx_init moves variable.origin* to the input position for this and every later rule (T3b).
 	e := &d.menv
-	saveX, saveY, saveZ := e.worldX, e.worldY, e.worldZ
-	defer func() { e.worldX, e.worldY, e.worldZ = saveX, saveY, saveZ }()
+	e.originX, e.originY, e.originZ = float32(p.x), float32(p.y), float32(p.z)
 	e.worldX, e.worldY, e.worldZ = float32(p.x), float32(p.y), float32(p.z)
 	if !f.sc.chance(r, e) {
 		return p, false
@@ -489,7 +490,6 @@ func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	n := f.sc.count(e)
 	ok, last := false, p
 	for i := n - 1; i >= 0; i-- {
-		e.worldX, e.worldY, e.worldZ = float32(p.x), float32(p.y), float32(p.z)
 		q := f.sc.position(r, e, [3]int{p.x, p.y, p.z})
 		if at, k := f.f.place(d, r, pos{q[0], q[1], q[2]}); k {
 			ok, last = true, at

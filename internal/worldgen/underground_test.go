@@ -57,6 +57,7 @@ func chunkGrid(g *Generator, x0, z0, size int32) map[[2]int32]*chunk.Chunk {
 }
 
 func TestBedrockFloor(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(11)
 	var share [5]int // Bedrock count at Y -64 to -60.
 	var total int
@@ -93,6 +94,7 @@ func TestBedrockFloor(t *testing.T) {
 }
 
 func TestDeepslateLine(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(12)
 	count := func(y int16) (deep, stone int) {
 		for _, c := range chunkGrid(g, 0, 0, 5) {
@@ -157,6 +159,7 @@ func airSteps(chunks map[[2]int32]*chunk.Chunk, size int32) (air, total, innerPa
 }
 
 func TestCavesExist(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(13)
 	const size = 12
 	chunks := chunkGrid(g, 20, 20, size)
@@ -175,6 +178,7 @@ func TestCavesExist(t *testing.T) {
 // Some columns open to the sky, by noise caves alone (the share is asserted in
 // TestNoiseCavesOpenToSky), and SurfaceHeight and the chunk must both show it. Every 2nd column.
 func TestSomeCavesReachSurface(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(14)
 	var land, open int
 	var found [2]int
@@ -255,6 +259,7 @@ func TestSurfaceHeightMatchesChunkWithCaves(t *testing.T) {
 // from Y -20 upward, so lava is allowed down low and only a trace of it higher up (springs
 // and lakes). The old rule of no lava above Y -54 was a guess.
 func TestLavaOnlyDeep(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(16)
 	var deep, high, volume int
 	for _, c := range chunkGrid(g, 0, 0, 8) {
@@ -283,6 +288,7 @@ func TestLavaOnlyDeep(t *testing.T) {
 }
 
 func TestOreRanges(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(18)
 	ids := oreIDs()
 	byID := map[uint32]string{}
@@ -343,6 +349,7 @@ func TestOreRanges(t *testing.T) {
 // function of its position and the merge's per-cell rules, so a vein cut at an edge would show as ore
 // meeting ore less often across edges than inside.
 func TestVeinsCrossChunkEdges(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(21)
 	b := newBlocks()
 	ore := map[uint32]bool{b.rawIron: true, b.rawCopper: true}

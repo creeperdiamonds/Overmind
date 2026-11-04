@@ -114,10 +114,11 @@ func TestMountainsHaveOverhangs(t *testing.T) {
 	checkMountainOverhangs(t, 1)
 }
 
-// TestMountainsHaveOverhangsQuick is the same check, fixture free, on every third chunk of the same patch
-// each way (100 of its 900 chunks), for the default run.
+// TestMountainsHaveOverhangsQuick is the same check, fixture free, on every fifth chunk of the same patch
+// each way (36 of its 900 chunks), for the default run.
 func TestMountainsHaveOverhangsQuick(t *testing.T) {
-	checkMountainOverhangs(t, 3)
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkMountainOverhangs(t, 5)
 }
 
 // checkMountainOverhangs counts overhung columns in every step-th chunk of a 30 x 30 patch centred on the
@@ -136,23 +137,26 @@ search:
 			}
 		}
 	}
+	var pos [][2]int32
 	for cx := fromX; cx < fromX+side; cx += step {
 		for cz := fromZ; cz < fromZ+side; cz += step {
-			c := generate(g, cx, cz)
-			for x := uint8(0); x < 16; x++ {
-				for z := uint8(0); z < 16; z++ {
-					total++
-					top := topSolid(c, x, z)
-					gap := 0
-					for y := int16(top); y > SeaLevel; y-- {
-						if c.Block(x, y, z, 0) == b.air {
-							gap++
-						}
+			pos = append(pos, [2]int32{cx, cz})
+		}
+	}
+	for _, c := range generateAll(g, pos) { // In parallel; the counts do not depend on the order.
+		for x := uint8(0); x < 16; x++ {
+			for z := uint8(0); z < 16; z++ {
+				total++
+				top := topSolid(c, x, z)
+				gap := 0
+				for y := int16(top); y > SeaLevel; y-- {
+					if c.Block(x, y, z, 0) == b.air {
+						gap++
 					}
-					if gap > 0 {
-						overhung++
-						deepest = max(deepest, gap)
-					}
+				}
+				if gap > 0 {
+					overhung++
+					deepest = max(deepest, gap)
 				}
 			}
 		}

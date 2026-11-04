@@ -15,11 +15,11 @@ import (
 
 // molangEnv is what an expression reads.
 type molangEnv struct {
-	d                      *decoration
-	r1                     *bmt // math.random draws from the rule's position generator.
-	originX, originZ       float32
-	worldX, worldY, worldZ float32
-	biome                  uint8
+	d                         *decoration
+	r1                        *bmt // math.random draws from the rule's position generator.
+	originX, originY, originZ float32
+	worldX, worldY, worldZ    float32
+	biome                     uint8
 }
 
 type mexpr func(e *molangEnv) float32
@@ -302,7 +302,7 @@ func (p *mparser) unary() mexpr {
 		case "variable.originz":
 			return func(e *molangEnv) float32 { return e.originZ }
 		case "variable.originy":
-			return func(e *molangEnv) float32 { return 0 }
+			return func(e *molangEnv) float32 { return e.originY }
 		case "variable.worldx":
 			return func(e *molangEnv) float32 { return e.worldX }
 		case "variable.worldy":
