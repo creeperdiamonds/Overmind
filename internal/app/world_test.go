@@ -499,14 +499,15 @@ func logNear(tx *world.Tx, p cube.Pos, reach int) bool {
 // Bedrock's leaf rules, the default profile's. Bedrock's generated trees put leaves up to 7 steps from a log,
 // past its reach of 4 (measured with Bedrock's own trees, Task W report), and keeps them: a leaf is checked
 // only when a log or leaf near it is removed. So no generated leaf starts marked, a block placed beside the
-// canopy marks none, and close to all stay; leaves cut off from their logs still decay.
+// canopy marks none, and close to all stay, those 5 to 7 steps from a log among them (the test counts
+// them, and there must be some); leaves cut off from their logs still decay.
 func TestLeavesDecayBedrock(t *testing.T) {
 	srv := testserver.StartIn(t, t.TempDir(), fastTicks(1234, 200))
 	w := srv.World()
 	spawn := w.Spawn()
 	defer watch(t, w, spawn, 6)()
 
-	var natural []cube.Pos
+	var natural, far []cube.Pos
 	marked, beside := 0, 0
 	run(t, w, func(tx *world.Tx) {
 		for dx := -40; dx <= 40; dx++ {
@@ -522,6 +523,12 @@ func TestLeavesDecayBedrock(t *testing.T) {
 				}
 			}
 		}
+		// The leaves past Bedrock's reach of 4 that a log 5 to 7 steps away would keep on Java's rule.
+		for _, p := range natural {
+			if !logNear(tx, p, 4) && logNear(tx, p, 7) {
+				far = append(far, p)
+			}
+		}
 		// A block placed on top of every tenth leaf, with block updates, as a player places one.
 		for i, p := range natural {
 			if up := p.Side(cube.FaceUp); i%10 == 0 {
@@ -535,16 +542,24 @@ func TestLeavesDecayBedrock(t *testing.T) {
 	require.GreaterOrEqual(t, len(natural), 500, "too few generated leaves near spawn %v to judge", spawn)
 	require.Zero(t, marked, "%d of %d generated leaves start marked for a decay check", marked, len(natural))
 	time.Sleep(15 * time.Second)
-	stayed := 0
+	stayed, farStayed := 0, 0
 	run(t, w, func(tx *world.Tx) {
 		for _, p := range natural {
 			if _, ok := tx.Block(p).(block.Leaves); ok {
 				stayed++
 			}
 		}
+		for _, p := range far {
+			if _, ok := tx.Block(p).(block.Leaves); ok {
+				farStayed++
+			}
+		}
 	})
-	t.Logf("%d of %d generated leaves stayed with blocks placed on %d of them", stayed, len(natural), beside)
+	t.Logf("%d of %d generated leaves stayed with blocks placed on %d of them; %d of the %d 5 to 7 steps from a log stayed",
+		stayed, len(natural), beside, farStayed, len(far))
 	require.GreaterOrEqual(t, stayed*1000, len(natural)*995, "only %d of %d generated leaves stayed", stayed, len(natural))
+	require.NotEmpty(t, far, "no generated leaf near spawn %v is 5 to 7 steps from a log, so the test does not show Bedrock keeping them", spawn)
+	require.GreaterOrEqual(t, farStayed*100, len(far)*99, "only %d of %d leaves 5 to 7 steps from a log stayed", farStayed, len(far))
 
 	cutTreeLeavesDecay(t, w, 4)
 }
