@@ -1,15 +1,19 @@
 package structures
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
@@ -26,6 +30,11 @@ type Data struct {
 	campOrder     []string // The abandoned_camp set's structures, in the set's order.
 
 	parsed sync.Map // Template path to *Template or error, parsed on first use.
+	// parsedBytes is an estimate of the parsed templates' memory; past maxParsedBytes a template is
+	// parsed for each use instead of kept (TestTemplateMemory measures the ancient city's).
+	parsedBytes atomic.Int64
+	problemsMu  sync.Mutex
+	loaded      bool // LoadData has returned: later problems are logged as they happen.
 
 	ancientOnce sync.Once
 	ancient     map[string]*pool
@@ -60,11 +69,61 @@ func LoadData(dir string) (*Data, error) {
 	if len(d.templates) == 0 {
 		return nil, fmt.Errorf("%s: the vanilla packs hold no structure templates", packs)
 	}
+	d.loaded = true
 	return d, nil
 }
 
+// Fingerprint names the structure data read: a SHA-256 of every template's and loot table's path and
+// size, so a world records when its structure data changes (the app's provenance record).
+func (d *Data) Fingerprint() string {
+	h := sha256.New()
+	var keys []string
+	for k := range d.templates {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		size := int64(-1)
+		if st, err := os.Stat(d.templates[k]); err == nil {
+			size = st.Size()
+		}
+		fmt.Fprintf(h, "t %s %d\n", k, size)
+	}
+	keys = keys[:0]
+	for k := range d.loot {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		fmt.Fprintf(h, "l %s %d\n", k, len(d.loot[k].Pools))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// problem notes a file that could not be used. After loading (a template parsed on a chunk worker) it
+// is also logged, once, as it happens.
 func (d *Data) problem(format string, a ...any) {
-	d.Problems = append(d.Problems, fmt.Sprintf(format, a...))
+	msg := fmt.Sprintf(format, a...)
+	d.problemsMu.Lock()
+	d.Problems = append(d.Problems, msg)
+	d.problemsMu.Unlock()
+	if d.loaded {
+		slog.Default().Warn("A structure data file is skipped", "problem", msg)
+	}
+}
+
+// maxParsedBytes bounds the memory kept by parsed templates, outside the generator's cache.
+const maxParsedBytes = 32 << 20
+
+// templateBytes estimates a parsed template's memory.
+func templateBytes(t *Template) int64 {
+	n := int64(len(t.blocks))*64 + int64(len(t.palette))*96 + int64(len(t.jigsaws))*128
+	for _, b := range t.blocks {
+		if b.nbt != nil {
+			n += 256
+		}
+	}
+	return n
 }
 
 // indexTemplates notes each .nbt file under a pack's structures folder, unless a newer pack has it.
@@ -95,11 +154,18 @@ func (d *Data) Template(path string) *Template {
 	}
 	t, err := readTemplate(path, file)
 	if err != nil {
-		d.parsed.Store(path, err)
+		if _, seen := d.parsed.LoadOrStore(path, err); !seen {
+			d.problem("%v", err)
+		}
 		return nil
 	}
-	v, _ := d.parsed.LoadOrStore(path, t)
-	t, _ = v.(*Template)
+	if n := templateBytes(t); d.parsedBytes.Load()+n > maxParsedBytes {
+		return t // Over the bound: used, not kept.
+	} else if v, loaded := d.parsed.LoadOrStore(path, t); loaded {
+		t, _ = v.(*Template)
+	} else {
+		d.parsedBytes.Add(n)
+	}
 	return t
 }
 

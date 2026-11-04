@@ -15,12 +15,12 @@ import (
 const provenanceFile = "overmind-generator.txt"
 
 // provenanceIdent is the record for a start: generator version, profile and data.
-func provenanceIdent(profile string, bd *worldgen.BedrockData) string {
+func provenanceIdent(profile string, bd *worldgen.BedrockData, structs string) string {
 	data := "none"
 	if bd != nil {
 		data = "sha256:" + bd.Hash()
 	}
-	return "generator=" + worldgen.GeneratorVersion + " profile=" + profile + " data=" + data
+	return "generator=" + worldgen.GeneratorVersion + " profile=" + profile + " data=" + data + " structures=" + structs
 }
 
 // recordProvenance writes the current record and gives the one there was ("" for none) and whether it

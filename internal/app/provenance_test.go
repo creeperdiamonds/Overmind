@@ -30,7 +30,7 @@ func TestGeneratorProvenance(t *testing.T) {
 		t.Errorf("record %q, want %q", got, b)
 	}
 	// The record names the generator's version, so an upgrade that changes generation warns too.
-	if id := provenanceIdent("bedrock", nil); !strings.Contains(id, "generator="+worldgen.GeneratorVersion+" ") {
+	if id := provenanceIdent("bedrock", nil, "none"); !strings.Contains(id, "generator="+worldgen.GeneratorVersion+" ") {
 		t.Errorf("record %q does not name the generator version %q", id, worldgen.GeneratorVersion)
 	}
 }

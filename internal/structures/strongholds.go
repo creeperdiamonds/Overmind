@@ -20,6 +20,10 @@ const (
 	gridCell     = 200
 )
 
+// WarmStrongholds works out the ring strongholds now, so the first eye of ender thrown, on the world's
+// tick, does not have to. The app calls it on its own goroutine when the structures attach.
+func (s *Structures) WarmStrongholds() { s.rings() }
+
 // rings works out the three ring strongholds once.
 func (s *Structures) rings() [][2]int {
 	s.ringOnce.Do(func() {

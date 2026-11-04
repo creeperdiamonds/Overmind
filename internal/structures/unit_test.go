@@ -1,6 +1,8 @@
 package structures
 
 import (
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +167,31 @@ func TestBrokenLootTablesStayBounded(t *testing.T) {
 	}
 	if n == 0 || n > lootPicksPer*27 {
 		t.Errorf("%d sticks from the self-referencing table, want 1..%d", n, lootPicksPer*27)
+	}
+}
+
+// TestTemplateMemory parses every ancient city template of the install and reports what they hold:
+// the estimate the bound counts and the heap they take. The estimate must not be far under the heap.
+func TestTemplateMemory(t *testing.T) {
+	_, d0 := installData(t)
+	d := &Data{Dir: d0.Dir, templates: d0.templates, loot: d0.loot, loaded: true}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	n := 0
+	for path := range d.templates {
+		if strings.HasPrefix(path, "ancient_city/") && d.Template(path) != nil {
+			n++
+		}
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	heap := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	t.Logf("%d ancient city templates: estimate %.1f MB, heap %.1f MB (bound %d MB)", n, float64(d.parsedBytes.Load())/1e6, float64(heap)/1e6, maxParsedBytes>>20)
+	if n == 0 {
+		t.Fatal("no ancient city templates")
+	}
+	if heap > 3*d.parsedBytes.Load() {
+		t.Errorf("the estimate %d is far under the heap %d: the bound would not hold", d.parsedBytes.Load(), heap)
 	}
 }

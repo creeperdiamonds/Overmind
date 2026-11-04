@@ -64,8 +64,8 @@ func Start(cfg config.Config) (*server.Server, error) {
 	}
 	bd := bedrockData(log, cfg.BedrockDataDir, profile)
 	gen := worldgen.NewWithData(seed, profile, bd)
-	attachStructures(log, gen, cfg.BedrockDataDir)
-	ident := provenanceIdent(profile.Name, bd)
+	structs := attachStructures(log, gen, cfg.BedrockDataDir)
+	ident := provenanceIdent(profile.Name, bd, structs)
 	if old, changed, err := recordProvenance(cfg.WorldFolder, ident); err != nil {
 		log.Warn("Could not record how the world is generated", "file", provenanceFile, "error", err)
 	} else if changed {
@@ -144,19 +144,27 @@ func tickDistance(set, view int) int {
 // attachStructures gives the world its structures (Task 9) when the Bedrock profile has the install's
 // data: templates and loot tables come from that install. Without it structures are skipped, with one
 // log line. Loot is rolled when a generated chest is first opened.
-func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) {
+// It gives what the provenance record names: the structure data's fingerprint, or "none". Geodes are
+// refused inside ancient-city pieces only when structures attach, so a world records which it had.
+func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) string {
 	if gen.Data() == nil {
 		log.Warn("Structures are skipped: they need the Bedrock profile and a readable Bedrock install (BedrockDataDir).")
-		return
+		return "none"
 	}
 	sd, err := structures.LoadData(dir)
 	if err != nil {
 		log.Warn("Structures are skipped: the Bedrock install's structure data could not be read.", "folder", dir, "error", err)
-		return
+		return "none"
 	}
-	gen.SetStructures(structures.New(gen, sd))
+	st := structures.New(gen, sd)
+	gen.SetStructures(st)
 	block.LootFiller = sd.Fill
+	go st.WarmStrongholds() // Off the tick: the first eye of ender would otherwise work the rings out there.
 	log.Info("Structure data read", "folder", dir, "read", sd.Summary())
+	for _, p := range sd.Problems {
+		log.Warn("A structure data file is skipped", "problem", p)
+	}
+	return "sha256:" + sd.Fingerprint()
 }
 
 // bedrockData reads Bedrock's feature data for the Bedrock profile. It never fails the start: with no
