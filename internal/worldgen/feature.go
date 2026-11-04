@@ -745,7 +745,7 @@ func (d *decoration) runSource(cx, cz int) {
 	d.mapsReady(l)
 	l.primed = true
 	biomes := d.biomesAround(cx, cz)
-	if d.g.profile.bedrockDeco {
+	if d.g.bedrockDeco() {
 		d.runSourceBedrock(cx, cz, &biomes)
 		return
 	}

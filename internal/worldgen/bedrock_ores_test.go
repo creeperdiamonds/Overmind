@@ -14,9 +14,10 @@ import (
 // study found these exact (sections 2 to 4), so they are held to every value.
 func TestBedrockFirstOreBlobs(t *testing.T) {
 	dir := goldenBedrockDir(t)
-	rows := map[string]undergroundRow{}
-	for _, r := range undergroundRows {
-		rows[r.ident] = r
+	bd := testBedrockData(t)
+	rules := map[string]*bedrockRule{}
+	for _, r := range bd.underground {
+		rules[r.ident] = r
 	}
 	for _, seed := range bedrockTestSeeds {
 		files, _ := filepath.Glob(filepath.Join(dir, fmt.Sprintf("seed%d", seed), "chunk_*.json"))
@@ -54,11 +55,10 @@ func TestBedrockFirstOreBlobs(t *testing.T) {
 				}
 			}
 			for ident, blob := range c.Blobs {
-				row, ok := rows[ident]
+				rule, ok := rules[ident]
 				if !ok {
-					t.Fatalf("%s: not in the underground table", ident)
+					t.Fatalf("%s: not among the underground rules read", ident)
 				}
-				rule := &bedrockRule{iterations: row.iterations, num: row.num, den: row.den, order: evalOrder(row.order), axes: row.axes}
 				rs := bedrockRuleSeed(cs, uint32(fnv1Hash(ident)))
 				r1, r2 := newBMT(rs), newBMT(rs)
 				p, found := firstScatter(rule, r1, cx, cz)
@@ -67,7 +67,7 @@ func TestBedrockFirstOreBlobs(t *testing.T) {
 					bad++
 					continue
 				}
-				o := newBedrockOre(row.count, row.discard, row.replace)
+				o := bd.ores[ident]
 				var all, act []oreSphere
 				ours := map[[3]int]bool{}
 				forBlobBlocks(o.spheres(r2, p, &all, &act), func(x, y, z int) { ours[[3]int{x, y, z}] = true })

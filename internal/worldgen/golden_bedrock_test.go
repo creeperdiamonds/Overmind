@@ -44,9 +44,10 @@ type bdsChunk struct {
 func (c *bdsChunk) masked(cell int) bool { return c.unstable[cell>>3]>>(cell&7)&1 != 0 }
 
 type bdsWorld struct {
-	seed   int64
-	c0, c1 int
-	names  []string
+	seed           int64
+	x0, x1, z0, z1 int // Chunk box, ends exclusive.
+	window         string
+	names          []string
 	chunks map[[2]int]*bdsChunk
 }
 
@@ -54,10 +55,15 @@ var bdsWorlds sync.Map
 
 // loadBDSWorld reads a seed's world once per test binary.
 func loadBDSWorld(t testing.TB, dir string, seed int64) *bdsWorld {
-	if w, ok := bdsWorlds.Load(seed); ok {
+	return loadBDSFile(t, filepath.Join(dir, "whole", fmt.Sprintf("seed%d.bin.gz", seed)))
+}
+
+// loadBDSFile reads a whole-world file: OMBW1 (a square of chunks) or OMBW2 (a box).
+func loadBDSFile(t testing.TB, path string) *bdsWorld {
+	if w, ok := bdsWorlds.Load(path); ok {
 		return w.(*bdsWorld)
 	}
-	f, err := os.Open(filepath.Join(dir, "whole", fmt.Sprintf("seed%d.bin.gz", seed)))
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,23 +74,36 @@ func loadBDSWorld(t testing.TB, dir string, seed int64) *bdsWorld {
 	}
 	r := bufio.NewReaderSize(zr, 1<<20)
 	magic := make([]byte, 5)
-	if _, err := io.ReadFull(r, magic); err != nil || string(magic) != "OMBW1" {
-		t.Fatalf("seed %d: not a whole-world file", seed)
+	if _, err := io.ReadFull(r, magic); err != nil || (string(magic) != "OMBW1" && string(magic) != "OMBW2") {
+		t.Fatalf("%s: not a whole-world file", path)
 	}
-	var hdr [4]int32
-	if err := binary.Read(r, binary.LittleEndian, &hdr); err != nil {
-		t.Fatal(err)
+	var w *bdsWorld
+	var count int32
+	if string(magic) == "OMBW1" {
+		var hdr [4]int32
+		if err := binary.Read(r, binary.LittleEndian, &hdr); err != nil {
+			t.Fatal(err)
+		}
+		w = &bdsWorld{seed: int64(hdr[0]), x0: int(hdr[1]), x1: int(hdr[2]), z0: int(hdr[1]), z1: int(hdr[2])}
+		count = hdr[3]
+	} else {
+		var hdr [6]int32
+		if err := binary.Read(r, binary.LittleEndian, &hdr); err != nil {
+			t.Fatal(err)
+		}
+		w = &bdsWorld{seed: int64(hdr[0]), x0: int(hdr[1]), x1: int(hdr[2]), z0: int(hdr[3]), z1: int(hdr[4])}
+		count = hdr[5]
 	}
-	w := &bdsWorld{seed: int64(hdr[0]), c0: int(hdr[1]), c1: int(hdr[2]), chunks: map[[2]int]*bdsChunk{}}
-	for range hdr[3] {
+	w.chunks = map[[2]int]*bdsChunk{}
+	for range count {
 		var n uint16
 		binary.Read(r, binary.LittleEndian, &n)
 		b := make([]byte, n)
 		io.ReadFull(r, b)
 		w.names = append(w.names, strings.TrimPrefix(string(b), "minecraft:"))
 	}
-	for cz := w.c0; cz < w.c1; cz++ {
-		for cx := w.c0; cx < w.c1; cx++ {
+	for cz := w.z0; cz < w.z1; cz++ {
+		for cx := w.x0; cx < w.x1; cx++ {
 			p, err := r.ReadByte()
 			if err != nil {
 				t.Fatal(err)
@@ -105,7 +124,7 @@ func loadBDSWorld(t testing.TB, dir string, seed int64) *bdsWorld {
 			w.chunks[[2]int{cx, cz}] = c
 		}
 	}
-	bdsWorlds.Store(seed, w)
+	bdsWorlds.Store(path, w)
 	return w
 }
 
@@ -243,11 +262,16 @@ func stoneClass(n string) byte {
 
 // scoreBedrockSeed generates a seed's chunks with the Bedrock profile and compares them with BDS.
 func scoreBedrockSeed(t testing.TB, dir string, seed int64) *bedrockScore {
-	w := loadBDSWorld(t, dir, seed)
+	return scoreBDSWorld(t, loadBDSWorld(t, dir, seed), true)
+}
+
+// scoreBDSWorld scores a loaded world, leaving out structure chunks if asked.
+func scoreBDSWorld(t testing.TB, w *bdsWorld, skipStructures bool) *bedrockScore {
+	seed := w.seed
 	var pos [][2]int32
-	for cz := w.c0; cz < w.c1; cz++ {
-		for cx := w.c0; cx < w.c1; cx++ {
-			if _, ok := w.chunks[[2]int{cx, cz}]; ok && !w.skipForStructure(cx, cz) {
+	for cz := w.z0; cz < w.z1; cz++ {
+		for cx := w.x0; cx < w.x1; cx++ {
+			if _, ok := w.chunks[[2]int{cx, cz}]; ok && (!skipStructures || !w.skipForStructure(cx, cz)) {
 				pos = append(pos, [2]int32{int32(cx), int32(cz)})
 			}
 		}
@@ -325,13 +349,41 @@ func (sc *bedrockScore) report(t testing.TB) {
 	t.Logf("  bedrock floor %d/%d, deepslate class %d/%d %v", sc.floorOK, sc.floorN, sc.deepOK, sc.deepN, sc.deepMiss)
 }
 
-// TestBedrockWorldsMatchBDS reports the whole-block match per seed on the stable mask, and holds the
+// TestBedrockWorldsMatchBDS needs OVERMIND_BEDROCK_DATA too: without the data the Bedrock profile
+// generates its features with the built-in placement. It reports the whole-block match per seed on the stable mask, and holds the
 // families the study found exact to every block: the bedrock floor (R1) and the deepslate gradient (R2).
 func TestBedrockWorldsMatchBDS(t *testing.T) {
 	dir := goldenBedrockDir(t)
+	testBedrockData(t)
 	for _, seed := range bedrockTestSeeds {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
 			sc := scoreBedrockSeed(t, dir, seed)
+			sc.report(t)
+			if sc.floorOK != sc.floorN {
+				t.Errorf("bedrock floor: %d of %d blocks differ from BDS", sc.floorN-sc.floorOK, sc.floorN)
+			}
+			if sc.deepOK != sc.deepN {
+				t.Errorf("deepslate gradient: %d of %d host blocks differ from BDS", sc.deepN-sc.deepOK, sc.deepN)
+			}
+		})
+	}
+}
+
+// TestBedrockWindowsMatchBDS scores the study's biome windows (golden-bedrock/whole/windows, from
+// golden-bedrock/biomes: 9 x 9 chunks of one biome each, with their own unstable masks), with no
+// structure skipping, as the study scores them. It holds the floor and the deepslate gradient exact
+// and reports the rest.
+func TestBedrockWindowsMatchBDS(t *testing.T) {
+	dir := goldenBedrockDir(t)
+	testBedrockData(t)
+	files, _ := filepath.Glob(filepath.Join(dir, "whole", "windows", "*.bin.gz"))
+	if len(files) == 0 {
+		t.Skip("no windows exported in whole/windows")
+	}
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), ".bin.gz")
+		t.Run(name, func(t *testing.T) {
+			sc := scoreBDSWorld(t, loadBDSFile(t, f), false)
 			sc.report(t)
 			if sc.floorOK != sc.floorN {
 				t.Errorf("bedrock floor: %d of %d blocks differ from BDS", sc.floorN-sc.floorOK, sc.floorN)

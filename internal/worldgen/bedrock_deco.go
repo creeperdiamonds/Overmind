@@ -183,11 +183,11 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	for _, pl := range d.g.profile.placements {
 		if !underground && pl.step >= oreStep {
 			underground = true
-			d.bedrockPass(bedrockUnderground)
+			d.bedrockPass(d.g.bdata.underground)
 		}
 		if !surface && pl.step >= vegetationStep {
 			surface = true
-			d.bedrockPass(bedrockSurfacePass)
+			d.bedrockPass(d.g.bdata.surface)
 		}
 		if d.g.profile.bedrockReplaces[pl.name] || !placementInBiomes(pl, biomes) {
 			continue
@@ -196,10 +196,10 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 		d.run(pl.mods, pl.feat, pos{ox, minY, oz})
 	}
 	if !underground {
-		d.bedrockPass(bedrockUnderground)
+		d.bedrockPass(d.g.bdata.underground)
 	}
 	if !surface {
-		d.bedrockPass(bedrockSurfacePass)
+		d.bedrockPass(d.g.bdata.surface)
 	}
 }
 
@@ -300,7 +300,9 @@ type bedrockRule struct {
 	ident      string
 	hash       uint32
 	iterations int
-	num, den   int      // scatter_chance as a fraction; den 0 for none.
+	num, den   int     // scatter_chance as a fraction; den 0 for none.
+	percent    float32 // scatter_chance as a percentage, with hasPercent.
+	hasPercent bool
 	order      [3]int   // Axis indexes in coordinate_eval_order.
 	axes       [3]bAxis // x, y, z.
 	biomes     [2]uint64
@@ -344,6 +346,9 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 	if rule.den > 0 && rule.num != rule.den && int(r1.nextIntN(int32(rule.den))) >= rule.num {
 		return
 	}
+	if rule.hasPercent && rule.percent < 100 && (rule.percent <= 0 || float32(r1.nextFloat()*100) >= rule.percent) {
+		return
+	}
 	for i := rule.iterations - 1; i >= 0; i-- {
 		p := [3]int{d.cx * 16, 0, d.cz * 16}
 		for _, a := range rule.order {
@@ -361,22 +366,4 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		}
 		rule.place(d, &d.br2, pos{p[0], p[1], p[2]})
 	}
-}
-
-// biomeBits makes a biome set from Bedrock biome names, or every biome of the table for "all".
-func biomeBits(names string) (set [2]uint64) {
-	want := map[string]bool{}
-	for _, n := range fieldsOf(names) {
-		want[n] = true
-	}
-	for i := range biomeTableNames {
-		if names == "all" || want[biomeRowDefs[i].String()] {
-			set[i>>6] |= 1 << (i & 63)
-			delete(want, biomeRowDefs[i].String())
-		}
-	}
-	if names != "all" && len(want) > 0 {
-		panic("worldgen: unknown Bedrock biome in a rule's list")
-	}
-	return set
 }

@@ -105,7 +105,7 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 	if stage == stageSurface {
 		return
 	}
-	if g.profile.carversBedrock {
+	if g.profile.carversBedrock && g.bdata != nil {
 		g.applyBedrockCarvers(b, s, x0, x1, z0, z1)
 		return
 	}

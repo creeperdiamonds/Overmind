@@ -166,7 +166,9 @@ type steepAdjust struct {
 	north, south, west, east bool
 }
 
-// surfaceRow is a biome's surface builder as transcribed.
+// surfaceRow is a biome's surface builder as read from its biome file (bedrock_pack.go): the
+// components minecraft:surface_builder, minecraft:mountain_parameters' steep adjustment,
+// minecraft:surface_material_adjustments and minecraft:climate's temperature.
 type surfaceRow struct {
 	biome, kind                      string
 	top, mid, floor, foundation, sea string
@@ -174,67 +176,6 @@ type surfaceRow struct {
 	temperature                      float32
 	steep                            steepAdjust
 	adjust                           []surfaceAdjust
-}
-
-// surfaceRows are the vanilla behaviour pack's biome files of BDS 1.26.60.6, as the study read them
-// (components minecraft:surface_builder, minecraft:mountain_parameters' steep adjustment,
-// minecraft:surface_material_adjustments, minecraft:climate temperature), for the biomes we make. No
-// adjustment of these biomes has a height range.
-var surfaceRows = []surfaceRow{
-	{"mushroom_island", "overworld", "mycelium", "dirt", "gravel", "stone", "water", 7, 0.9, steepAdjust{}, nil},
-	{"deep_frozen_ocean", "frozen_ocean", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"frozen_ocean", "frozen_ocean", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.0, steepAdjust{}, nil},
-	{"deep_cold_ocean", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"cold_ocean", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"deep_ocean", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"ocean", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"deep_lukewarm_ocean", "overworld", "grass_block", "dirt", "sand", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"lukewarm_ocean", "overworld", "grass_block", "dirt", "sand", "stone", "water", 3, 0.5, steepAdjust{}, nil},
-	{"warm_ocean", "overworld", "grass_block", "dirt", "sand", "stone", "water", 3, 0.5, steepAdjust{}, nil},
-	{"stone_beach", "overworld", "stone", "stone", "gravel", "stone", "water", 7, 0.2, steepAdjust{}, []surfaceAdjust{{0.03175, -0.05, 0.05, "gravel", "gravel", "", "", ""}}},
-	{"swampland", "swamp", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.8, steepAdjust{}, nil},
-	{"mangrove_swamp", "swamp", "mud", "mud", "mud", "stone", "water", 7, 0.8, steepAdjust{}, nil},
-	{"snowy_slopes", "overworld", "snow", "snow", "gravel", "stone", "water", 7, -0.3, steepAdjust{"stone", true, false, false, true}, []surfaceAdjust{{0.1, 0.35, 0.6, "powder_snow", "", "", "", ""}, {0.1, 0.45, 0.58, "", "powder_snow", "", "", ""}}},
-	{"ice_plains", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.0, steepAdjust{}, nil},
-	{"cold_beach", "overworld", "sand", "sand", "gravel", "stone", "water", 7, 0.05, steepAdjust{}, nil},
-	{"extreme_hills_mutated", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.2, steepAdjust{}, []surfaceAdjust{{0.0625, -1.0, -0.012, "gravel", "gravel", "", "", ""}, {0.0625, 0.024, 1.0, "gravel", "gravel", "", "", ""}}},
-	{"grove", "overworld", "snow", "dirt", "gravel", "stone", "water", 7, -0.2, steepAdjust{}, []surfaceAdjust{{0.1, 0.35, 0.6, "powder_snow", "", "", "", ""}, {0.1, 0.45, 0.58, "", "powder_snow", "", "", ""}}},
-	{"extreme_hills", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.2, steepAdjust{}, []surfaceAdjust{{0.0625, 0.121, 1.0, "stone", "stone", "", "", ""}}},
-	{"cold_taiga", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, -0.5, steepAdjust{}, nil},
-	{"extreme_hills_plus_trees", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.2, steepAdjust{}, nil},
-	{"taiga", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.25, steepAdjust{}, nil},
-	{"plains", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.8, steepAdjust{}, nil},
-	{"meadow", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.3, steepAdjust{}, nil},
-	{"beach", "overworld", "sand", "sand", "gravel", "stone", "water", 7, 0.8, steepAdjust{}, nil},
-	{"forest", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.7, steepAdjust{}, nil},
-	{"redwood_taiga_mutated", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.25, steepAdjust{}, []surfaceAdjust{{0.0625, 0.212, 1.0, "coarse_dirt", "", "", "", ""}, {0.0625, -0.115, 0.212, "podzol", "", "", "", ""}}},
-	{"flower_forest", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.7, steepAdjust{}, nil},
-	{"birch_forest", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.6, steepAdjust{}, nil},
-	{"roofed_forest", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.7, steepAdjust{}, nil},
-	{"pale_garden", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.7, steepAdjust{}, nil},
-	{"savanna_plateau", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 1.0, steepAdjust{}, nil},
-	{"savanna", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 1.2, steepAdjust{}, nil},
-	{"jungle", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.95, steepAdjust{}, nil},
-	{"mesa", "mesa", "red_sand", "hardened_clay", "gravel", "stone", "water", 7, 2.0, steepAdjust{}, nil},
-	{"desert", "overworld", "sand", "sand", "gravel", "stone", "water", 7, 2.0, steepAdjust{}, nil},
-	{"mesa_plateau_stone", "mesa", "red_sand", "hardened_clay", "gravel", "stone", "water", 7, 2.0, steepAdjust{}, nil},
-	{"jagged_peaks", "overworld", "snow", "stone", "stone", "stone", "water", 7, -0.7, steepAdjust{"stone", true, false, false, true}, nil},
-	{"stony_peaks", "overworld", "stone", "stone", "gravel", "stone", "water", 7, 1.0, steepAdjust{"stone", true, false, false, true}, []surfaceAdjust{{0.015, -0.0125, 0.0125, "calcite", "calcite", "", "", ""}}},
-	{"frozen_river", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.0, steepAdjust{}, nil},
-	{"river", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.5, steepAdjust{}, nil},
-	{"ice_plains_spikes", "overworld", "snow", "dirt", "gravel", "stone", "water", 7, 0.0, steepAdjust{}, nil},
-	{"mega_taiga", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.3, steepAdjust{}, []surfaceAdjust{{0.0625, 0.212, 1.0, "coarse_dirt", "", "", "", ""}, {0.0625, -0.115, 0.212, "podzol", "", "", "", ""}}},
-	{"sunflower_plains", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.8, steepAdjust{}, nil},
-	{"birch_forest_mutated", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.6, steepAdjust{}, nil},
-	{"jungle_edge", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.95, steepAdjust{}, nil},
-	{"bamboo_jungle", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.95, steepAdjust{}, nil},
-	{"mesa_bryce", "mesa", "red_sand", "hardened_clay", "gravel", "stone", "water", 7, 2.0, steepAdjust{}, nil},
-	{"savanna_mutated", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 2.0, steepAdjust{}, []surfaceAdjust{{0.0625, 0.212, 1.0, "stone", "stone", "", "", ""}, {0.0625, -0.061, 0.212, "coarse_dirt", "", "", "", ""}}},
-	{"cherry_grove", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.3, steepAdjust{}, nil},
-	{"frozen_peaks", "overworld", "snow", "snow", "ice", "stone", "water", 7, -0.7, steepAdjust{"packed_ice", true, false, false, true}, []surfaceAdjust{{0.0625, -0.5, 0.2, "", "packed_ice", "", "", ""}, {0.0625, 0.0, 0.2, "packed_ice", "", "", "", ""}, {0.5, -0.0625, 0.025, "", "ice", "", "", ""}, {0.5, 0.0, 0.025, "ice", "", "", "", ""}}},
-	{"dripstone_caves", "overworld", "stone", "dirt", "gravel", "stone", "water", 7, 0.2, steepAdjust{}, nil},
-	{"lush_caves", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.9, steepAdjust{}, nil},
-	{"deep_dark", "overworld", "grass_block", "dirt", "gravel", "stone", "water", 7, 0.8, steepAdjust{}, nil},
 }
 
 // surfaceMats is the five materials a column is built with.
@@ -269,6 +210,8 @@ type bedrockSurface struct {
 // surfaceState is a material's state. Bedrock's snow block is our snow_block, hardened clay terracotta.
 func surfaceState(name string) bs {
 	switch name {
+	case "":
+		return sAir
 	case "snow":
 		return stateOf("snow_block")
 	case "hardened_clay":
@@ -277,8 +220,8 @@ func surfaceState(name string) bs {
 	return stateOf(name)
 }
 
-func newBedrockSurface(seed int64, w seedFactory) *bedrockSurface {
-	bsf := &bedrockSurface{}
+func newBedrockSurface(seed int64, w seedFactory, bd *BedrockData) *bedrockSurface {
+	bsf := &bedrockSurface{biomes: bd.surfaceBiomes}
 	x := w.named("minecraft:surface")
 	bsf.depth = newBSimplexStack(4, x.nextFloat, func(n uint32) int32 { return int32(x.nextInt(n)) }, false)
 	m := newBMT(bedrockLevelSeed(seed))
@@ -286,48 +229,42 @@ func newBedrockSurface(seed int64, w seedFactory) *bedrockSurface {
 		m.u32()
 	}
 	bsf.adjust = newBSimplexStack(3, m.nextFloat, func(n uint32) int32 { return int32(m.u32() % n) }, true)
-	rows := map[string]*surfaceRow{}
-	for i := range surfaceRows {
-		rows[surfaceRows[i].biome] = &surfaceRows[i]
-	}
-	for i := range biomeTableNames {
-		r := rows[biomeRowDefs[i].String()]
-		if r == nil {
-			panic("worldgen: no Bedrock surface row for " + biomeTableNames[i])
-		}
-		sb := &bsf.biomes[i]
-		sb.overworld = r.kind == "overworld"
-		sb.mats = surfaceMats{surfaceState(r.top), surfaceState(r.mid), surfaceState(r.floor), surfaceState(r.foundation), surfaceState(r.sea)}
-		sb.seaDepth, sb.temp = int32(r.seaDepth), r.temperature
-		if r.steep.material != "" {
-			sb.hasSteep, sb.steep = true, surfaceState(r.steep.material)
-			sb.north, sb.south, sb.west, sb.east = r.steep.north, r.steep.south, r.steep.west, r.steep.east
-		}
-		for _, a := range r.adjust {
-			x := surfaceAdj{scale: a.scale, lo: a.lo, hi: a.hi}
-			for k, n := range [5]string{a.top, a.mid, a.floor, a.foundation, a.sea} {
-				if n == "" {
-					continue
-				}
-				x.has[k] = true
-				s := surfaceState(n)
-				switch k {
-				case 0:
-					x.mats.top = s
-				case 1:
-					x.mats.mid = s
-				case 2:
-					x.mats.floor = s
-				case 3:
-					x.mats.foundation = s
-				case 4:
-					x.mats.sea = s
-				}
-			}
-			sb.adj = append(sb.adj, x)
-		}
-	}
 	return bsf
+}
+
+// compile turns a biome's builder as read into our states.
+func (r *surfaceRow) compile() (sb surfaceBiome) {
+	sb.overworld = r.kind == "overworld"
+	sb.mats = surfaceMats{surfaceState(r.top), surfaceState(r.mid), surfaceState(r.floor), surfaceState(r.foundation), surfaceState(r.sea)}
+	sb.seaDepth, sb.temp = int32(r.seaDepth), r.temperature
+	if r.steep.material != "" {
+		sb.hasSteep, sb.steep = true, surfaceState(r.steep.material)
+		sb.north, sb.south, sb.west, sb.east = r.steep.north, r.steep.south, r.steep.west, r.steep.east
+	}
+	for _, a := range r.adjust {
+		x := surfaceAdj{scale: a.scale, lo: a.lo, hi: a.hi}
+		for k, n := range [5]string{a.top, a.mid, a.floor, a.foundation, a.sea} {
+			if n == "" {
+				continue
+			}
+			x.has[k] = true
+			s := surfaceState(n)
+			switch k {
+			case 0:
+				x.mats.top = s
+			case 1:
+				x.mats.mid = s
+			case 2:
+				x.mats.floor = s
+			case 3:
+				x.mats.foundation = s
+			case 4:
+				x.mats.sea = s
+			}
+		}
+		sb.adj = append(sb.adj, x)
+	}
+	return sb
 }
 
 // adjustValue is the adjustment noise at a column: octaves at falling frequency, each weighted by the

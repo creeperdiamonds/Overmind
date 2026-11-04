@@ -63,7 +63,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build server config: %w", err)
 	}
-	gen := worldgen.NewWithProfile(seed, profile)
+	gen := worldgen.NewWithData(seed, profile, bedrockData(log, cfg.BedrockDataDir, profile))
 	guard := &offTick{g: gen}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		if dim == world.Overworld {
@@ -124,4 +124,23 @@ func unusedGenerator(dim world.Dimension) world.Generator {
 		return generator.NewFlat(biome.NetherWastes{}, []world.Block{block.Netherrack{}, block.Bedrock{}})
 	}
 	return generator.NewFlat(biome.End{}, []world.Block{block.EndStone{}, block.Bedrock{}})
+}
+
+// bedrockData reads Bedrock's feature data for the Bedrock profile. It never fails the start: with no
+// folder set, or one it cannot read, it logs one line and the profile uses its built-in features.
+func bedrockData(log *slog.Logger, dir string, profile *worldgen.Profile) *worldgen.BedrockData {
+	if profile != worldgen.ProfileBedrock {
+		return nil
+	}
+	if dir == "" {
+		log.Warn("No Bedrock install is set (BedrockDataDir): world features are approximate, from built-in placement, not Bedrock's own.")
+		return nil
+	}
+	bd, err := worldgen.LoadBedrockData(dir)
+	if err != nil {
+		log.Warn("Bedrock feature data could not be read: world features are approximate, from built-in placement, not Bedrock's own.", "folder", dir, "error", err)
+		return nil
+	}
+	log.Info("Bedrock feature data read", "folder", dir, "read", bd.Summary())
+	return bd
 }

@@ -44,10 +44,10 @@ A source reads at most 3 chunks from itself (`sourceReach`); past that a read is
 - Deepslate in the noise stage under "minecraft:depth_based_layer" (R2); `bedrock_surface.go`: the default surface builder (phase 5), with the Java rules kept for the mesa, swamp and frozen ocean builders not read yet.
 - `bedrock_carvers.go`: the two cave carvers and the canyon (5a, 5b, P2), instead of Java's carvers.
 - `bedrock_deco.go`: decoration in BDS's parity order (Q0). A source runs on top of its lower-phase neighbours' writes, each decorated the same way, so a chunk is still a pure function of seed and position; final blocks apply the nine sources by phase, then z, then x. Rule scatter (section 3) and a run per biome of the chunk.
-- `bedrock_ores.go`: the underground pass, 36 ore and rock rules with OreFeature's shape (section 4); `bedrock_disks.go`: the sand, gravel and clay disks (R5).
+- `bedrock_ores.go`: OreFeature (section 4) for the underground pass's ore and rock rules, with T2's rule that a one-biome chunk does not height-test positions; `bedrock_disks.go`: the sand, gravel and clay disks (R5).
 - Everything else (trees, plants, lakes, lush caves, sculk, dripstone, ocean plants and the rest) is still Java's algorithm with Bedrock's data values where the data files differ (iron and diamond sizes, infested ores, climates), run among Bedrock's passes in Java's steps.
 
-Rule parameters are transcribed from the vanilla behaviour pack as cited constants, not read at run time. `TestBedrockWorldsMatchBDS` and `TestBedrockFirstOreBlobs` compare with BDS worlds under `OVERMIND_GOLDEN_BEDROCK`; see the Task 4e report for the scores.
+Bedrock's feature data (features, feature rules, biomes) is read at startup from a local Bedrock install (`BedrockDataDir`, `bedrock_pack.go`), by the owner's decision of 2026-11-04: the newest vanilla pack's copy of each file, the pass order from the study's libc++ map model, the server's definitions folder for what no pack has. Only code-confirmed algorithm constants (RNG, hashes, the floor, canyons, code-registered features) are in the repo. With no install the Bedrock profile keeps the floor and deepslate gradient and uses the built-in Java-based surface, carvers and features, which are approximate; the server logs one line saying so. Tests read the data from `OVERMIND_BEDROCK_DATA` and skip without it. `TestBedrockWorldsMatchBDS` and `TestBedrockFirstOreBlobs` compare with BDS worlds under `OVERMIND_GOLDEN_BEDROCK`; see the Task 4e report for the scores.
 
 ## Water
 

@@ -10,19 +10,15 @@ import "math"
 // bedrockCarverReach is how far, in chunks, a source's carver can reach (sections 5a and 5b: cx-8..cx+8).
 const bedrockCarverReach = 8
 
-// caveCarver is one cave carver's configuration (section 5a and P2).
+// caveCarver is one cave carver feature's configuration, read from its file (section 5a and P2):
+// skip_carve_chance, height_limit, y_scale, the radius multipliers (rooms only), floor_level and
+// width_modifier. The pregeneration pass's rules say which carvers run, in the pass's order.
 type caveCarver struct {
 	skip, heightLimit int32
-	roomH, roomV      [2]float32 // horizontal and vertical radius multipliers, for rooms only
+	yScale            [2]float32
+	roomH, roomV      [2]float32
 	floor             [2]float32
-}
-
-// bedrockCaveCarvers are the two cave carvers that run: the extra carver (skip_carve_chance 66,
-// height_limit 103) and the main carver (33, 236), with the extra carver's multipliers, which the
-// main one shares (section 5a; P2 found the main carver runs and that only the skip and y draws differ).
-var bedrockCaveCarvers = [2]caveCarver{
-	{skip: 66, heightLimit: 103, roomH: [2]float32{0.7, 1.4}, roomV: [2]float32{0.8, 1.3}, floor: [2]float32{-1, -0.4}},
-	{skip: 33, heightLimit: 236, roomH: [2]float32{0.7, 1.4}, roomV: [2]float32{0.8, 1.3}, floor: [2]float32{-1, -0.4}},
+	width             float32
 }
 
 // caveSegment is one step of a tunnel or a room: its centre in carver space (Y + 64), radii, floor,
@@ -32,7 +28,6 @@ type caveSegment struct {
 	step, dist                int32
 	thick                     float32
 }
-
 
 func sinf(v float32) float32 { return float32(math.Sin(float64(v))) }
 func cosf(v float32) float32 { return float32(math.Cos(float64(v))) }
@@ -64,10 +59,10 @@ func (cc *caveCarver) caveSource(bs bedrockSeeds, sx, sz int, out []caveSegment)
 			f := r.nextFloat()
 			t := newBMT(uint32(r.nextInt()))
 			thick := float32(f*6) + 1
-			ys := lerpDraw(t, 0.1, 0.9)
+			ys := lerpDraw(t, cc.yScale[0], cc.yScale[1])
 			dist := 112 - int32(t.u32()%28)
 			step := dist >> 1
-			rad := float32(sinf(float32(float32(step)*pi32)/float32(dist))*thick) + 1.5
+			rad := float32(sinf(float32(float32(step)*pi32)/float32(dist))*float32(cc.width+thick)) + 1.5
 			out = append(out, caveSegment{float32(x), float32(y), float32(z), rad * hm, float32(ys*rad) * vm, fl, step, dist, thick})
 			tunnels = r.nextIntN(4) + 1
 		}
@@ -83,7 +78,7 @@ func (cc *caveCarver) caveSource(bs bedrockSeeds, sx, sz int, out []caveSegment)
 				th *= float32(float32(h2*h1)*3) + 1
 			}
 			dist := 112 - r.nextIntN(28)
-			out = caveTunnel(r, out, float32(x), float32(y), float32(z), th, yaw, pitch, 1, 0, dist, fl)
+			out = caveTunnel(r, out, float32(x), float32(y), float32(z), th, yaw, pitch, 1, 0, dist, fl, cc.width)
 		}
 	}
 	return out
@@ -91,7 +86,7 @@ func (cc *caveCarver) caveSource(bs bedrockSeeds, sx, sz int, out []caveSegment)
 
 // caveTunnel walks one tunnel (section 5a, addTunnel), drawing from its own generator seeded by the
 // parent's next int, and forking once at its branch point.
-func caveTunnel(parent *bmt, out []caveSegment, x, y, z, thick, yaw, pitch, yScale float32, step, dist int32, floor float32) []caveSegment {
+func caveTunnel(parent *bmt, out []caveSegment, x, y, z, thick, yaw, pitch, yScale float32, step, dist int32, floor, width float32) []caveSegment {
 	r := newBMT(uint32(parent.nextInt()))
 	if dist < 1 {
 		dist = 112 - int32(r.u32()%28)
@@ -128,12 +123,12 @@ func caveTunnel(parent *bmt, out []caveSegment, x, y, z, thick, yaw, pitch, ySca
 		pitchC = float32(float32(f[2]*(f[0]-f[1]))*2.0) + pd
 		if thick > 1 && bp == step {
 			t1 := float32(r.rawFloat()*0.5) + 0.5
-			out = caveTunnel(r, out, x, y, z, t1, yaw+float32(-1.5707963705062866), pitch/3, 1, bp, dist, floor)
+			out = caveTunnel(r, out, x, y, z, t1, yaw+float32(-1.5707963705062866), pitch/3, 1, bp, dist, floor, width)
 			t2 := float32(r.rawFloat()*0.5) + 0.5
-			return caveTunnel(r, out, x, y, z, t2, yaw+float32(1.5707963705062866), pitch/3, 1, bp, dist, floor)
+			return caveTunnel(r, out, x, y, z, t2, yaw+float32(1.5707963705062866), pitch/3, 1, bp, dist, floor, width)
 		}
 		if r.u32()%4 != 0 {
-			rad := float32(sv*thick) + 1.5 // width_modifier is 0; no room multipliers on tunnels
+			rad := float32(sv*float32(width+thick)) + 1.5 // no room multipliers on tunnels
 			out = append(out, caveSegment{x, y, z, rad, float32(yScale * rad), floor, step, dist, thick})
 		}
 		if dist <= step+1 {
@@ -380,8 +375,8 @@ func (g *Generator) applyBedrockCarvers(b *baseChunk, s *chunkScratch, x0, x1, z
 	segs := s.caveSegs[:0]
 	for sx := b.cx - bedrockCarverReach; sx <= b.cx+bedrockCarverReach; sx++ {
 		for sz := b.cz - bedrockCarverReach; sz <= b.cz+bedrockCarverReach; sz++ {
-			for i := range bedrockCaveCarvers {
-				cc := &bedrockCaveCarvers[i]
+			for i := range g.bdata.carvers {
+				cc := &g.bdata.carvers[i]
 				segs = cc.caveSource(g.bseeds, sx, sz, segs[:0])
 				lim := min(cc.heightLimit, int32(maxY-minY+1-2))
 				for k := range segs {

@@ -38,6 +38,7 @@ type Generator struct {
 	profile   *Profile
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
 	bseeds    bedrockSeeds    // Bedrock's decoration seeds.
+	bdata     *BedrockData    // Bedrock's feature data, nil when no install was read.
 	geodeOnce sync.Once
 	geode     *normalNoise
 }
@@ -45,8 +46,16 @@ type Generator struct {
 // New returns a Generator for a seed, with the default profile, Bedrock's.
 func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
 
-// NewWithProfile returns a Generator for a seed and a placement profile.
+// NewWithProfile returns a Generator for a seed and a placement profile, with the feature data set
+// by SetDefaultBedrockData.
 func NewWithProfile(seed int64, profile *Profile) *Generator {
+	return NewWithData(seed, profile, defaultBedrockData)
+}
+
+// NewWithData returns a Generator for a seed, a profile and Bedrock's feature data. The Bedrock
+// profile follows Bedrock's own features only with data; with nil it uses the built-in, Java-based
+// features, which are approximate. Overjava never reads it.
+func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 	root := xoroFromSeed(seed)
 	w := root.forkFactory()
 	aquifer := w.named("minecraft:aquifer")
@@ -67,11 +76,19 @@ func NewWithProfile(seed int64, profile *Profile) *Generator {
 		blocks:     newBlocks(),
 		bseeds:     newBedrockSeeds(seed),
 	}
-	if profile.surfaceBedrock {
-		g.bsurf = newBedrockSurface(seed, w)
+	if !profile.bedrockDeco && !profile.surfaceBedrock && !profile.carversBedrock {
+		bd = nil
+	}
+	g.bdata = bd
+	if profile.surfaceBedrock && bd != nil {
+		g.bsurf = newBedrockSurface(seed, w, bd)
 	}
 	return g
 }
+
+// bedrockDeco says whether decoration follows Bedrock's order and passes: the profile asks for it and
+// the data is there.
+func (g *Generator) bedrockDeco() bool { return g.profile.bedrockDeco && g.bdata != nil }
 
 // chunkScratch holds working space for one GenerateChunk call. It goes back in a pool. What can be
 // read again later, preliminary levels and walk corners, is a pure function of the generator and a
@@ -89,7 +106,7 @@ type chunkScratch struct {
 	rule        ruleContext
 	base        baseChunk
 	masks       [256]carveMask
-	caveSegs    []caveSegment   // The Bedrock carvers' segments of one source (bedrock_carvers.go).
+	caveSegs    []caveSegment // The Bedrock carvers' segments of one source (bedrock_carvers.go).
 	canyonSegs  []canyonSegment
 	deco        decoration
 	copies      []*baseChunk // Spare full buffers, which the working set's chunks are expanded into.
@@ -137,7 +154,7 @@ func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 
 // finalCells makes a chunk's finished blocks, in the scratch.
 func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
-	if g.profile.bedrockDeco {
+	if g.bedrockDeco() {
 		return g.finalCellsParity(s, cx, cz)
 	}
 	final := &s.final
@@ -376,7 +393,7 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 	}
 	var grounds []ground
 	for i, c := range s.changes {
-		if d.g.profile.bedrockDeco {
+		if d.g.bedrockDeco() {
 			break // In the Bedrock order a source's ground is what the finished world has.
 		}
 		if !standsOnBelow(c.now) || c.cell < 256 {
