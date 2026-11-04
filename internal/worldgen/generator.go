@@ -227,6 +227,9 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 		if endPodiumChunk(cx, cz) {
 			placeEndPodium(cells, cx, cz, g.endPodiumTop(s))
 		}
+		if endPlatformChunk(cx, cz) {
+			placeEndPlatform(cells, cx, cz)
+		}
 		writeRows(c, cells, 256)
 		storeUniformBiome(c, uint32(biome.End{}.EncodeBiome()), 256)
 		return
@@ -729,7 +732,7 @@ func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	case dimNether:
 		return cube.Pos{0, 64, 0} // Players reach the Nether through portals, which find their own place.
 	case dimEnd:
-		return cube.Pos{100, 49, 0} // Where the End's arrival platform goes.
+		return cube.Pos{endPlatformX, endPlatformY, endPlatformZ} // On the arrival platform (end_gen.go).
 	}
 	const step, reach = 32, 2048
 	for r := 0; r <= reach; r += step {

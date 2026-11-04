@@ -75,7 +75,9 @@ var (
 )
 
 // bImproved is Java's ImprovedNoise made from Bedrock's MT (PerlinNoise_ctor's legacy branch): three
-// offsets nextDouble*256 kept as floats, then a shuffle.
+// offsets nextDouble*256 kept as floats, then a shuffle. It stays apart from legacyOctave (the Nether's
+// and End's float32 sampler): the geode's noise is evaluated in double precision, and offsets drawn by
+// nextDouble, so the two give different values.
 type bImproved struct {
 	xo, yo, zo float64
 	p          [256]int32

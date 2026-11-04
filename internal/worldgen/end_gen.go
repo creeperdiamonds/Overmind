@@ -52,6 +52,35 @@ func (g *Generator) endPodiumTop(s *chunkScratch) int {
 	return 0
 }
 
+// The End's arrival platform. Java builds it when an entity arrives (ServerLevel.makeObsidianPlatform):
+// 5 x 5 of obsidian under (100, 49, 0) with three rows of air over it. Bedrock's rule was not read, and
+// nothing here moves a player to the End yet; it is placed with the chunks so the End's spawn stands on
+// something (assumed, Java's).
+const endPlatformX, endPlatformY, endPlatformZ = 100, 49, 0
+
+// endPlatformChunk says whether the platform reaches a chunk.
+func endPlatformChunk(cx, cz int) bool {
+	return cx == (endPlatformX-2)>>4 && (cz == (endPlatformZ-2)>>4 || cz == (endPlatformZ+2)>>4)
+}
+
+// placeEndPlatform writes the platform's cells that fall in a chunk.
+func placeEndPlatform(cells *[chunkCells]bs, cx, cz int) {
+	for x := endPlatformX - 2; x <= endPlatformX+2; x++ {
+		for z := endPlatformZ - 2; z <= endPlatformZ+2; z++ {
+			if x>>4 != cx || z>>4 != cz {
+				continue
+			}
+			for dy := -1; dy <= 2; dy++ {
+				s := sAir
+				if dy == -1 {
+					s = sObsidian
+				}
+				cells[cellIndex(x&15, endPlatformY+dy, z&15)] = s
+			}
+		}
+	}
+}
+
 // endPodiumChunk says whether the exit portal reaches a chunk: it spans X and Z -4..4.
 func endPodiumChunk(cx, cz int) bool { return cx >= -1 && cx <= 0 && cz >= -1 && cz <= 0 }
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/block"
+	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
@@ -48,6 +49,13 @@ func TestEndMainIsland(t *testing.T) {
 	}
 	if _, ok := endBlockAt(c, 5, top-3, 5).(block.EndStone); !ok {
 		t.Errorf("no end stone under the island's top: %#v", endBlockAt(c, 5, top-3, 5))
+	}
+	pc := endChunk(t, g, 6, 0)
+	if _, ok := endBlockAt(pc, 100, 48, 0).(block.Obsidian); !ok {
+		t.Errorf("no obsidian platform under the End's spawn: %#v", endBlockAt(pc, 100, 48, 0))
+	}
+	if sp := g.DefaultSpawn(world.End); sp != (cube.Pos{100, 49, 0}) {
+		t.Errorf("End spawn %v", sp)
 	}
 	guarded := 0
 	for _, sp := range g.endN.spikes {
