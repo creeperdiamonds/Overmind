@@ -161,6 +161,13 @@ type conn struct {
 	// World goroutine.
 	loader   *world.Loader
 	edits    map[cube.Pos]world.Block    // blocks changed this tick: the first layer's block, nil for a change to the second only
+	// The world's state as the client was last shown it, and this tick's sounds (worldstate.go).
+	dayTime          int64
+	dayStill         bool
+	raining, thunder bool
+	sounds           []pendingSound
+	events           [][]byte
+	ownActs          map[cube.Pos]struct{} // blocks the player used or broke this tick
 	dirty    map[world.ChunkPos]struct{} // to be sent again whole
 	center   world.ChunkPos
 	health   float32
@@ -242,6 +249,7 @@ func newConn(f *Front, wc *javawire.Conn, nc net.Conn, id *javalogin.Identity) *
 		f: f, wc: wc, nc: nc, id: id,
 		wake:      make(chan struct{}, 1),
 		edits:     map[cube.Pos]world.Block{},
+		ownActs:   map[cube.Pos]struct{}{},
 		dirty:     map[world.ChunkPos]struct{}{},
 		health:    20,
 		food:      20,
@@ -333,6 +341,7 @@ func (c *conn) join() error {
 		c.health, c.food, c.foodSat = float32(d.Health), int32(d.Food), float32(d.Saturation)
 		c.sendHealth()
 		c.viewW.Store(w)
+		c.sendWorldState(tx)
 		c.loader = world.NewLoader(c.f.opts.ViewDistance, w, c)
 		c.loader.Move(tx, pos)
 		c.sendInventory()
@@ -564,6 +573,7 @@ func (c *conn) tick(tx *world.Tx, p *player.Player) {
 func (c *conn) flushWorld() {
 	c.flushChunks()
 	c.flushEdits()
+	c.flushSounds()
 }
 
 // resendDirty encodes up to chunksPerTick dirty chunks again, nearest the
@@ -1055,6 +1065,7 @@ func (c *conn) dig(r *javaproto.Reader) error {
 			c.send(javaproto.AckDig(d.Sequence))
 			return
 		}
+		c.own(pos)
 		switch d.Status {
 		case startDig:
 			// The player's own break time: tool, haste, in water, in the air.
