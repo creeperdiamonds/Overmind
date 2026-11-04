@@ -229,18 +229,24 @@ func (fc *featCompiler) weighted(v map[string]json.RawMessage) (bfeat, error) {
 // searchFeat tries its feature along the search volume until enough succeed (the study's reading for
 // the beehive search: the +y axis over a one-column volume, from the bottom up; approximate).
 type searchFeat struct {
-	f      bfeat
-	y0, y1 int
-	need   int
+	f        bfeat
+	min, max [3]int
+	need     int
 }
 
+// place tries the volume along +y; across x and z (the creaking heart's 3 x 3 columns) the order is not
+// read: y outer, then x, then z, the study's approximation (T17).
 func (f *searchFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	got := 0
-	for dy := f.y0; dy <= f.y1; dy++ {
-		if _, ok := f.f.place(d, r, p.add(0, dy, 0)); ok {
-			got++
-			if got >= f.need {
-				return p, true
+	for dy := f.min[1]; dy <= f.max[1]; dy++ {
+		for dx := f.min[0]; dx <= f.max[0]; dx++ {
+			for dz := f.min[2]; dz <= f.max[2]; dz++ {
+				if _, ok := f.f.place(d, r, p.add(dx, dy, dz)); ok {
+					got++
+					if got >= f.need {
+						return p, true
+					}
+				}
 			}
 		}
 	}
@@ -257,14 +263,14 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 	json.Unmarshal(v["search_volume"], &vol)
 	json.Unmarshal(v["search_axis"], &axis)
 	json.Unmarshal(v["required_successes"], &need)
-	if axis != "+y" || vol.Min[0] != 0 || vol.Min[2] != 0 || vol.Max[0] != 0 || vol.Max[2] != 0 {
+	if axis != "+y" || vol.Min[0] > vol.Max[0] || vol.Min[1] > vol.Max[1] || vol.Min[2] > vol.Max[2] {
 		return nil, unimpl("search %s %v", axis, vol)
 	}
 	c, err := fc.child(v["places_feature"])
 	if err != nil {
 		return nil, err
 	}
-	return &searchFeat{c, vol.Min[1], vol.Max[1], max(need, 1)}, nil
+	return &searchFeat{c, vol.Min, vol.Max, max(need, 1)}, nil
 }
 
 // bCoord is one coordinate of a scatter: a number, a distribution over an extent (numbers or
