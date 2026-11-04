@@ -1625,6 +1625,27 @@ var legacyTreeTable = map[string]struct {
 		}
 		return 2
 	}},
+	// T17 (ctor cases 0 and 16): bamboo jungle's fourth entry is a grass scatter, not a tree.
+	"bamboo_jungle_tree_feature": {30, "fancy_oak_tree_feature jungle_bush_feature mega_jungle_tree_feature scatter_tall_grass_around_tree_feature", func(r *bmt) int {
+		switch {
+		case r.nextIntN(20) == 0:
+			return 0
+		case r.nextIntN(20) <= 2:
+			return 1
+		case r.nextIntN(10) <= 6:
+			return 2
+		}
+		return 3
+	}},
+	"redwood_taiga_mutated_tree_feature": {10, "mega_spruce_tree_feature pine_tree_feature select_spruce_tree_feature", func(r *bmt) int {
+		if r.nextIntN(3) == 0 {
+			return 0
+		}
+		if r.nextIntN(3) == 0 {
+			return 1
+		}
+		return 2
+	}},
 	"mega_taiga_tree_feature": {10, "mega_spruce_tree_feature mega_pine_tree_feature pine_tree_feature select_spruce_tree_feature", func(r *bmt) int {
 		if r.nextIntN(3) == 0 {
 			if r.nextIntN(13) == 0 {
