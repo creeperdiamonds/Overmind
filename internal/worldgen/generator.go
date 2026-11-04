@@ -101,10 +101,14 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 	if profile.surfaceBedrock && bd != nil {
 		g.bsurf = newBedrockSurface(seed, w, bd)
 		g.bedrockBiomes = true
-		g.biomeTree = bedrockBiomeTrees()[0]
+		k := 0
 		if bd.biomes[sulfurCaves.String()] != nil {
-			g.biomeTree = bedrockBiomeTrees()[1]
+			k |= 1
 		}
+		if bd.biomes[dappledForest.String()] != nil {
+			k |= 2
+		}
+		g.biomeTree = bedrockBiomeTrees()[k]
 	}
 	return g
 }

@@ -762,7 +762,7 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 	for i := range biomeTableNames {
 		name := biomeRowDefs[i].String()
 		b := bd.biomes[name]
-		if b == nil && i == int(sulfurBiome) {
+		if b == nil && optionalBiome(i) {
 			continue // An older install: the profile keeps Java's biome table (NewWithData).
 		}
 		if b == nil {

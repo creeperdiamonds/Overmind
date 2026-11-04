@@ -67,6 +67,7 @@ var (
 	lushCaves      = def{biome.LushCaves{}}
 	deepDark       = def{biome.DeepDark{}}
 	sulfurCaves    = def{biome.SulfurCaves{}} // Bedrock's; no Java row names it.
+	dappledForest  = def{biome.DappledForest{}} // Bedrock's variant of some plains rows.
 
 	frozenOcean       = def{biome.FrozenOcean{}}
 	coldOcean         = def{biome.ColdOcean{}}
@@ -93,7 +94,7 @@ var biomeDefs = map[string]def{
 	"stony_peaks": stonyPeaks, "windswept_hills": windsweptHills, "windswept_forest": windsweptForest,
 	"windswept_gravelly_hills": gravellyHills, "beach": beach, "snowy_beach": snowyBeach, "stony_shore": stonyShore,
 	"river": river, "frozen_river": frozenRiver, "mushroom_fields": mushroom, "dripstone_caves": dripstoneCaves,
-	"lush_caves": lushCaves, "deep_dark": deepDark, "sulfur_caves": sulfurCaves, "frozen_ocean": frozenOcean, "cold_ocean": coldOcean, "ocean": ocean,
+	"lush_caves": lushCaves, "deep_dark": deepDark, "sulfur_caves": sulfurCaves, "dappled_forest": dappledForest, "frozen_ocean": frozenOcean, "cold_ocean": coldOcean, "ocean": ocean,
 	"lukewarm_ocean": lukewarmOcean, "warm_ocean": warmOcean, "deep_frozen_ocean": deepFrozenOcean,
 	"deep_cold_ocean": deepColdOcean, "deep_ocean": deepOcean, "deep_lukewarm_ocean": deepLukewarmOcean,
 }

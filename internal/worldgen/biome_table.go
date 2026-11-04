@@ -64,6 +64,7 @@ var biomeTableNames = [...]string{
 	// Bedrock's own cave biome, which no Java row names: only the Bedrock profile's tree has a row for it
 	// (bedrock_sulfur.go).
 	"sulfur_caves",
+	"dappled_forest", // Bedrock's too: BDS's variant of some plains rows (bedrockLeaves).
 }
 
 var biomeIntervals = [...][2]int16{

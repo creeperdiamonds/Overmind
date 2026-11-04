@@ -49,11 +49,20 @@ var (
 )
 
 // bedrockLeaves is BDS's list: Java's rows with dripstone caves' humidity, sulfur caves before deep
-// dark if asked, and BDS's endpoints.
-func bedrockLeaves(sulfur bool) []*biomeNode {
+// dark if asked, dappled forest in its plains rows if asked, and BDS's endpoints. biomeLeaves gives
+// fresh leaves, so changing them here changes no other list.
+//
+// Dappled forest (T11, read from _populateBiomeArrays' id tables): BDS's MIDDLE_BIOMES_VARIANT[1][0] is
+// dappled_forest where Java's is none (plains), so every plains row with temperature T1 (-0.45..-0.15),
+// humidity H0 (-1..-0.35) and a weirdness range reaching 0 or above is dappled forest.
+func bedrockLeaves(sulfur, dappled bool) []*biomeNode {
 	var list []*biomeNode
 	for _, n := range biomeLeaves() {
 		switch n.id {
+		case biomeIdx["plains"]:
+			if dappled && n.bounds[0] == [2]int16{-4500, -1500} && n.bounds[1] == [2]int16{-10000, -3500} && n.bounds[5][1] >= 0 {
+				n.id = biomeIdx["dappled_forest"]
+			}
 		case biomeIdx["dripstone_caves"]:
 			n.bounds[1] = bedrockDripstoneHumidity
 		case biomeIdx["deep_dark"]:
@@ -76,10 +85,17 @@ func bedrockLeaves(sulfur bool) []*biomeNode {
 	return list
 }
 
-// bedrockBiomeTrees are the Bedrock profile's trees, with sulfur caves and without.
-var bedrockBiomeTrees = sync.OnceValue(func() [2]*biomeNode {
-	return [2]*biomeNode{buildBiomeTree(bedrockLeaves(false)), buildBiomeTree(bedrockLeaves(true))}
+// bedrockBiomeTrees are the Bedrock profile's trees, by which of sulfur caves (bit 0) and dappled
+// forest (bit 1) the data registers.
+var bedrockBiomeTrees = sync.OnceValue(func() (t [4]*biomeNode) {
+	for i := range t {
+		t[i] = buildBiomeTree(bedrockLeaves(i&1 != 0, i&2 != 0))
+	}
+	return t
 })
+
+// optionalBiome says whether a biome of the table is one BDS adds only when the data registers it.
+func optionalBiome(i int) bool { return i == int(sulfurBiome) || i == int(biomeIdx["dappled_forest"]) }
 
 // gradientSpec is one of a noise_gradient builder's noise_block_specifiers.
 type gradientSpec struct {

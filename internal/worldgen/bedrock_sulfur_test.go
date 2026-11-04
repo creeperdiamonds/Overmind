@@ -213,8 +213,7 @@ func TestBedrockQuartBiomesMatchBDS(t *testing.T) {
 // TestBedrockBlockBiomesMatchBDS compares the biome BDS stores at every block (T11) with ours, per test
 // seed and biome window, and holds it to 99.9%. BDS's real sections reach the chunk's highest block
 // once decorated (trees included), so the copy rule is applied here from BDS's own blocks; what
-// decoration reads, with the carvers stage's top, is reported beside it. Dappled forest, a Bedrock
-// surface biome whose row is not read, is left out and counted.
+// decoration reads, with the carvers stage's top, is reported beside it.
 func TestBedrockBlockBiomesMatchBDS(t *testing.T) {
 	dir := goldenBedrockDir(t)
 	testBedrockData(t)
@@ -228,12 +227,11 @@ func TestBedrockBlockBiomesMatchBDS(t *testing.T) {
 	for i, d := range biomeRowDefs {
 		enc[i] = uint16(d.EncodeBiome())
 	}
-	dappled := uint16(195) // Bedrock's dappled forest: its row is not read yet (no test for it).
 	for _, f := range files {
 		w := loadBDSFile(t, f)
 		g := NewWithProfile(w.seed, ProfileBedrock)
 		s := newScratch()
-		var n, ok, baseOK, nd int
+		var n, ok, baseOK int
 		conf := map[[2]uint16]int{}
 		for k, c := range w.chunks {
 			hi := minY
@@ -244,10 +242,6 @@ func TestBedrockBlockBiomesMatchBDS(t *testing.T) {
 			}
 			for cell := range chunkCells {
 				x, y, z := k[0]*16+cell&15, cell>>8+minY, k[1]*16+cell>>4&15
-				if c.biomes[cell] == dappled {
-					nd++
-					continue
-				}
 				n++
 				got := enc[s.bedrockBiome(g, x, storedY(y, (hi-minY)>>4), z)]
 				if got == c.biomes[cell] {
@@ -269,9 +263,6 @@ func TestBedrockBlockBiomesMatchBDS(t *testing.T) {
 		}
 		t.Logf("%-28s blocks %8d same %.4f%% (sky copies from the carvers stage's top: %.4f%%), most wrong (bds, ours) %v: %d", name, n,
 			100*float64(ok)/float64(n), 100*float64(baseOK)/float64(n), worst, conf[worst])
-		if nd > 0 {
-			t.Logf("%-28s %d dappled forest blocks left out", name, nd)
-		}
 		if float64(ok) < 0.999*float64(n) {
 			t.Errorf("%s: %d of %d block biomes differ from BDS", name, n-ok, n)
 		}
