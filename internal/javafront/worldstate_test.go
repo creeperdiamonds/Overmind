@@ -199,3 +199,35 @@ func TestJavaHearsTheWorld(t *testing.T) {
 		require.False(t, e.ID == 2001 && e.X == at[0] && e.Y == at[1] && e.Z == at[2], "Java was shown its own break")
 	}
 }
+
+// A Java player hears its own container open, which its client does not play itself (vanilla plays a
+// chest's, barrel's or ender chest's sound to everyone near, the opener too), but not its own fence gate
+// or flint and steel, which its client played already. The flint and steel's sound is at the block the
+// fire goes in, beside the block used.
+func TestJavaHearsItsOwnContainers(t *testing.T) {
+	srv := testserver.Start(t)
+	j := startBot(t, srv, "JOpener")
+	waitOnGround(t, srv, "JOpener")
+	heard := func(name string) bool {
+		for _, s := range j.world().Sounds {
+			if s.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	chest, gate, ground := cube.Pos{1, -60, 1}, cube.Pos{-1, -60, 1}, cube.Pos{1, -61, -1}
+	setBlock(t, srv, chest, block.NewChest())
+	setBlock(t, srv, gate, block.WoodFenceGate{Wood: block.OakWood()})
+	require.Eventually(t, func() bool { return j.block(chest).State != nil && j.block(gate).State != nil }, 5*time.Second, 50*time.Millisecond)
+
+	j.place(gate, cube.FaceUp, 0.5, 0.5, 0.5, 1)
+	require.Eventually(t, func() bool { g, _ := blockAt(t, srv, gate).(block.WoodFenceGate); return g.Open }, 5*time.Second, 50*time.Millisecond, "the gate did not open")
+	holdJava(t, srv, "JOpener", item.NewStack(item.FlintAndSteel{}, 1))
+	j.place(ground, cube.FaceUp, 0.5, 1, 0.5, 2)
+	require.Eventually(t, func() bool { _, fire := blockAt(t, srv, ground.Side(cube.FaceUp)).(block.Fire); return fire }, 5*time.Second, 50*time.Millisecond, "no fire was lit")
+	holdJava(t, srv, "JOpener", item.Stack{})
+	j.place(chest, cube.FaceUp, 0.5, 1, 0.5, 3)
+	require.Eventually(t, func() bool { return heard("block.chest.open") }, 5*time.Second, 50*time.Millisecond, "Java did not hear its own chest open: %+v", j.world().Sounds)
+	require.False(t, heard("block.fence_gate.open"), "Java was sent its own fence gate's sound")
+}

@@ -218,14 +218,13 @@ type pendingSound struct {
 	pos mgl64.Vec3
 }
 
-// ViewSound queues the world's sound for the end of the tick. A sound at a block the player itself used
-// or broke this tick is left out: the Java client played it already, as the vanilla server leaves the
-// player out.
+// ViewSound queues the world's sound for the end of the tick. A sound the Java client plays itself for
+// its own act is left out (predicted).
 func (c *conn) ViewSound(pos mgl64.Vec3, s world.Sound) {
 	if !c.viewing() {
 		return
 	}
-	if _, own := c.ownActs[cube.PosFromVec3(pos)]; own {
+	if c.predicted(cube.PosFromVec3(pos), s) {
 		return
 	}
 	for _, js := range javaSoundsOf(s) {
@@ -249,8 +248,24 @@ func (c *conn) ViewParticle(pos mgl64.Vec3, p world.Particle) {
 	}
 }
 
-// own notes a block the player uses or breaks this tick, whose sounds its client makes itself.
+// own notes a block the player uses or breaks this tick, whose predicted sounds and break its client
+// makes itself.
 func (c *conn) own(pos cube.Pos) { c.ownActs[pos] = struct{}{} }
+
+// predicted reports whether the Java client played s at pos itself, for a block its player used this
+// tick. The vanilla server leaves the player out of only the sounds its client plays as it acts:
+// opening a door or a fence gate (DoorBlock and FenceGateBlock play them with the player, so to the
+// others only). A chest's, barrel's or ender chest's sound is played by the server to everyone, the
+// opener too (ChestBlockEntity, BarrelBlockEntity and EnderChestBlockEntity play it with no player), and
+// so is TNT priming and fire put out.
+func (c *conn) predicted(pos cube.Pos, s world.Sound) bool {
+	switch s.(type) {
+	case sound.DoorOpen, sound.DoorClose, sound.FenceGateOpen, sound.FenceGateClose:
+		_, own := c.ownActs[pos]
+		return own
+	}
+	return false
+}
 
 // flushSounds sends the tick's sounds and block breaks, after its block changes. Lightning is heard as
 // Java's thunder and impact, and not as the explosion Dragonfly also plays for it.
