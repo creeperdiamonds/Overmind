@@ -11,11 +11,16 @@ const (
 	mtM = 397
 )
 
-// bmt is Bedrock's Random: MT19937. Seeding is the standard init_genrand (section 1).
+// bmt is Bedrock's Random: MT19937. Seeding is the standard init_genrand (section 1). Both the seeding
+// and the twist are worked out word by word as draws need them, which gives the same output as the
+// whole-array version: the twist of word k reads words k+1 and k+397, which are still the seeding's
+// (or the last block's) for k < 227 and already twisted after, exactly as the in-place loop reads them.
+// Most rules draw a handful of words, so a fresh seed costs about 400 seeding steps, not 1248.
 type bmt struct {
-	mt   [mtN]uint32
-	i    int
-	seed uint32
+	mt     [mtN]uint32
+	i      int // The next word to twist and output.
+	filled int // Seeding words made so far (mtN once the first block is under way past them).
+	seed   uint32
 }
 
 func newBMT(seed uint32) *bmt {
@@ -24,33 +29,51 @@ func newBMT(seed uint32) *bmt {
 	return r
 }
 
-// setSeed restarts the generator. Bedrock fills the state lazily; the output is the same.
+// setSeed restarts the generator.
 func (r *bmt) setSeed(seed uint32) {
 	r.seed = seed
 	r.mt[0] = seed
-	for k := 1; k < mtN; k++ {
-		p := r.mt[k-1]
-		r.mt[k] = 0x6c078965*(p^p>>30) + uint32(k)
+	r.filled = 1
+	r.i = 0
+}
+
+// fill makes seeding words up to n.
+func (r *bmt) fill(n int) {
+	mt := &r.mt
+	for k := r.filled; k < n; k++ {
+		p := mt[k-1]
+		mt[k] = 0x6c078965*(p^p>>30) + uint32(k)
 	}
-	r.i = mtN
+	r.filled = n
 }
 
 // u32 is the raw tempered output, which some features draw from directly (section 1).
 func (r *bmt) u32() uint32 {
-	if r.i >= mtN {
-		mt := &r.mt
-		for k := range mtN {
-			y := mt[k]&0x80000000 | mt[(k+1)%mtN]&0x7fffffff
-			v := mt[(k+mtM)%mtN] ^ y>>1
-			if y&1 != 0 {
-				v ^= 0x9908b0df
-			}
-			mt[k] = v
-		}
-		r.i = 0
+	k := r.i
+	if k == mtN {
+		k = 0
 	}
-	y := r.mt[r.i]
-	r.i++
+	if r.filled < mtN {
+		if need := min(k+mtM+1, mtN); r.filled < need {
+			r.fill(need)
+		}
+	}
+	mt := &r.mt
+	k1, km := k+1, k+mtM
+	if k1 == mtN {
+		k1 = 0
+	}
+	if km >= mtN {
+		km -= mtN
+	}
+	y := mt[k]&0x80000000 | mt[k1]&0x7fffffff
+	v := mt[km] ^ y>>1
+	if y&1 != 0 {
+		v ^= 0x9908b0df
+	}
+	mt[k] = v
+	r.i = k + 1
+	y = v
 	y ^= y >> 11
 	y ^= y << 7 & 0x9d2c5680
 	y ^= y << 15 & 0xefc60000
