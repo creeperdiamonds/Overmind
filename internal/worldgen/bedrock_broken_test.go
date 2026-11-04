@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Broken or hostile pack data must never panic the generator: a rule whose data cannot be used is
@@ -58,11 +59,24 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 		"count":     brokenRule("t:count", "t:hugeore", good),
 		"block":     brokenRule("t:block", "t:badore", good),
 		"exprorder": brokenRule("t:exprorder", "t:ore", `{"iterations":"query.nonsense(1)","x":1,"y":1,"z":1}`),
+		"cycle":     brokenRule("t:cycle", "t:loop", good),
+		"cycle2":    brokenRule("t:cycle2", "t:q", good),
+		"wide":      brokenRule("t:wide", "t:widepatch", good),
+		"tall":      brokenRule("t:tall", "t:tallnest", good),
 	}
 	features := map[string]string{
 		"ore":     oreFile("t:ore", "8", "minecraft:coal_ore"),
 		"hugeore": oreFile("t:hugeore", "100000000", "minecraft:coal_ore"),
 		"badore":  oreFile("t:badore", "8", "minecraft:no_such_block_at_all"),
+		// A feature that names itself, and a cycle through a feature that fails (P = [Q, unknown], Q = [P]).
+		"loop": composite("aggregate", "t:loop", `["t:loop"]`),
+		"p":    composite("sequence", "t:p", `["t:q", "t:no_such_feature"]`),
+		"q":    composite("aggregate", "t:q", `["t:p"]`),
+		// A size far past any vanilla value.
+		"widepatch": `{"format_version":"1.13.0","minecraft:vegetation_patch_feature":{"description":{"identifier":"t:widepatch"},
+			"replaceable_blocks":["minecraft:stone"],"ground_block":"minecraft:dirt","vegetation_feature":"t:ore","surface":"floor",
+			"depth":2,"vertical_range":5,"vegetation_chance":0.5,"horizontal_radius":{"range_min":100000,"range_max":100001}}}`,
+		"tallnest": scatterFile("t:tallnest", "t:ore", "100000000"),
 	}
 	bd := brokenData(t, rules, features)
 	func() {
@@ -80,7 +94,8 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 	if len(got) != 1 || got[0] != "t:good" {
 		t.Errorf("rules kept: %v, want only t:good", got)
 	}
-	for _, id := range []string{"t:order", "t:upper", "t:twice", "t:huge", "t:negative", "t:count", "t:block", "t:exprorder"} {
+	for _, id := range []string{"t:order", "t:upper", "t:twice", "t:huge", "t:negative", "t:count", "t:block", "t:exprorder",
+		"t:cycle", "t:cycle2", "t:wide", "t:tall"} {
 		n := 0
 		for _, p := range bd.Problems {
 			if strings.Contains(p, id+":") {
@@ -90,6 +105,54 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%s named %d times in Problems %q, want once", id, n, bd.Problems)
 		}
+	}
+}
+
+func composite(kind, id, list string) string {
+	return `{"format_version":"1.13.0","minecraft:` + kind + `_feature":{"description":{"identifier":"` + id + `"},"features":` + list + `}}`
+}
+
+func scatterFile(id, feature, iterations string) string {
+	return `{"format_version":"1.13.0","minecraft:scatter_feature":{"description":{"identifier":"` + id + `"},"places_feature":"` + feature +
+		`","iterations":` + iterations + `,"x":{"extent":[0,16]},"y":{"extent":[0,64]},"z":{"extent":[0,16]}}}`
+}
+
+// TestNestedScattersFinish decorates chunks with data whose scatters nest three deep at 400 iterations
+// each: 64 million placements a rule, within every number's limit. The placement budget must make the
+// chunks finish, without a panic.
+func TestNestedScattersFinish(t *testing.T) {
+	rules := map[string]string{"nest": brokenRule("t:nest", "t:n1", `{"iterations":400,"x":{"extent":[0,16]},"y":{"extent":[0,64]},"z":{"extent":[0,16]}}`)}
+	features := map[string]string{
+		"ore": oreFile("t:ore", "4", "minecraft:coal_ore"),
+		"n1":  scatterFile("t:n1", "t:n2", "400"),
+		"n2":  scatterFile("t:n2", "t:n3", "400"),
+		"n3":  scatterFile("t:n3", "t:ore", "400"),
+	}
+	bd := brokenData(t, rules, features)
+	if err := bd.compile(); err != nil {
+		t.Fatal(err)
+	}
+	if len(bd.passes[2]) != 1 {
+		t.Fatalf("the nested rule was not kept: %q", bd.Problems)
+	}
+	g := NewWithData(5, ProfileBedrock, bd)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("decorating panicked: %v", r)
+			}
+		}()
+		generate(g, 0, 0)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Minute):
+		t.Fatal("decorating did not finish in 5 minutes")
+	}
+	if m := mostPlacements.Load(); m > placementBudget {
+		t.Errorf("a source made %d placements, over the budget of %d", m, placementBudget)
 	}
 }
 

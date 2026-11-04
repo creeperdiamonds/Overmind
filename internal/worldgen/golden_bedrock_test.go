@@ -355,6 +355,14 @@ func (sc *bedrockScore) report(t testing.TB) {
 func TestBedrockWorldsMatchBDS(t *testing.T) {
 	dir := goldenBedrockDir(t)
 	testBedrockData(t)
+	defer func() {
+		// The placement budget (bedrock_limits.go) must never touch vanilla data.
+		m := mostPlacements.Load()
+		t.Logf("most scatter placements by one source: %d (budget %d)", m, placementBudget)
+		if m > placementBudget/8 {
+			t.Errorf("a vanilla source made %d placements, within 8x of the budget %d", m, placementBudget)
+		}
+	}()
 	for _, seed := range bedrockTestSeeds {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
 			sc := scoreBedrockSeed(t, dir, seed)

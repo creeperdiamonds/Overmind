@@ -14,7 +14,9 @@ import (
 func (fc *featCompiler) feature(id string) (bfeat, error) {
 	if s, ok := fc.slots[id]; ok {
 		if s.on {
-			return featRef{s}, nil
+			// Only broken data names a feature from inside itself: vanilla has no cycles, and a cycle
+			// would recurse without end at the first placement.
+			return nil, fmt.Errorf("feature %s names itself through its parts", id)
 		}
 		return s.f, s.err
 	}
@@ -39,6 +41,9 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 	}
 	var v map[string]json.RawMessage
 	if err := json.Unmarshal(pf.body, &v); err != nil {
+		return nil, fmt.Errorf("%s: %w", id, err)
+	}
+	if err := checkDataNumbers(pf.body); err != nil {
 		return nil, fmt.Errorf("%s: %w", id, err)
 	}
 	var f bfeat
@@ -489,7 +494,7 @@ func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	}
 	n := f.sc.count(e)
 	ok, last := false, p
-	for i := n - 1; i >= 0; i-- {
+	for i := n - 1; i >= 0 && d.spend(); i-- {
 		q := f.sc.position(r, e, [3]int{p.x, p.y, p.z})
 		if at, k := f.f.place(d, r, pos{q[0], q[1], q[2]}); k {
 			ok, last = true, at

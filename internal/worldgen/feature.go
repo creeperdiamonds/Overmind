@@ -252,6 +252,7 @@ type decoration struct {
 	br1, br2  bmt
 	biomeList []uint8
 	listOf    listKey // Whose list biomeList holds, in the Bedrock biome model.
+	budget    int     // Scatter placements left to this source (bedrock_limits.go).
 	menv      molangEnv // The Molang a rule and its features read.
 	placed  bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.

@@ -387,13 +387,8 @@ type featCompiler struct {
 type featSlot struct {
 	f   bfeat
 	err error
-	on  bool // Being built: a reference back to it goes through the slot.
+	on  bool // Being built: a reference back to it is a cycle, refused as broken data.
 }
-
-// featRef is a feature built later than the one that names it.
-type featRef struct{ s *featSlot }
-
-func (f featRef) place(d *decoration, r *bmt, p pos) (pos, bool) { return f.s.f.place(d, r, p) }
 
 // errUnimpl marks a feature the reader does not know yet.
 type errUnimpl string

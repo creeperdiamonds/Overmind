@@ -54,6 +54,7 @@ func (g *Generator) cachedParity(s *chunkScratch, sx, sz int) *sourceResult {
 		d := s.startDecoration(g, sx, sz)
 		d.pre = pre
 		e.src = s.runSourceChanges(d, sx, sz)
+		notePlacements(placementBudget - d.budget)
 		d.pre = nil
 		return int64(cap(e.src.changes))*changeBytes + resultBytes
 	})
@@ -435,7 +436,7 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		return
 	}
 	n := sc.count(e)
-	for i := n - 1; i >= 0; i-- {
+	for i := n - 1; i >= 0 && d.spend(); i-- {
 		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16})
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
 		// position outside the world still places, and its feature still draws.

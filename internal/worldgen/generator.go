@@ -709,5 +709,6 @@ func (s *chunkScratch) giveBuffer(b *baseChunk) { s.copies = append(s.copies, b)
 func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 	s.deco.startTarget(g, s, cx, cz)
 	s.deco.listOf = listKey{}
+	s.deco.budget = placementBudget
 	return &s.deco
 }
