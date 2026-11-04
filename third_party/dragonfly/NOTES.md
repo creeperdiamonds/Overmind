@@ -58,6 +58,12 @@ The fork came forward from stage 1 Task 5 to Task 4c fix round 2, the first chan
 
 - `server/session/handler_request_chunk_radius.go`: a client's radius is held to at least 2 (`minChunkRadius`, `clampChunkRadius`), the smallest tick reach (0, the player's own chunk) plus 2, so a tick never reads an unloaded chunk. Tested by `overmind_radius_test.go`.
 
+### World mechanics parity (stage 2, Task W)
+
+The world's shared mechanics follow Bedrock, or Java under Overmind's Overjava profile; `internal/worldrules` holds the values and `internal/app` sets them per world.
+
+- `server/world/overmind_mechanics.go` (new) "Overmind fork": `World.RandomTickSpeed` reports the world's speed, after its default. Overmind sets Bedrock's 1 or Java's 3 through `Config.RandomTickSpeed`, which already existed; internal/app `TestRandomTickSpeedFollowsProfile` reads it back.
+
 In all, in existing upstream files: the Java and race work 100 lines added and 14 removed, the transaction guard 2 added and 1 removed, the persona skin work 16 and 4, the tick work (`world/tick.go` 143 and 58, `world/weather.go` 13 and 4, `block/leaves.go` 11 and 3, `session/handler_request_chunk_radius.go` 12 and 3) 179 added and 68 removed, the /give work (`cmd/output.go` 7 and 0, `cmd/argument.go` 4 and 6) 11 added and 6 removed, 308 added and 93 removed together. The rest is in new files (`reporter.go` 105, `reporter_test.go` 48, `move_test.go` 60, `vanilla_once_test.go`, `session/listed.go` 113, `playerdb/snapshot.go` 33, `player/attack_rules.go` 24, `player/attack_rules_test.go`, `lookup_lock_test.go`, `world/overmind_reach_test.go` 204, `world/overmind_tick_test.go` 175, `world/export_test.go` 9, `session/overmind_radius_test.go` 16, `world/overmind_txguard.go`, `world/overmind_txguard_test.go`, `session/overmind_skin.go`). Every addition is marked "Overmind fork".
 
 Nothing else differs from upstream. When pulling a new upstream version, copy it over this folder, reapply these and see whether `Player` calls any new session method (the compiler will say).

@@ -61,7 +61,8 @@ type Config struct {
 	// world is first made, then kept in the world folder. Any int64 is allowed.
 	Seed *int64
 	// RandomTickSpeed is how many blocks per sub chunk get a random tick each
-	// tick. 0 is Dragonfly's normal speed, 3.
+	// tick. 0 is the profile's default: Bedrock's 1, or Java's 3 under
+	// overjava (internal/worldrules).
 	RandomTickSpeed int
 	// ChunkWorkers is how many background workers generate and load chunks.
 	// 0 picks min(4, processors): each busy worker holds its own scratch.

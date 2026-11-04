@@ -32,6 +32,7 @@ import (
 	"github.com/creeperdiamonds/overmind/internal/playerstore"
 	"github.com/creeperdiamonds/overmind/internal/skins"
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
+	"github.com/creeperdiamonds/overmind/internal/worldrules"
 )
 
 // Server is the running game and its Java front end.
@@ -145,7 +146,11 @@ func Start(cfg config.Config) (*Server, error) {
 			return unusedGenerator(dim)
 		}
 	}
+	rules := worldrules.ForProfile(profile.Name)
 	conf.RandomTickSpeed = cfg.RandomTickSpeed
+	if conf.RandomTickSpeed == 0 {
+		conf.RandomTickSpeed = rules.RandomTickSpeed
+	}
 	conf.ChunkLoadWorkers = chunkWorkers(cfg.ChunkWorkers)
 
 	// The settings are read when the worlds open. Dragonfly asks the generator for a spawn only when it
