@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -458,38 +457,118 @@ func (g *gen) entities() {
 	g.writeLines("entities", lines)
 	fmt.Printf("entities: %d\n", len(es))
 
-	// Bedrock entity names to Java ones: the same name, else the Java entity
-	// with the same display name. minecraft-data has no Bedrock entity list
-	// newer than 1.21.80 (its dataPaths give that one for 1.26.30).
-	var full, be []struct {
+	g.bedrockEntities()
+}
+
+// bedrockEntities pairs Bedrock entity names with Java ones. minecraft-data has
+// no Bedrock entity list for 1.26.60: its dataPaths give bedrock/1.21.80's
+// entities.json, which stops before the allay. So the Bedrock names come from
+// the three files dataPaths gives for 1.26.60 that name entities: entities.json
+// (name and display name), language.json (entity.<name>.name keys, with their
+// English names; it has the 1.19 to 1.21 mobs) and items.json (<name>_spawn_egg,
+// the only one with the 2025 mobs: happy ghast, copper golem, nautilus and the
+// rest). A Bedrock name pairs with, in order, the Java entity of the same name,
+// of the same name less "_projectile" (Bedrock's wind_charge_projectile), or of
+// the same display name (language.json's, then entities.json's first), when
+// only one Java entity has it. A spawn egg's name is not always the entity's
+// (evoker_spawn_egg spawns evocation_illager), so it pairs only by the same name
+// and only for a Java entity nothing else pairs with.
+func (g *gen) bedrockEntities() {
+	dataDir := filepath.Dir(filepath.Dir(g.be))
+	var paths map[string]map[string]map[string]string
+	readJSON(filepath.Join(dataDir, "dataPaths.json"), &paths)
+	be := paths["bedrock"][bedrockVersion]
+	if be == nil {
+		fatal(fmt.Errorf("dataPaths.json: no bedrock %s", bedrockVersion))
+	}
+	type named struct {
 		Name        string `json:"name"`
 		DisplayName string `json:"displayName"`
 	}
-	readJSON(filepath.Join(g.pc, "entities.json"), &full)
-	readJSON(filepath.Join(filepath.Dir(g.be), "1.21.80", "entities.json"), &be)
-	byName, byDisplay := map[string]bool{}, map[string]string{}
-	for _, e := range full {
-		byName[e.Name] = true
-		byDisplay[e.DisplayName] = e.Name
+	var java, ents, items []named
+	readJSON(filepath.Join(g.pc, "entities.json"), &java)
+	readJSON(filepath.Join(dataDir, be["entities"], "entities.json"), &ents)
+	readJSON(filepath.Join(dataDir, be["items"], "items.json"), &items)
+	var lang map[string]string
+	readJSON(filepath.Join(dataDir, be["language"], "language.json"), &lang)
+
+	javaName, displays := map[string]string{}, map[string][]string{}
+	for _, e := range java {
+		javaName[e.Name] = e.DisplayName
+		displays[e.DisplayName] = append(displays[e.DisplayName], e.Name)
 	}
-	var pairs []string
-	for _, e := range be {
+	// Every Bedrock name with its display names: language.json's, then entities.json's first.
+	display := map[string][]string{}
+	var names []string
+	add := func(name, d string) {
+		if _, ok := display[name]; !ok {
+			names = append(names, name)
+			display[name] = nil
+		}
+		if d != "" {
+			display[name] = append(display[name], d)
+		}
+	}
+	for k, v := range lang {
+		n, ok := strings.CutPrefix(k, "entity.")
+		if n, ok2 := strings.CutSuffix(n, ".name"); ok && ok2 && !strings.ContainsAny(n, ".:") && n != "unknown" {
+			add(n, v)
+		}
+	}
+	seen := map[string]bool{}
+	for _, e := range ents {
+		if !seen[e.Name] {
+			seen[e.Name] = true
+			add(e.Name, e.DisplayName)
+		}
+	}
+	sort.Strings(names)
+	pair := map[string]string{}
+	taken := map[string]bool{}
+	for _, n := range names {
 		java := ""
-		switch {
-		case byName[e.Name]:
-			java = e.Name
-		case byDisplay[e.DisplayName] != "":
-			java = byDisplay[e.DisplayName]
+		if _, ok := javaName[n]; ok {
+			java = n
+		} else if s, ok := strings.CutSuffix(n, "_projectile"); ok && javaName[s] != "" {
+			java = s
+		} else {
+			for _, d := range display[n] {
+				if len(displays[d]) == 1 {
+					java = displays[d][0]
+					break
+				}
+			}
 		}
 		if java != "" {
-			pairs = append(pairs, e.Name+"\t"+java)
+			pair[n] = java
+			taken[java] = true
 		}
 	}
-	sort.Strings(pairs)
-	pairs = slices.Compact(pairs) // minecraft-data lists some twice
-	g.writeLines("bedrockentities", pairs)
-	fmt.Printf("bedrock entities: %d of %d named for Java\n", len(pairs), len(be))
+	var eggs []string
+	for _, it := range items {
+		if n, ok := strings.CutSuffix(it.Name, "_spawn_egg"); ok {
+			eggs = append(eggs, n)
+			if _, ok := javaName[n]; ok && !taken[n] {
+				pair[n], taken[n] = n, true
+				fmt.Printf("bedrock entity %s: from its spawn egg only\n", n)
+			}
+		}
+	}
+	var lines []string
+	for n, j := range pair {
+		lines = append(lines, n+"\t"+j)
+	}
+	sort.Strings(lines)
+	g.writeLines("bedrockentities", lines)
+	sort.Strings(eggs)
+	// The Bedrock names and display names as read, for the completeness test.
+	g.writeJSON("testdata/entitynames.json", map[string]any{"java": javaName, "bedrock": display, "eggs": eggs})
+	fmt.Printf("bedrock entities: %d of %d named for Java\n", len(lines), len(display))
 }
+
+// bedrockVersion is the Bedrock version the server speaks (Dragonfly 0.11.6), whose
+// minecraft-data files dataPaths names.
+const bedrockVersion = "1.26.60"
 
 // packetMappings finds the packet-name mapper of a protocol direction.
 func packetMappings(dir map[string]any) map[string]any {
