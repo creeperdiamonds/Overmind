@@ -380,14 +380,21 @@ func evalOrder(s string) (o [3]int) {
 	return o
 }
 
-// bedrockPass runs one pass over a source: for each biome of the chunk, each of the pass's rules that
-// biome lists, in the pass's order (section 3).
+// bedrockPass runs one pass over a source biome-major (decoratePass_postprocess, T3b): for each biome
+// of the chunk, each of the pass's rules that biome lists, in the pass's order. Each (pass, biome) run
+// has one Molang variable map, set to the chunk corner once and never reset between its rules: every
+// scatter_feature a rule places moves variable.origin* to its input position and every scatter
+// position moves variable.world*, and later rules of the run read what the last one left (kelp's
+// noise reads the last seagrass scatter's origin).
 func (d *decoration) bedrockPass(rules []*bedrockRule) {
 	cs := d.g.bseeds.chunk(d.cx, d.cz)
 	list := d.chunkBiomeList(d.cx, d.cz)
 	multi := len(list) > 1
+	e := &d.menv
 	for i := range list {
 		b := list[i]
+		ox, oz := float32(d.cx*16), float32(d.cz*16)
+		*e = molangEnv{d: d, r1: &d.br1, originX: ox, originZ: oz, worldX: ox, worldZ: oz, biome: b}
 		for _, rule := range rules {
 			if rule.biomes[b>>6]&(1<<(b&63)) == 0 {
 				continue
@@ -403,19 +410,16 @@ func (d *decoration) bedrockPass(rules []*bedrockRule) {
 // scatter is ScatterParams::prepare and the placement loop (section 3): the chance, then the
 // iterations from the last down, each position drawn from the first generator axis by axis from the
 // chunk corner (y from 0), skipped (in a chunk of several biomes) outside the world or the rule's
-// biome; the feature draws from the second. Molang sees the chunk corner as variable.originx/z (T3).
+// biome; the feature draws from the second. Molang reads the run's shared map (bedrockPass).
 func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 	r1 := &d.br1
 	e := &d.menv
-	*e = molangEnv{d: d, r1: r1, originX: float32(d.cx * 16), originZ: float32(d.cz * 16), worldX: float32(d.cx * 16),
-		worldZ: float32(d.cz * 16), biome: b}
 	sc := rule.sc
 	if !sc.chance(r1, e) {
 		return
 	}
 	n := sc.count(e)
 	for i := n - 1; i >= 0; i-- {
-		e.worldX, e.worldY, e.worldZ = float32(d.cx*16), 0, float32(d.cz*16)
 		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16})
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
 		// position outside the world still places, and its feature still draws.
