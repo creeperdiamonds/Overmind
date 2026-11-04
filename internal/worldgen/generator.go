@@ -129,6 +129,9 @@ type chunkScratch struct {
 	changeKeys  []int64 // Each change's working-set key, slot and cell.
 	merge       merger
 	firstOld    map[int64]bs
+
+	adjustIn []TerrainAdjustment // Structure terrain adaptation of the chunk being filled (structures_terrain.go).
+	adapt    []adaptDesc
 }
 
 const cellsAcross = 16 / cellXZ
@@ -485,6 +488,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 		}
 	}
 	skip := g.skipAbove(&s.aq)
+	adapt := g.terrainAdaptation(s, b.cx, b.cz)
 	var kinds [cellsAcross][cellsAcross][columnNodes - 1]uint8
 	var noodles [cellsAcross][cellsAcross][columnNodes - 1]bool
 	var veins [cellsAcross][cellsAcross][columnNodes - 1]bool
@@ -500,7 +504,14 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 				baseY := minY + l*cellY
 				kind := kinds[i][j][l]
 				if kind == cellUnknown {
-					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, skip)
+					cellSkip := skip
+					if adapt != nil && adapt.touchesCell(originX+i*cellXZ, baseY, originZ+j*cellXZ) {
+						cellSkip = maxY + cellY // A structure's terrain term: no sky shortcut, and no solid one below.
+					}
+					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, cellSkip)
+					if kind == cellSolid && cellSkip != skip {
+						kind = cellMixed
+					}
 					kinds[i][j][l] = kind
 				}
 				switch kind {
@@ -524,7 +535,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 					for dy := cellY - 1; dy >= 0; dy-- {
 						y := baseY + dy
 						fy := float64(dy) / 8.0
-						f := blend.final(fy)
+						f := blend.final(fy) + adapt.at(wx, y, wz)
 						var k fillKind = fillSolid
 						if !(f > 0) {
 							k = g.fluidAt(&s.aq, wx, y, wz, f)
