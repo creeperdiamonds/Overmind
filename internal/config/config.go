@@ -43,10 +43,13 @@ type Config struct {
 	// algorithms with Bedrock's data, or "overjava", Java's throughout. A world
 	// keeps the profile it was made with only if this is left unchanged.
 	Profile string
-	// BedrockDataDir is a local Bedrock install, a Bedrock Dedicated Server folder or a game's
-	// behavior_packs folder, whose vanilla feature data (features, feature rules, biomes) the
-	// Bedrock profile reads at startup. Empty, or unreadable, the profile uses its built-in features,
-	// which are approximate, and says so in the log. Nothing is copied from it.
+	// BedrockDataDir is a local Bedrock install whose vanilla feature data (features, feature rules,
+	// biomes) the Bedrock profile reads at startup. For an exact world it must be a Bedrock Dedicated
+	// Server folder: its definitions folder holds rules and features no pack has (the clay disk, the
+	// roofed forest's trees, the trees the legacy tree table picks, the second cave carver). A game's
+	// behavior_packs folder lacks them; it is read, and the log warns that the world will not be
+	// exact. Empty, or unreadable, the profile uses its built-in features, which are approximate,
+	// and says so in the log. Nothing is copied from it.
 	BedrockDataDir string
 }
 

@@ -214,6 +214,24 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 	if err := bd.compile(); err != nil {
 		return nil, err
 	}
+	if defs == "" {
+		missing := 0
+		for k, n := range bd.Skipped {
+			if strings.Contains(k, "unknown feature") || strings.Contains(k, "legacy feature") {
+				missing += n
+			}
+		}
+		var rules []string
+		for _, id := range []string{"minecraft:overworld_surface_clay_feature", "minecraft:roofed_forest_surface_roofed_tree_feature_rules", "minecraft:overworld_extra_cave_carver_feature"} {
+			if bd.rules[id] == nil {
+				rules = append(rules, strings.TrimPrefix(id, "minecraft:"))
+			}
+		}
+		bd.Warnings = append(bd.Warnings, fmt.Sprintf("no definitions folder next to %s: the rules and features only a Bedrock Dedicated "+
+			"Server's definitions folder holds are missing (rules %s; %d rules skipped for features no pack has, among them the trees the legacy "+
+			"tree table chooses), so the world will not match Bedrock's. Point BedrockDataDir at a Bedrock Dedicated Server folder.",
+			packs, strings.Join(rules, ", "), missing))
+	}
 	return bd, nil
 }
 

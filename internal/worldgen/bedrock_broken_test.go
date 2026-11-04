@@ -120,3 +120,24 @@ func TestBrokenInstallsDoNotPanic(t *testing.T) {
 		})
 	}
 }
+
+// TestMissingDefinitionsWarns: a game's behavior_packs folder has no definitions folder, so the rules and
+// features only the server's definitions hold are missing; the data says so (OVERMIND_BROKEN_DATA's
+// nodefs copy), and a full install has no warning.
+func TestMissingDefinitionsWarns(t *testing.T) {
+	if bd := testBedrockData(t); len(bd.Warnings) != 0 {
+		t.Errorf("a full install warns: %q", bd.Warnings)
+	}
+	dir := os.Getenv("OVERMIND_BROKEN_DATA")
+	if dir == "" {
+		t.Skip("OVERMIND_BROKEN_DATA is not set")
+	}
+	bd, err := LoadBedrockData(filepath.Join(dir, "nodefs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bd.Warnings) == 0 || !strings.Contains(bd.Warnings[0], "definitions") {
+		t.Errorf("no warning about the missing definitions: %q", bd.Warnings)
+	}
+	t.Log(bd.Warnings)
+}

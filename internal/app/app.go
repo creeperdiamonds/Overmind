@@ -142,6 +142,9 @@ func bedrockData(log *slog.Logger, dir string, profile *worldgen.Profile) *world
 		return nil
 	}
 	log.Info("Bedrock feature data read", "folder", dir, "read", bd.Summary())
+	for _, w := range bd.Warnings {
+		log.Warn("Bedrock feature data is incomplete: the world will not be exact", "missing", w)
+	}
 	for _, p := range bd.Problems {
 		log.Warn("Bedrock feature data: a rule is broken and was skipped", "rule", p)
 	}
