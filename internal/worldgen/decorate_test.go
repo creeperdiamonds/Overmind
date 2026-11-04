@@ -211,12 +211,24 @@ func countTrees(c *chunk.Chunk, visit func(x, z uint8)) int {
 // has something on all four sides, across an edge too. Every leaf reaches a log through leaves within 6 steps, Java's rule, so a
 // tree cut off at an edge shows up as orphan leaves.
 func TestTreesWholeAcrossEdges(t *testing.T) {
+	skipUnlessLong(t) // 17 tree chunks; TestTreesWholeAcrossEdgesQuick checks 10 of them by default.
+	checkTreesWholeAcrossEdges(t, 8, 3)
+}
+
+// TestTreesWholeAcrossEdgesQuick is the same check with the same bounds on the first 10 of those
+// chunks (4 of the mixed forests, 2 each of roofed forest, savanna and jungle), for the default run.
+func TestTreesWholeAcrossEdgesQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkTreesWholeAcrossEdges(t, 4, 2)
+}
+
+func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 	g := New(41)
 	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops int
-	seeds := biomeChunks(g, 8, "forest", "roofed_forest", "jungle", "savanna", "taiga", "birch_forest")
-	seeds = append(seeds, biomeChunks(g, 3, "roofed_forest")...)
-	seeds = append(seeds, biomeChunks(g, 3, "savanna")...)
-	seeds = append(seeds, biomeChunks(g, 3, "jungle")...)
+	seeds := biomeChunks(g, mixed, "forest", "roofed_forest", "jungle", "savanna", "taiga", "birch_forest")
+	seeds = append(seeds, biomeChunks(g, each, "roofed_forest")...)
+	seeds = append(seeds, biomeChunks(g, each, "savanna")...)
+	seeds = append(seeds, biomeChunks(g, each, "jungle")...)
 	if len(seeds) < 8 {
 		t.Fatalf("only %d tree chunks found", len(seeds))
 	}
@@ -512,6 +524,7 @@ func TestDecorationOrderIndependent(t *testing.T) {
 // TestDecorationOrderIndependentQuick is the same check, fixture free, on one forest, jungle or roofed
 // forest spot, whose trees cross chunk edges, for the default run.
 func TestDecorationOrderIndependentQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
 	checkDecorationOrderIndependent(t, 1, 0)
 }
 
@@ -564,6 +577,7 @@ func TestForestHasTreesDesertHasNone(t *testing.T) {
 // TestForestHasTreesDesertHasNoneQuick is the same check, fixture free, on 20 chunks of each of seeds
 // 1 and 2, for the default run.
 func TestForestHasTreesDesertHasNoneQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
 	checkForestAndDesert(t, []int64{1, 2}, 20)
 }
 
@@ -610,6 +624,7 @@ func TestTreesStandOnSoil(t *testing.T) {
 // TestTreesStandOnSoilQuick is the same check on a few dense blocks of chunks, for the default run:
 // forests and jungles, where sources overlap most, and savanna, whose acacias bend.
 func TestTreesStandOnSoilQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
 	checkTreesStandOnSoil(t, []int64{41}, func(g *Generator) [][2]int32 {
 		var pos [][2]int32
 		for _, b := range [][]string{{"jungle"}, {"roofed_forest"}, {"forest"}, {"savanna"}} {
@@ -736,6 +751,7 @@ func TestNoFloatingPlants(t *testing.T) {
 // where plants of neighbouring sources overlap (forests, plains and taiga with double plants, jungle,
 // swamp), under water (ocean) and on sand (desert).
 func TestNoFloatingPlantsQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
 	counts := checkNoFloatingPlants(t, []int64{7}, func(g *Generator) [][2]int32 {
 		var pos [][2]int32
 		for _, b := range [][]string{{"forest"}, {"flower_forest"}, {"plains", "sunflower_plains"}, {"taiga", "old_growth_spruce_taiga"},
@@ -837,10 +853,11 @@ func TestFrozenOceanHasIce(t *testing.T) {
 	checkFrozenOcean(t, 40, 20)
 }
 
-// TestFrozenOceanHasIceQuick is the same check, fixture free, on 20 frozen and 10 warmer ocean chunks,
+// TestFrozenOceanHasIceQuick is the same check, fixture free, on 10 frozen and 10 warmer ocean chunks,
 // for the default run.
 func TestFrozenOceanHasIceQuick(t *testing.T) {
-	checkFrozenOcean(t, 20, 10)
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkFrozenOcean(t, 10, 10)
 }
 
 func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
@@ -904,7 +921,8 @@ func TestSnowOnlyWhereCold(t *testing.T) {
 
 // TestSnowOnlyWhereColdQuick is the same check, fixture free, on a sparser sample for the default run.
 func TestSnowOnlyWhereColdQuick(t *testing.T) {
-	checkSnowOnlyWhereCold(t, []int64{11}, 300, 60, 8, 24, 12)
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkSnowOnlyWhereCold(t, []int64{11}, 300, 100, 8, 24, 12)
 }
 
 // checkSnowOnlyWhereCold samples every step-th chunk within reach of the origin on each seed, snowy
@@ -1003,6 +1021,7 @@ func BenchmarkGenerateTreeChunk(b *testing.B) {
 // Every block the generator places can be mined in survival. Bedrock can't, as in the game, and the
 // fluids and air are not blocks to mine. A survey over biomes, by world grid.
 func TestPlacedBlocksAreBreakable(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	seen := map[uint32]bool{}
 	var mu sync.Mutex
 	bedrockSample(24, func(g *Generator, c *chunk.Chunk, _, _ int) {
@@ -1096,6 +1115,7 @@ func TestSnowAndSeagrassInARealWorld(t *testing.T) {
 // scan up through powder snow, then snow block or powder snow below), where a sapling's survival test
 // would refuse them. Java's fixtures hold 14 grove trunks over 953 grove columns of seed 987654321.
 func TestGroveHasTrees(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(987654321)
 	spots := biomeChunks(g, 12, "grove")
 	if len(spots) < 6 {

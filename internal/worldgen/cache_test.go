@@ -71,6 +71,7 @@ func sourceFrom(g *Generator, tx, tz, sx, sz int) map[[2]int32]bs {
 // TestSourceSameFromEitherSide: a source's changes are the same whichever chunk asks for them, which
 // is what lets the cache share them (the review's test, on the default path).
 func TestSourceSameFromEitherSide(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	g := New(100)
 	g.SetCacheBytes(0)
 	for i := range 12 {

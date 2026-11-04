@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -30,6 +29,7 @@ type worldStats struct {
 	floorP10                                                      int
 	std                                                           [5]float64
 	contMedian, humid07, cont08, ocean, below63, river, farInland float64
+	inlandBelow                                                   float64 // Inland (not river or swamp) columns under Y 63, %.
 }
 
 const (
@@ -42,7 +42,7 @@ const (
 // the seed, so measuring on them compares like for like.
 var studySeeds = [statSeeds]int64{1, 12345, 987654321}
 
-func measureWorld() *worldStats {
+func measureWorld(seeds []int64) *worldStats {
 	const n = statSpan/statStep + 1
 	type sample struct {
 		biome string
@@ -51,10 +51,10 @@ func measureWorld() *worldStats {
 		s16   int
 		cl    Climate
 	}
-	all := make([]sample, 0, statSeeds*n*n)
+	all := make([]sample, 0, len(seeds)*n*n)
 	s := &worldStats{share: map[string]float64{}, patchOf: map[string]float64{}}
 	areas := map[string][]int{}
-	for _, seed := range studySeeds {
+	for _, seed := range seeds {
 		g := New(seed)
 		grid := make([]sample, n*n)
 		rows := make(chan int)
@@ -125,7 +125,7 @@ func measureWorld() *worldStats {
 		sumA += a1
 		sumA2 += a2
 	}
-	s.patches = patchCount / statSeeds
+	s.patches = patchCount / float64(len(seeds))
 	s.weightedPatch = sumA2 / sumA * 4
 	s.biomes = len(areas)
 
@@ -133,6 +133,7 @@ func measureWorld() *worldStats {
 	var land, heights, s4, s16 []int
 	var sums, squares [5]float64
 	conts := make([]float64, 0, len(all))
+	var inlandN, inlandUnder float64
 	for _, v := range all {
 		s.share[v.biome] += 100 / total
 		heights = append(heights, v.h)
@@ -153,6 +154,16 @@ func measureWorld() *worldStats {
 		}
 		if v.cl.Continentalness >= midBelow {
 			s.farInland += 100 / total
+		}
+		if v.cl.Continentalness >= -0.11 {
+			switch v.biome {
+			case "river", "frozen_river", "swampland", "mangrove_swamp":
+			default:
+				inlandN++
+				if v.h < SeaLevel {
+					inlandUnder++
+				}
+			}
 		}
 		if v.h < SeaLevel {
 			s.below63 += 100 / total
@@ -178,6 +189,7 @@ func measureWorld() *worldStats {
 	s.land170 *= 100 / float64(len(land))
 	s.landMedian, s.landP99, s.landP999 = percentile(land, 0.5), percentile(land, 0.99), percentile(land, 0.999)
 	s.floorP10 = percentile(heights, 0.1)
+	s.inlandBelow = inlandUnder / inlandN * 100
 	s.step4Mean, s.step4P99 = mean(s4), percentile(s4, 0.99)
 	s.step16Mean, s.step16P99 = mean(s16), percentile(s16, 0.99)
 	s.river = s.share["river"] + s.share["frozen_river"]
@@ -190,7 +202,13 @@ func measureWorld() *worldStats {
 // the study puts at about 1 point for small shares, and more for shares that follow
 // temperature (wavelength 4096, so only about two wavelengths are in the sample).
 func TestWorldMatchesMeasuredFigures(t *testing.T) {
-	s := measureWorld()
+	// One seed is too few for these tolerances (temperature, below sea), so the default run keeps all three.
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkMeasuredFigures(t, studySeeds[:])
+}
+
+func checkMeasuredFigures(t *testing.T, seeds []int64) {
+	s := measureWorld(seeds)
 	type row struct {
 		name         string
 		ours, mojang float64
@@ -228,7 +246,7 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 		{"continentalness median", s.contMedian, 0.04, 0.12},
 		{"far inland %", s.farInland, 25, 7},
 	}
-	below, inland := measureBelowSea()
+	below, inland := s.below63, s.inlandBelow // From the same samples (one pass over the grid).
 	t.Logf("below Y 63 %.1f%%; inland not river or swamp %.1f%%", below, inland)
 	rows = append(rows,
 		row{"below Y 63 %", below, 45, 3},
@@ -259,47 +277,6 @@ func TestWorldMatchesMeasuredFigures(t *testing.T) {
 // of the study's raw probe grid (mojang-grid.csv) gives 12.8%.
 const inlandBelowSeaFigure = 14.0
 
-// measureBelowSea gives the share of all columns under Y 63, and the inland share above, on the
-// study's seeds and sampling grid.
-func measureBelowSea() (below, inland float64) {
-	const n = statSpan/statStep + 1
-	var total, under, inlandTotal, inlandUnder atomic.Int64
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-	for _, seed := range studySeeds {
-		g := New(seed)
-		for i := range n {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
-				for j := range n {
-					x, z := -statSpan/2+i*statStep, -statSpan/2+j*statStep
-					h := g.noiseHeight(x, z)
-					total.Add(1)
-					if h < SeaLevel {
-						under.Add(1)
-					}
-					if g.Climate(x, z).Continentalness < -0.11 {
-						continue
-					}
-					switch g.BiomeAt(x, maxY, z).String() {
-					case "river", "frozen_river", "swampland", "mangrove_swamp":
-						continue
-					}
-					inlandTotal.Add(1)
-					if h < SeaLevel {
-						inlandUnder.Add(1)
-					}
-				}
-			}()
-		}
-	}
-	wg.Wait()
-	return float64(under.Load()) / float64(total.Load()) * 100, float64(inlandUnder.Load()) / float64(inlandTotal.Load()) * 100
-}
-
 // TestCaveSharesMatchMeasuredFigures measures blocks at least 8 under the column top, with
 // noise caves and fluids only (no carvers), on the study's bands, statSeeds seeds over 8192
 // blocks. Air must be within 1.5 points and each fluid within 1. Every figure is one recount of
@@ -310,6 +287,18 @@ func measureBelowSea() (below, inland float64) {
 // bands alike: the notes' figures differ by up to 1 point (for example 7.7 against 8.72 at
 // Y -20 to 0).
 func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
+	skipUnlessLong(t) // 31 s; TestCaveSharesMatchMeasuredFiguresQuick runs on the first seed by default.
+	checkCaveShares(t, studySeeds[:])
+}
+
+// TestCaveSharesMatchMeasuredFiguresQuick is the same check, with the same tolerances, on the first
+// study seed only, for the default run.
+func TestCaveSharesMatchMeasuredFiguresQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkCaveShares(t, studySeeds[:1])
+}
+
+func checkCaveShares(t *testing.T, seeds []int64) {
 	const airTol, fluidTol = 1.5, 1.0
 	bands := []struct {
 		lo, hi           int
@@ -329,7 +318,7 @@ func TestCaveSharesMatchMeasuredFigures(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, runtime.NumCPU())
-	for _, seed := range studySeeds {
+	for _, seed := range seeds {
 		g := New(seed)
 		for cx := -statSpan / 32; cx < statSpan/32; cx += 8 {
 			for cz := -statSpan / 32; cz < statSpan/32; cz += 8 {
@@ -484,7 +473,18 @@ func openNoiseCaves(g *Generator, seed int64, windows int) (land, open int) {
 // is block-exact against Java (TestGoldenNoiseStage), so the figure moves only with the sample: 60
 // windows of 2 x 2 chunks a seed gave 6.43% with one sampler, so it takes 240 (5.41%; 480 give 5.23%).
 func TestNoiseCavesOpenToSky(t *testing.T) {
-	const seeds = 12
+	skipUnlessLong(t) // 44 s; TestNoiseCavesOpenToSkyQuick pools the first 6 seeds by default.
+	checkNoiseCavesOpenToSky(t, 12)
+}
+
+// TestNoiseCavesOpenToSkyQuick is the same check, with the same tolerance and windows a seed, pooled
+// over seeds 1 to 6, for the default run.
+func TestNoiseCavesOpenToSkyQuick(t *testing.T) {
+	t.Parallel() // Heavy and self-contained: overlaps the other heavy tests (default suite under 7 min).
+	checkNoiseCavesOpenToSky(t, 6)
+}
+
+func checkNoiseCavesOpenToSky(t *testing.T, seeds int64) {
 	var land, open int
 	for seed := int64(1); seed <= seeds; seed++ {
 		l, o := openNoiseCaves(New(seed), seed, 240)

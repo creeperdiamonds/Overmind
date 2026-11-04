@@ -65,6 +65,7 @@ func TestCaveBiomesAppearUnderground(t *testing.T) {
 }
 
 func TestNoHardClimateJumps(t *testing.T) {
+	t.Parallel() // Self-contained: overlaps the heavy tests (default suite under 7 min).
 	cold := []string{(biome.SnowyPlains{}).String(), (biome.IceSpikes{}).String(), (biome.SnowyTaiga{}).String()}
 	hot := []string{(biome.Desert{}).String(), (biome.Badlands{}).String()}
 	const span, cell = 4096, 4 // Neighbouring biome cells are 4 blocks apart.
