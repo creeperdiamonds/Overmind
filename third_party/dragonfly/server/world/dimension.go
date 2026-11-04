@@ -156,7 +156,7 @@ func (overworld) String() string                    { return "Overworld" }
 
 func (nether) Range() cube.Range                 { return cube.Range{0, 127} }
 func (nether) WaterEvaporates() bool             { return true }
-func (nether) LavaSpreadDuration() time.Duration { return time.Second / 4 }
+func (nether) LavaSpreadDuration() time.Duration { return time.Second / 2 } // Overmind fork: 10 ticks, was 5
 func (nether) WeatherCycle() bool                { return false }
 func (nether) TimeCycle() bool                   { return false }
 func (nether) String() string                    { return "Nether" }
