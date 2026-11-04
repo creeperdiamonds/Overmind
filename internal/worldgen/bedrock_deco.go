@@ -358,10 +358,9 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 			}
 			p[a] += rule.axes[a].eval(r1)
 		}
-		if p[1] < minY || p[1] > maxY {
-			continue
-		}
-		if multi && d.storedBiome(p[0], p[1], p[2]) != b {
+		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
+		// position outside the world still places, and its feature still draws.
+		if multi && (p[1] < minY || p[1] > maxY || d.storedBiome(p[0], p[1], p[2]) != b) {
 			continue
 		}
 		rule.place(d, &d.br2, pos{p[0], p[1], p[2]})
