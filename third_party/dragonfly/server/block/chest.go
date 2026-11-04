@@ -28,6 +28,10 @@ type Chest struct {
 	// CustomName is the custom name of the chest. This name is displayed when the chest is opened, and may
 	// include colour codes.
 	CustomName string
+	// LootTable and LootTableSeed are the loot a generated chest rolls when it is first opened, as Bedrock
+	// stores them (Overmind fork): the table's path and the seed. Empty once rolled.
+	LootTable     string
+	LootTableSeed int32
 
 	paired       bool
 	pairX, pairZ int
@@ -65,8 +69,30 @@ func (c Chest) ContainerSize() int {
 // Inventory returns the inventory of the chest. The size of the inventory will be 27 or 54, depending on
 // whether the chest is single or double.
 func (c Chest) Inventory(tx *world.Tx, pos cube.Pos) *inventory.Inventory {
+	c.unpackLoot(tx, pos)
+	if c.paired {
+		if p, ok := tx.Block(c.pairPos(pos)).(Chest); ok {
+			p.unpackLoot(tx, c.pairPos(pos))
+		}
+	}
 	inv, _ := c.tryPair(tx, pos)
 	return inv
+}
+
+// LootFiller rolls a loot table with a seed into a container (Overmind fork). The server sets it; with
+// none set, a chest's loot table is kept until one is.
+var LootFiller func(table string, seed int32, inv *inventory.Inventory) bool
+
+// unpackLoot rolls the chest's loot table into its inventory the first time it is asked for, and clears
+// the table (Overmind fork; Bedrock's unpackLootTable).
+func (c Chest) unpackLoot(tx *world.Tx, pos cube.Pos) {
+	if c.LootTable == "" || LootFiller == nil || c.inventory == nil {
+		return
+	}
+	table, seed := c.LootTable, c.LootTableSeed
+	c.LootTable, c.LootTableSeed = "", 0
+	tx.SetBlock(pos, c, nil)
+	LootFiller(table, seed, c.inventory)
 }
 
 // tryPair attempts to pair the inventories of this chest with a potential
@@ -308,6 +334,8 @@ func (c Chest) DecodeNBT(data map[string]any) any {
 	c = NewChest()
 	c.Facing = facing
 	c.CustomName = nbtconv.String(data, "CustomName")
+	c.LootTable = nbtconv.String(data, "LootTable") // Overmind fork.
+	c.LootTableSeed = nbtconv.Int32(data, "LootTableSeed")
 
 	pairX, ok := data["pairx"]
 	pairZ, ok2 := data["pairz"]
@@ -327,10 +355,10 @@ func (c Chest) DecodeNBT(data map[string]any) any {
 // EncodeNBT ...
 func (c Chest) EncodeNBT() map[string]any {
 	if c.inventory == nil {
-		facing, customName := c.Facing, c.CustomName
+		facing, customName, table, seed := c.Facing, c.CustomName, c.LootTable, c.LootTableSeed
 		//noinspection GoAssignmentToReceiver
 		c = NewChest()
-		c.Facing, c.CustomName = facing, customName
+		c.Facing, c.CustomName, c.LootTable, c.LootTableSeed = facing, customName, table, seed
 	}
 	m := map[string]any{
 		"Items": nbtconv.InvToNBT(c.inventory),
@@ -338,6 +366,9 @@ func (c Chest) EncodeNBT() map[string]any {
 	}
 	if c.CustomName != "" {
 		m["CustomName"] = c.CustomName
+	}
+	if c.LootTable != "" { // Overmind fork.
+		m["LootTable"], m["LootTableSeed"] = c.LootTable, c.LootTableSeed
 	}
 
 	if c.paired {

@@ -16,6 +16,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world/generator"
 
 	"github.com/creeperdiamonds/overmind/internal/config"
+	"github.com/creeperdiamonds/overmind/internal/structures"
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
@@ -65,6 +66,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 	}
 	bd := bedrockData(log, cfg.BedrockDataDir, profile)
 	gen := worldgen.NewWithData(seed, profile, bd)
+	attachStructures(log, gen, cfg.BedrockDataDir)
 	ident := provenanceIdent(profile.Name, bd)
 	if old, changed, err := recordProvenance(cfg.WorldFolder, ident); err != nil {
 		log.Warn("Could not record how the world is generated", "file", provenanceFile, "error", err)
@@ -134,6 +136,24 @@ func unusedGenerator(dim world.Dimension) world.Generator {
 		return generator.NewFlat(biome.NetherWastes{}, []world.Block{block.Netherrack{}, block.Bedrock{}})
 	}
 	return generator.NewFlat(biome.End{}, []world.Block{block.EndStone{}, block.Bedrock{}})
+}
+
+// attachStructures gives the world its structures (Task 9) when the Bedrock profile has the install's
+// data: templates and loot tables come from that install. Without it structures are skipped, with one
+// log line. Loot is rolled when a generated chest is first opened.
+func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) {
+	if gen.Data() == nil {
+		log.Warn("Structures are skipped: they need the Bedrock profile and a readable Bedrock install (BedrockDataDir).")
+		return
+	}
+	sd, err := structures.LoadData(dir)
+	if err != nil {
+		log.Warn("Structures are skipped: the Bedrock install's structure data could not be read.", "folder", dir, "error", err)
+		return
+	}
+	gen.SetStructures(structures.New(gen, sd))
+	block.LootFiller = sd.Fill
+	log.Info("Structure data read", "folder", dir, "read", sd.Summary())
 }
 
 // bedrockData reads Bedrock's feature data for the Bedrock profile. It never fails the start: with no

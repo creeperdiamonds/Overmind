@@ -17,4 +17,7 @@ Changes, each marked "Overmind fork" in the code:
 
 - `server/session/handler_request_chunk_radius.go`: a client's radius is held to at least 2 (`minChunkRadius`, `clampChunkRadius`), the smallest tick reach (0, the player's own chunk) plus 2, so a tick never reads an unloaded chunk. Tested by `overmind_radius_test.go`.
 
+- `server/block/chest.go`: a chest keeps Bedrock's `LootTable` and `LootTableSeed` block entity fields (`Chest.LootTable`, `Chest.LootTableSeed`, read and written in its NBT) and rolls the table into its inventory the first time the inventory is asked for (`unpackLoot`, through the package variable `LootFiller` the server sets; Bedrock's unpackLootTable), so generated structure chests are filled when first opened, as on Bedrock (Task 9). A double chest rolls both halves. Breaking an unopened chest drops nothing rolled (`BreakInfo` has no transaction to roll in); open it first.
+- `server/world/generator.go`, `server/world/world.go`: `ColumnGenerator`, a generator that also fills a new column's block entities (structure chests); `loadChunk` calls its `GenerateColumn` instead of `GenerateChunk`, and the single-worker `lockedGenerator` passes it through (Task 9).
+
 To take a new Dragonfly release: copy it over this folder, then reapply the changes above.

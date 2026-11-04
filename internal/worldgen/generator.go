@@ -48,6 +48,8 @@ type Generator struct {
 	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
 	// biomes (bedrock_biomes.go) rather than quarts.
 	bedrockBiomes bool
+
+	structs StructurePlacer // Structures placed after decoration (structures_api.go), nil for none.
 }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
@@ -145,6 +147,9 @@ type chunkScratch struct {
 	changeKeys  []int64 // Each change's working-set key, slot and cell.
 	merge       merger
 	firstOld    map[int64]bs
+
+	adjustIn []TerrainAdjustment // Structure terrain adaptation of the chunk being filled (structures_terrain.go).
+	adapt    []adaptDesc
 }
 
 const cellsAcross = 16 / cellXZ
@@ -173,13 +178,18 @@ func newScratch() *chunkScratch {
 // reads no real neighbour. Bases and source results go in the shared cache, which empties once no
 // chunk is being asked for.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
-	cx, cz := int(pos[0]), int(pos[1])
+	g.generateInto(int(pos[0]), int(pos[1]), c, nil)
+}
+
+// generateInto is GenerateChunk, with the structures' block entities put in col when it is not nil.
+func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
 	g.cache.begin()
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
+	g.placeStructures(cx, cz, c, col)
 }
 
 // finalCells makes a chunk's finished blocks, in the scratch.
@@ -496,6 +506,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 		}
 	}
 	skip := g.skipAbove(&s.aq)
+	adapt := g.terrainAdaptation(s, b.cx, b.cz)
 	var kinds [cellsAcross][cellsAcross][columnNodes - 1]uint8
 	var noodles [cellsAcross][cellsAcross][columnNodes - 1]bool
 	var veins [cellsAcross][cellsAcross][columnNodes - 1]bool
@@ -511,7 +522,14 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 				baseY := minY + l*cellY
 				kind := kinds[i][j][l]
 				if kind == cellUnknown {
-					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, skip)
+					cellSkip := skip
+					if adapt != nil && adapt.touchesCell(originX+i*cellXZ, baseY, originZ+j*cellXZ) {
+						cellSkip = maxY + cellY // A structure's terrain term: no sky shortcut, and no solid one below.
+					}
+					kind, noodles[i][j][l], veins[i][j][l] = g.classifyCell(s, originX, originZ, i, j, l, cellSkip)
+					if kind == cellSolid && cellSkip != skip {
+						kind = cellMixed
+					}
 					kinds[i][j][l] = kind
 				}
 				switch kind {
@@ -535,7 +553,7 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 					for dy := cellY - 1; dy >= 0; dy-- {
 						y := baseY + dy
 						fy := float64(dy) / 8.0
-						f := blend.final(fy)
+						f := blend.final(fy) + adapt.at(wx, y, wz)
 						var k fillKind = fillSolid
 						if !(f > 0) {
 							k = g.fluidAt(&s.aq, wx, y, wz, f)
@@ -720,4 +738,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-04.4e5"
+const GeneratorVersion = "2026-11-05.s9"
