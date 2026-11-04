@@ -46,6 +46,7 @@ type Generator struct {
 	// dim is the dimension generated: the Overworld, or the Nether for the generator Nether makes.
 	dim     uint8
 	netherN *NetherGenerator // The Nether's terrain, biomes and surface, for dim == dimNether.
+	endN    *endGenerator    // The End's terrain and spikes, for dim == dimEnd.
 	// biomeTree is the biome table's search tree: Java's, or Bedrock's with its own cave biome.
 	biomeTree *biomeNode
 	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
@@ -195,6 +196,12 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 		g.netherN.storeBiomes(c, cx, cz)
 		return
 	}
+	if g.dim == dimEnd {
+		cells := g.finalCells(s, cx, cz)
+		placeEndPodium(cells, cx, cz, g.endPodiumTop(s))
+		writeEndCells(c, cells)
+		return
+	}
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
 	g.placeStructures(cx, cz, c, col)
@@ -202,7 +209,7 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 
 // finalCells makes a chunk's finished blocks, in the scratch.
 func (g *Generator) finalCells(s *chunkScratch, cx, cz int) *[chunkCells]bs {
-	if g.bedrockDeco() {
+	if g.parityDeco() {
 		return g.finalCellsParity(s, cx, cz)
 	}
 	final := &s.final
@@ -441,7 +448,7 @@ func (s *chunkScratch) runSourceChanges(d *decoration, sx, sz int) *sourceResult
 	}
 	var grounds []ground
 	for i, c := range s.changes {
-		if d.g.bedrockDeco() {
+		if d.g.parityDeco() {
 			break // In the Bedrock order a source's ground is what the finished world has.
 		}
 		if !standsOnBelow(c.now) || c.cell < 256 {
@@ -689,6 +696,12 @@ func (g *Generator) spawnClear(x, y, z int) bool {
 // DefaultSpawn searches outward from the origin for such ground, with room to stand on it. A
 // candidate costs one chunk, and only those that pass the cheap tests get that far.
 func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
+	switch g.dim {
+	case dimNether:
+		return g.netherN.DefaultSpawn(world.Nether)
+	case dimEnd:
+		return cube.Pos{100, 49, 0} // Where the End's arrival platform goes.
+	}
 	const step, reach = 32, 2048
 	for r := 0; r <= reach; r += step {
 		for a := -r; a <= r; a += step {
@@ -746,4 +759,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.4e6"
+const GeneratorVersion = "2026-11-05.t11"

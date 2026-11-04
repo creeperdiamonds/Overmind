@@ -88,6 +88,10 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 		g.buildNetherBase(b, stage)
 		return
 	}
+	if g.dim == dimEnd {
+		g.buildEndBase(b)
+		return
+	}
 	s.startChunk(g, originX, originZ)
 	g.fillNoise(b, s, x0, x1, z0, z1)
 	var floor *bmt

@@ -766,6 +766,10 @@ func (d *decoration) runSource(cx, cz int) {
 	ox, oz := cx*16, cz*16
 	d.region = d.g.regionFac.at(int32(ox), 0, int32(oz))
 	d.decSeed = int64(ox)*a + int64(oz)*b ^ d.g.seed
+	if d.g.dim == dimEnd {
+		d.runSourceEnd(cx, cz)
+		return
+	}
 	l := d.chunkAt(cx, cz)
 	d.mapsReady(l)
 	l.primed = true

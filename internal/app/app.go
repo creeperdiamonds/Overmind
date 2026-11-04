@@ -12,8 +12,6 @@ import (
 	"github.com/df-mc/dragonfly/server"
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/world"
-	"github.com/df-mc/dragonfly/server/world/biome"
-	"github.com/df-mc/dragonfly/server/world/generator"
 
 	"github.com/creeperdiamonds/overmind/internal/config"
 	"github.com/creeperdiamonds/overmind/internal/structures"
@@ -79,6 +77,9 @@ func Start(cfg config.Config) (*server.Server, error) {
 	guard := &offTick{g: gen}
 	// The Nether is Bedrock's for every profile (Task 10); Overjava's Java Nether is not written.
 	netherGuard := &offTick{g: gen.Nether()} // Shares the Overworld generator's cache cap.
+	// The End likewise (Task 11): Bedrock's terrain, spikes, islands, chorus and gateways, and the
+	// inactive exit portal; no dragon fight yet.
+	endGuard := &offTick{g: gen.End()}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		switch dim {
 		case world.Overworld:
@@ -86,7 +87,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 		case world.Nether:
 			return netherGuard
 		}
-		return unusedGenerator(dim)
+		return endGuard
 	}
 	conf.RandomTickSpeed = cfg.RandomTickSpeed
 	conf.ChunkLoadWorkers = chunkWorkers(cfg.ChunkWorkers)
@@ -105,6 +106,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 	srv := conf.New()
 	guard.watch(srv.World())
 	netherGuard.watch(srv.Nether())
+	endGuard.watch(srv.End())
 	if err := preloadSpawn(srv.World(), int(set.TickRange)+2); err != nil {
 		log.Warn("Spawn chunks did not load in time", "error", err)
 	}
@@ -133,11 +135,6 @@ func tickDistance(set, view int) int {
 		set = 4
 	}
 	return max(1, min(set, view-2))
-}
-
-// unusedGenerator makes the End a flat floor; nothing generates an End portal yet.
-func unusedGenerator(dim world.Dimension) world.Generator {
-	return generator.NewFlat(biome.End{}, []world.Block{block.EndStone{}, block.Bedrock{}})
 }
 
 // attachStructures gives the world its structures (Task 9) when the Bedrock profile has the install's
