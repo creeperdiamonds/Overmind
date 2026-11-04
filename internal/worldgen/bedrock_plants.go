@@ -41,6 +41,16 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 	switch id {
 	case "minecraft:pointed_dripstone_feature":
 		return codeFeat(bedrockPointedDripstone), true, nil
+	case "minecraft:delta_feature":
+		return codeFeat(deltaFeature), true, nil
+	case "minecraft:basalt_columns_feature":
+		return codeFeat(basaltColumns), true, nil
+	case "minecraft:_huge_crimson_fungus_feature":
+		return codeFeat(hugeFungus{sCrimsonStem, sNetherWart, true}.place), true, nil
+	case "minecraft:_huge_warped_fungus_feature":
+		return codeFeat(hugeFungus{sWarpedStem, sWarpedWart, false}.place), true, nil
+	case "minecraft:_weeping_vines_cluster_feature":
+		return codeFeat(weepingVinesCluster), true, nil
 	case "minecraft:dripstone_cluster_feature":
 		return codeFeat(bedrockDripstoneCluster), true, nil
 	case "minecraft:large_dripstone_feature":

@@ -455,6 +455,10 @@ func dragonflyBlock(name string) world.Block {
 		return block.EndStone{}
 	case "fire":
 		return block.Fire{Type: block.NormalFire()}
+	case "crimson_stem":
+		return block.Log{Wood: block.CrimsonWood(), Axis: cube.Y}
+	case "warped_stem":
+		return block.Log{Wood: block.WarpedWood(), Axis: cube.Y}
 	case "soul_fire":
 		return block.Fire{Type: block.SoulFire()}
 	case "obsidian":

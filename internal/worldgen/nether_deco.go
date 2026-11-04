@@ -3,17 +3,18 @@ package worldgen
 // The Nether's own decoration (Task 10), NetherGenerator::decorationPostProcessChunk (0x52d6c70), in
 // our own Go from the study of BDS 1.26.60.6 (NOTES-bedrock-nether N5): Java 1.12's
 // ChunkGeneratorHell.populate order, every draw from one MT seeded with the chunk's decoration seed.
-// What runs here, in the code's order: 8 lava springs, fire, glowstone (two kinds), brown and red
-// mushrooms, nether gold and quartz ores, 16 closed lava springs. Then the data-driven passes run, on a
-// reseeded MT, as everywhere.
+// What runs here, in the code's order (the study's round-2 decorate section): 8 lava springs, fire,
+// glowstone (two kinds), brown and red mushrooms, nether gold and quartz ores, 16 closed lava springs,
+// magma (over netherrack and blackstone), gravel and blackstone blobs. Then the data-driven passes run,
+// on a reseeded MT, as everywhere.
 //
-// Not placed, and why: the magma step (9 blobs at Y 23..36 read from the code, but its blob does not
-// match BDS: 29% of BDS's magma, the study's open item 1), and the gravel and blackstone blobs and the
-// ancient debris after it, which the study could not match either (N6). They draw from the same MT
-// after everything placed here and before the reseed, so leaving them out changes nothing else.
+// Not placed: ancient debris (steps 14 and 15, after the passes). Its walk is read, but the state of
+// the MT after the passes and its counts are fitted and match half the blocks (the study's 51%).
 //
-// Ore sizes are Java's (gold 10, quartz 14), not read from the code; measured by the study on the BDS
-// worlds at 99.3% / 99.6% (gold) and 99.2% / 99.1% (quartz).
+// The ore sizes are in code-registered feature objects the study did not read; each is measured on the
+// BDS worlds (ruling 39): gold 10 and quartz 14 (Java's; 99.3% / 99.6% and 99.2% / 99.1% recall /
+// precision), magma 28 (from the first blob of 64 chunks, whose position does not depend on the size:
+// 99.1% of its blocks are BDS magma; Java's 33 gives 72%), gravel and blackstone 33 (Java's; 99.9%).
 
 var (
 	sFire       = laterState("fire")
@@ -74,6 +75,18 @@ func (d *decoration) netherDecorate(r *bmt, cx, cz int) {
 	for range 16 {
 		x, y, z := at(x0, 108, 10, z0)
 		d.netherSpring(x, y, z, true)
+	}
+	for range 9 {
+		x, y, z := at(x0, 14, 23, z0)
+		netherMagma.place(d, r, pos{x, y, z})
+	}
+	for range 2 {
+		x, y, z := at(x0, 32, 5, z0)
+		netherGrav.place(d, r, pos{x, y, z})
+	}
+	for range 2 {
+		x, y, z := at(x0, 32, 5, z0)
+		netherBlack.place(d, r, pos{x, y, z})
 	}
 }
 
