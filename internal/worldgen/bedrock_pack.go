@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +36,9 @@ type BedrockData struct {
 	biomes   map[string]*packBiome
 
 	// Compiled for the generator.
+	fc                   *featCompiler
+	javaKeep             map[string]bool // Java placements kept for Bedrock rules not written yet.
+	passes               [len(bedrockPasses)][]*bedrockRule
 	underground, surface []*bedrockRule
 	carvers              []caveCarver
 	ores                 map[string]*bedrockOre // By rule identifier, for tests.
@@ -519,8 +521,12 @@ func packBlockName(raw json.RawMessage) (string, bool) {
 
 // compile builds what the generator runs from the data.
 func (bd *BedrockData) compile() error {
-	bd.underground = bd.compilePass("underground_pass")
-	bd.surface = bd.compilePass("surface_pass")
+	bd.fc = &featCompiler{bd: bd, slots: map[string]*featSlot{}, ores: map[string]*bedrockOre{}}
+	bd.javaKeep = map[string]bool{}
+	for i, pass := range bedrockPasses {
+		bd.passes[i] = bd.compilePass(pass)
+	}
+	bd.underground, bd.surface = bd.passes[2], bd.passes[5]
 	for _, id := range bd.order["pregeneration_pass"] {
 		r := bd.rules[id]
 		f, ok := bd.features[r.Description.PlacesFeature]
@@ -562,24 +568,34 @@ func (bd *BedrockData) ruleBiomes(r *packRule) (set [2]uint64) {
 	return set
 }
 
-// compilePass makes the rules of a pass that place a feature written here, in the pass's order.
+// bedrockPasses are the decoration passes in the order a chunk runs them (dsim's PASSES).
+var bedrockPasses = [7]string{"first_pass", "before_underground_pass", "underground_pass", "after_underground_pass",
+	"before_surface_pass", "surface_pass", "after_surface_pass"}
+
+// compilePass makes the rules of a pass whose features are written, in the pass's order.
 func (bd *BedrockData) compilePass(pass string) []*bedrockRule {
 	var out []*bedrockRule
 	for _, id := range bd.order[pass] {
 		r := bd.rules[id]
 		bd.lastOre = nil
-		place, why := bd.featurePlacer(r.Description.PlacesFeature)
-		if place == nil {
-			bd.Skipped[pass+": "+why]++
+		feat, err := bd.fc.feature(r.Description.PlacesFeature)
+		if err != nil {
+			why := err.Error()
+			if !isUnimpl(err) {
+				why = "error: " + why
+			}
+			bd.Skipped[pass+": "+shortReason(why)]++
+			bd.keepJava(id)
 			continue
 		}
-		rule, why := parseScatter(r.Distribution)
-		if rule == nil {
-			bd.Skipped[pass+": scatter "+why]++
+		sc, err := parseScatterParams(r.Distribution, bd)
+		if err != nil {
+			bd.Skipped[pass+": scatter "+shortReason(err.Error())]++
+			bd.keepJava(id)
 			continue
 		}
-		rule.ident, rule.hash, rule.place = id, uint32(fnv1Hash(id)), place
-		if o := bd.lastOre; o != nil {
+		rule := &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
+		if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
 			bd.ores[id] = o
 		}
 		rule.biomes = bd.ruleBiomes(r)
@@ -588,27 +604,16 @@ func (bd *BedrockData) compilePass(pass string) []*bedrockRule {
 	return out
 }
 
-// featurePlacer gives a feature's place function, or nil and why not. The features registered in
-// code (no file) are the dirt rule's ore (section 4b) and the disks (R5).
-func (bd *BedrockData) featurePlacer(id string) (func(d *decoration, r *bmt, p pos), string) {
-	switch id {
-	case "minecraft:dirt_feature":
-		bd.lastOre = newBedrockOre(33, 0, []oreRule{{"dirt", "stone"}})
-		return bd.lastOre.place, ""
-	case "minecraft:sand_feature":
-		return sandDisk{block: sSand, radius: 7}.place, ""
-	case "minecraft:gravel_feature":
-		return sandDisk{block: sGravel, radius: 6}.place, ""
-	case "minecraft:clay_feature":
-		return clayDisk, ""
+// shortReason keeps the innermost part of a reason, for the Skipped counts.
+func shortReason(s string) string {
+	if i := strings.LastIndex(s, ": "); i >= 0 {
+		return s[i+2:]
 	}
-	f, ok := bd.features[id]
-	if !ok {
-		return nil, "unknown feature"
-	}
-	if f.kind != "minecraft:ore_feature" {
-		return nil, f.kind
-	}
+	return s
+}
+
+// oreFeature reads an ore_feature file (section 4).
+func (bd *BedrockData) oreFeature(body json.RawMessage) (func(d *decoration, r *bmt, p pos), string) {
 	var o struct {
 		Count   float64 `json:"count"`
 		Discard float32 `json:"discard_chance_on_air_exposure"`
@@ -617,7 +622,7 @@ func (bd *BedrockData) featurePlacer(id string) (func(d *decoration, r *bmt, p p
 			May    []json.RawMessage `json:"may_replace"`
 		} `json:"replace_rules"`
 	}
-	if json.Unmarshal(f.body, &o) != nil {
+	if json.Unmarshal(body, &o) != nil {
 		return nil, "ore file"
 	}
 	var rules []oreRule
@@ -638,79 +643,6 @@ func (bd *BedrockData) featurePlacer(id string) (func(d *decoration, r *bmt, p p
 	}
 	bd.lastOre = newBedrockOre(int(o.Count), o.Discard, rules)
 	return bd.lastOre.place, ""
-}
-
-// aboveTopSolidExpr is the one Molang coordinate written so far.
-var aboveTopSolidExpr = regexp.MustCompile(`^\s*query\.above_top_solid\(\s*variable\.worldx\s*,\s*variable\.worldz\s*\)\s*$`)
-
-// parseScatter reads a rule's distribution (section 3): iterations, scatter chance, coordinate order
-// (default xzy, S3) and the three coordinates. It returns nil and why for what is not written yet.
-func parseScatter(d map[string]json.RawMessage) (*bedrockRule, string) {
-	r := &bedrockRule{order: evalOrder("xzy")}
-	var it float64
-	if raw, ok := d["iterations"]; ok {
-		if json.Unmarshal(raw, &it) != nil {
-			return nil, "iterations expression"
-		}
-	} else {
-		it = 1
-	}
-	r.iterations = int(math.Round(it))
-	if raw, ok := d["scatter_chance"]; ok {
-		var frac struct{ Numerator, Denominator int }
-		var pct float64
-		switch {
-		case json.Unmarshal(raw, &pct) == nil:
-			r.percent, r.hasPercent = float32(pct), true
-		case json.Unmarshal(raw, &frac) == nil && frac.Denominator > 0:
-			r.num, r.den = frac.Numerator, frac.Denominator
-		default:
-			return nil, "chance expression"
-		}
-	}
-	if raw, ok := d["coordinate_eval_order"]; ok {
-		var s string
-		if json.Unmarshal(raw, &s) != nil || len(s) != 3 {
-			return nil, "order"
-		}
-		r.order = evalOrder(s)
-	}
-	for i, k := range []string{"x", "y", "z"} {
-		raw, ok := d[k]
-		if !ok {
-			continue // Absent: 0.
-		}
-		var num float64
-		var s string
-		var dist struct {
-			Distribution string             `json:"distribution"`
-			Extent       [2]json.RawMessage `json:"extent"`
-		}
-		switch {
-		case json.Unmarshal(raw, &num) == nil:
-			v := int(math.Round(num))
-			r.axes[i] = bAxis{bSingle, v, v}
-		case json.Unmarshal(raw, &s) == nil:
-			if !aboveTopSolidExpr.MatchString(s) {
-				return nil, "coordinate expression"
-			}
-			r.axes[i] = bAxis{kind: bAboveTopSolid}
-		case json.Unmarshal(raw, &dist) == nil:
-			var lo, hi float64
-			if json.Unmarshal(dist.Extent[0], &lo) != nil || json.Unmarshal(dist.Extent[1], &hi) != nil {
-				return nil, "extent expression"
-			}
-			kind, ok := map[string]bAxisKind{"": bUniform, "uniform": bUniform, "gaussian": bGaussian,
-				"inverse_gaussian": bInverseGaussian, "triangle": bTriangle}[dist.Distribution]
-			if !ok {
-				return nil, "distribution " + dist.Distribution
-			}
-			r.axes[i] = bAxis{kind, int(math.Round(lo)), int(math.Round(hi))}
-		default:
-			return nil, "coordinate"
-		}
-	}
-	return r, ""
 }
 
 // compileSurfaceBiomes reads each of our biomes' surface builder (phase 5, S1).
@@ -776,8 +708,12 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 
 // Summary is one line on what was read, for the server log.
 func (bd *BedrockData) Summary() string {
-	return fmt.Sprintf("%d feature rules, %d features, %d biomes; %d underground and %d surface rules, %d cave carvers written",
-		len(bd.rules), len(bd.features), len(bd.biomes), len(bd.underground), len(bd.surface), len(bd.carvers))
+	n := 0
+	for _, p := range bd.passes {
+		n += len(p)
+	}
+	return fmt.Sprintf("%d feature rules, %d features, %d biomes; %d rules written (%d underground, %d surface), %d cave carvers",
+		len(bd.rules), len(bd.features), len(bd.biomes), n, len(bd.underground), len(bd.surface), len(bd.carvers))
 }
 
 // defaultBedrockData is what New and NewWithProfile use.

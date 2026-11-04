@@ -251,6 +251,7 @@ type decoration struct {
 	// The Bedrock profile's two generators of a rule (section 2) and a chunk's biome list.
 	br1, br2  bmt
 	biomeList []uint8
+	menv      molangEnv // The Molang a rule and its features read.
 	placed  bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.
 	lastCX, lastCZ     int

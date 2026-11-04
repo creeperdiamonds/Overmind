@@ -1,6 +1,9 @@
 package worldgen
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Bedrock's decoration (Task 4e), for the Bedrock profile, in our own Go from the study of BDS
 // 1.26.60.6 (NOTES-bedrock-exact sections 2, 3 and Q0).
@@ -176,30 +179,93 @@ func newBedrockSeeds(seed int64) bedrockSeeds {
 func (b bedrockSeeds) chunk(cx, cz int) uint32 { return bedrockChunkSeed(b.level, b.xm, b.zm, cx, cz) }
 
 // runSourceBedrock decorates a source in the Bedrock profile: Bedrock's own passes for the rules
-// written so far, and the profile's other placements, Java's algorithms, around them in Java's steps.
+// written so far, and the profile's other placements, Java's algorithms, around them in Java's steps:
+// the first four passes at Java's ore step, the surface passes at its vegetation step.
 func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	ox, oz := cx*16, cz*16
-	underground, surface := false, false
+	bd := d.g.bdata
+	under, surf := false, false
 	for _, pl := range d.g.profile.placements {
-		if !underground && pl.step >= oreStep {
-			underground = true
-			d.bedrockPass(d.g.bdata.underground)
+		if !under && pl.step >= oreStep {
+			under = true
+			for i := range 4 {
+				d.bedrockPass(bd.passes[i])
+			}
 		}
-		if !surface && pl.step >= vegetationStep {
-			surface = true
-			d.bedrockPass(d.g.bdata.surface)
+		if !surf && pl.step >= vegetationStep {
+			surf = true
+			for i := 4; i < len(bd.passes); i++ {
+				d.bedrockPass(bd.passes[i])
+			}
 		}
-		if d.g.profile.bedrockReplaces[pl.name] || !placementInBiomes(pl, biomes) {
+		if bd.javaReplaced(d.g.profile, pl) || !placementInBiomes(pl, biomes) {
 			continue
 		}
 		d.r.setSeed(d.decSeed + int64(pl.idx) + int64(10000*pl.step))
 		d.run(pl.mods, pl.feat, pos{ox, minY, oz})
 	}
-	if !underground {
-		d.bedrockPass(d.g.bdata.underground)
+	if !under {
+		for i := range 4 {
+			d.bedrockPass(bd.passes[i])
+		}
 	}
-	if !surface {
-		d.bedrockPass(d.g.bdata.surface)
+	if !surf {
+		for i := 4; i < len(bd.passes); i++ {
+			d.bedrockPass(bd.passes[i])
+		}
+	}
+}
+
+// javaReplaced says whether Bedrock's passes take a Java placement's place: the profile's ores and
+// disks, and every plant and tree of Java's vegetation step but glow lichen, unless the Bedrock rules
+// that would place them are not written yet (javaKeep).
+func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
+	if bd.javaKeep[pl.name] {
+		return false
+	}
+	if p.bedrockReplaces[pl.name] {
+		return true
+	}
+	switch pl.name {
+	case "glow_lichen":
+		return false
+	case "forest_rock", "ore_infested":
+		return true
+	}
+	return pl.step == vegetationStep
+}
+
+// bedrockJavaFallback names the Java placements kept while a Bedrock rule is not written, by a part of
+// the rule's identifier.
+var bedrockJavaFallback = []struct{ rule, java string }{
+	{"jungle_surface_trees", "trees_jungle"},
+	{"jungle_edge_surface_trees", "trees_sparse_jungle"},
+	{"bamboo_jungle_surface_trees", "bamboo_vegetation"},
+	{"bamboo_jungle_before_surface_bamboo", "bamboo"},
+	{"swamp_surface_swamp_foliage", "trees_swamp"},
+	{"mangrove_swamp_", "trees_mangrove"},
+	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
+	{"swamp_surface_waterlily", "patch_waterlily"},
+	{"plains_surface_flowers", "flower_plains"},
+	{"flower_forest_surface_flowers", "flower_flower_forest flower_forest_flowers"},
+	{"meadow_flowers_feature", "flower_meadow"},
+	{"redwood_taiga_mutated_surface_trees", "trees_old_growth_spruce_taiga"},
+	{"taiga_surface_mushrooms", "brown_mushroom_taiga red_mushroom_taiga brown_mushroom_old_growth red_mushroom_old_growth"},
+	{"swamp_surface_mushrooms", "brown_mushroom_swamp red_mushroom_swamp"},
+	{"warm_ocean_after_surface_coral_feature", "warm_ocean_vegetation"},
+	{"firefly_bush", "patch_firefly_bush_swamp patch_firefly_bush_near_water_swamp patch_firefly_bush_near_water"},
+	{"jungle_after_surface_vines", "vines"},
+	{"extreme_hills_after_surface_emerald_ore", "ore_emerald"},
+}
+
+// keepJava fills javaKeep from the rules of a pass that were skipped.
+func (bd *BedrockData) keepJava(id string) {
+	for _, f := range bedrockJavaFallback {
+		if strings.Contains(id, f.rule) {
+			for _, n := range strings.Fields(f.java) {
+				bd.javaKeep[n] = true
+			}
+		}
 	}
 }
 
@@ -246,8 +312,6 @@ const (
 	bFixedGrid
 	bJitteredGrid
 	bTriangle
-	// bAboveTopSolid is a y given as query.above_top_solid of the column drawn so far (bedrock_disks.go).
-	bAboveTopSolid
 )
 
 // bAxis is one coordinate's distribution and extent.
@@ -297,17 +361,15 @@ func (a bAxis) eval(r *bmt) int {
 
 // bedrockRule is one feature rule (section 3): its identifier's hash, scatter and feature.
 type bedrockRule struct {
-	ident      string
-	hash       uint32
-	iterations int
-	num, den   int     // scatter_chance as a fraction; den 0 for none.
-	percent    float32 // scatter_chance as a percentage, with hasPercent.
-	hasPercent bool
-	order      [3]int   // Axis indexes in coordinate_eval_order.
-	axes       [3]bAxis // x, y, z.
-	biomes     [2]uint64
-	place      func(d *decoration, r *bmt, p pos)
+	ident  string
+	hash   uint32
+	sc     *bScatter
+	biomes [2]uint64
+	feat   bfeat
 }
+
+// iterations is the rule's iteration count when it is a plain number.
+func (r *bedrockRule) iterations() int { return r.sc.iterations }
 
 // evalOrder turns "zyx" and the like into axis indexes.
 func evalOrder(s string) (o [3]int) {
@@ -338,31 +400,27 @@ func (d *decoration) bedrockPass(rules []*bedrockRule) {
 }
 
 // scatter is ScatterParams::prepare and the placement loop (section 3): the chance, then the
-// iterations from the last down, each position drawn from the first generator axis by axis, skipped
-// outside the world or (in a chunk of several biomes) outside the rule's biome; the feature draws
-// from the second.
+// iterations from the last down, each position drawn from the first generator axis by axis from the
+// chunk corner (y from 0), skipped (in a chunk of several biomes) outside the world or the rule's
+// biome; the feature draws from the second. Molang sees the chunk corner as variable.originx/z (T3).
 func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 	r1 := &d.br1
-	if rule.den > 0 && rule.num != rule.den && int(r1.nextIntN(int32(rule.den))) >= rule.num {
+	e := &d.menv
+	*e = molangEnv{d: d, r1: r1, originX: float32(d.cx * 16), originZ: float32(d.cz * 16), worldX: float32(d.cx * 16),
+		worldZ: float32(d.cz * 16), biome: b}
+	sc := rule.sc
+	if !sc.chance(r1, e) {
 		return
 	}
-	if rule.hasPercent && rule.percent < 100 && (rule.percent <= 0 || float32(r1.nextFloat()*100) >= rule.percent) {
-		return
-	}
-	for i := rule.iterations - 1; i >= 0; i-- {
-		p := [3]int{d.cx * 16, 0, d.cz * 16}
-		for _, a := range rule.order {
-			if rule.axes[a].kind == bAboveTopSolid {
-				p[a] = d.aboveTopSolid(p[0], p[2])
-				continue
-			}
-			p[a] += rule.axes[a].eval(r1)
-		}
+	n := sc.count(e)
+	for i := n - 1; i >= 0; i-- {
+		e.worldX, e.worldY, e.worldZ = float32(d.cx*16), 0, float32(d.cz*16)
+		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16})
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
 		// position outside the world still places, and its feature still draws.
 		if multi && (p[1] < minY || p[1] > maxY || d.storedBiome(p[0], p[1], p[2]) != b) {
 			continue
 		}
-		rule.place(d, &d.br2, pos{p[0], p[1], p[2]})
+		rule.feat.place(d, &d.br2, pos{p[0], p[1], p[2]})
 	}
 }

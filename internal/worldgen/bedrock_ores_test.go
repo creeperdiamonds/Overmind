@@ -88,14 +88,12 @@ func TestBedrockFirstOreBlobs(t *testing.T) {
 
 // firstScatter gives a rule's first scatter position inside the world, as the golden files list it.
 func firstScatter(rule *bedrockRule, r1 *bmt, cx, cz int) (pos, bool) {
-	if rule.den > 0 && rule.num != rule.den && int(r1.nextIntN(int32(rule.den))) >= rule.num {
+	e := &molangEnv{r1: r1}
+	if !rule.sc.chance(r1, e) {
 		return pos{}, false
 	}
-	for i := rule.iterations - 1; i >= 0; i-- {
-		p := [3]int{cx * 16, 0, cz * 16}
-		for _, a := range rule.order {
-			p[a] += rule.axes[a].eval(r1)
-		}
+	for i := rule.sc.count(e) - 1; i >= 0; i-- {
+		p := rule.sc.position(r1, e, [3]int{cx * 16, 0, cz * 16})
 		if p[1] >= minY && p[1] <= maxY {
 			return pos{p[0], p[1], p[2]}, true
 		}

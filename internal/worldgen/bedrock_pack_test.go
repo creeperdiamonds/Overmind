@@ -53,7 +53,7 @@ func TestBedrockDataReads(t *testing.T) {
 		"lush_caves_underground_clay_ore", "diamond_ore_square"}
 	var got []string
 	for _, r := range bd.underground {
-		if r.iterations == 0 || r.biomes == ([2]uint64{}) {
+		if r.iterations() == 0 || r.biomes == ([2]uint64{}) {
 			continue
 		}
 		got = append(got, r.ident)
