@@ -43,6 +43,8 @@ type Generator struct {
 	bdata     *BedrockData    // Bedrock's feature data, nil when no install was read.
 	geodeOnce sync.Once
 	geode     *normalNoise
+
+	structs StructurePlacer // Structures placed after decoration (structures_api.go), nil for none.
 }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
@@ -155,13 +157,18 @@ func newScratch() *chunkScratch {
 // reads no real neighbour. Bases and source results go in the shared cache, which empties once no
 // chunk is being asked for.
 func (g *Generator) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
-	cx, cz := int(pos[0]), int(pos[1])
+	g.generateInto(int(pos[0]), int(pos[1]), c, nil)
+}
+
+// generateInto is GenerateChunk, with the structures' block entities put in col when it is not nil.
+func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
 	g.cache.begin()
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
+	g.placeStructures(cx, cz, c, col)
 }
 
 // finalCells makes a chunk's finished blocks, in the scratch.
