@@ -2,6 +2,7 @@ package structures
 
 import (
 	"testing"
+	"time"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -127,5 +128,42 @@ func TestLootFillsFromTheInstall(t *testing.T) {
 	}
 	if len(d.Problems) > 0 {
 		t.Logf("%d data problems, first: %s", len(d.Problems), d.Problems[0])
+	}
+}
+
+// TestBrokenLootTablesStayBounded: a table that asks for a huge number of rolls is refused when read,
+// and a self-referencing one of 50 rolls (50^8 picks through its nesting) fills a chest at once, with
+// at most the fill's pick budget of items.
+func TestBrokenLootTablesStayBounded(t *testing.T) {
+	if _, err := parseLootTable([]byte(`{"pools":[{"rolls":1e8,"entries":[{"type":"item","name":"minecraft:stick"}]}]}`)); err == nil {
+		t.Error("a table of 1e8 rolls was accepted")
+	}
+	if _, err := parseLootTable([]byte(`{"pools":[{"rolls":1,"entries":[{"type":"item","name":"minecraft:stick","functions":[{"function":"set_count","count":{"min":1,"max":1e9}}]}]}]}`)); err == nil {
+		t.Error("a count of 1e9 was accepted")
+	}
+	self, err := parseLootTable([]byte(`{"pools":[{"rolls":50,"entries":[{"type":"loot_table","name":"loot_tables/chests/self.json","weight":1},{"type":"item","name":"minecraft:stick","weight":1}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Data{loot: map[string]*LootTable{"loot_tables/chests/self.json": self}}
+	inv := inventory.New(27, nil)
+	done := make(chan bool)
+	go func() { done <- d.Fill("loot_tables/chests/self.json", 5, inv) }()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("the table was not found")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("filling from a self-referencing table did not finish")
+	}
+	n := 0
+	for i := range inv.Size() {
+		if it, _ := inv.Item(i); !it.Empty() {
+			n += it.Count()
+		}
+	}
+	if n == 0 || n > lootPicksPer*27 {
+		t.Errorf("%d sticks from the self-referencing table, want 1..%d", n, lootPicksPer*27)
 	}
 }

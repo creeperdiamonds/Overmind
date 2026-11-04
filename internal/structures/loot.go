@@ -91,6 +91,26 @@ func (r floatRange) draw(rng *worldgen.BedrockRandom) int {
 	return lo + int(rng.NextIntN(int32(hi-lo+1)))
 }
 
+// Limits on what a loot table may ask for, checked when it is read. A table is rolled on the world's tick
+// when its chest is first opened, so a broken or edited one must not make that tick run away. Vanilla's
+// largest rolls, tiers and counts are single digits.
+const (
+	maxLootRolls  = 64      // rolls, initial_range, bonus_rolls
+	maxLootNumber = 1024    // set_count, set_data, enchant levels
+	maxLootWeight = 1 << 20 // an entry's weight
+)
+
+// lootPicksPer is how many entry picks one fill may make, per slot of the container: with nested tables
+// a table's picks multiply, and this bounds the work and the items whatever the data says.
+const lootPicksPer = 4
+
+func checkRange(what string, r floatRange, limit float64) error {
+	if math.IsNaN(r.min) || math.IsNaN(r.max) || math.Abs(r.min) > limit || math.Abs(r.max) > limit {
+		return fmt.Errorf("%s %v..%v is outside -%v..%v", what, r.min, r.max, limit, limit)
+	}
+	return nil
+}
+
 func parseLootTable(text []byte) (*LootTable, error) {
 	var raw struct {
 		Pools []struct {
@@ -121,16 +141,31 @@ func parseLootTable(text []byte) (*LootTable, error) {
 				return nil, fmt.Errorf("rolls: %w", err)
 			}
 		}
+		if err := checkRange("rolls", lp.rolls, maxLootRolls); err != nil {
+			return nil, err
+		}
 		if p.Tiers != nil {
 			lp.tiers = &lootTiers{p.Tiers.Initial, p.Tiers.BonusRolls, p.Tiers.BonusChance}
+			if p.Tiers.Initial < 0 || p.Tiers.Initial > maxLootRolls || p.Tiers.BonusRolls < 0 || p.Tiers.BonusRolls > maxLootRolls {
+				return nil, fmt.Errorf("tiers %d, bonus rolls %d: outside 0..%d", p.Tiers.Initial, p.Tiers.BonusRolls, maxLootRolls)
+			}
 		}
 		for _, e := range p.Entries {
 			le := lootEntry{kind: e.Type, name: e.Name, weight: 1, conds: parseConds(e.Conditions)}
 			if e.Weight != nil {
 				le.weight = *e.Weight
 			}
+			if le.weight > maxLootWeight {
+				return nil, fmt.Errorf("weight %d is above %d", le.weight, maxLootWeight)
+			}
 			for _, f := range e.Functions {
-				le.functions = append(le.functions, parseFunc(f))
+				lf := parseFunc(f)
+				for _, r := range []floatRange{lf.count, lf.data, lf.levels} {
+					if err := checkRange(lf.fn, r, maxLootNumber); err != nil {
+						return nil, err
+					}
+				}
+				le.functions = append(le.functions, lf)
 			}
 			lp.entries = append(lp.entries, le)
 		}
@@ -143,11 +178,18 @@ func parseConds(raw []json.RawMessage) []lootCond {
 	var out []lootCond
 	for _, r := range raw {
 		var c struct {
-			Condition string  `json:"condition"`
-			Chance    float64 `json:"chance"`
+			Condition string   `json:"condition"`
+			Chance    float64  `json:"chance"`
+			Default   *float64 `json:"default_chance"`
 		}
 		json.Unmarshal(r, &c)
-		out = append(out, lootCond{kind: strings.TrimPrefix(c.Condition, "minecraft:"), chance: c.Chance})
+		kind := strings.TrimPrefix(c.Condition, "minecraft:")
+		if kind == "random_difficulty_chance" && c.Default != nil {
+			// Its files give a default chance and per-difficulty ones; a chest is rolled with no
+			// difficulty in its context, so the default stands.
+			c.Chance = *c.Default
+		}
+		out = append(out, lootCond{kind: kind, chance: c.Chance})
 	}
 	return out
 }
@@ -198,17 +240,18 @@ func condsPass(cs []lootCond, rng *worldgen.BedrockRandom) bool {
 }
 
 // items is getRandomItems (LR): every pool in order.
-func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int) []item.Stack {
+// picks is what is left of a fill's entry picks (lootPicksPer).
+func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int, picks *int) []item.Stack {
 	var out []item.Stack
 	for i := range t.Pools {
-		out = d.addRandomItems(&t.Pools[i], rng, depth, out)
+		out = d.addRandomItems(&t.Pools[i], rng, depth, picks, out)
 	}
 	return out
 }
 
 // addRandomItems is LootPool::addRandomItems (LR). Luck is 0 when a chest is opened, so bonus rolls and
 // qualities add nothing, but the bonus float is still drawn.
-func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth int, out []item.Stack) []item.Stack {
+func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth int, picks *int, out []item.Stack) []item.Stack {
 	if !condsPass(p.conds, rng) {
 		return out
 	}
@@ -222,14 +265,19 @@ func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth in
 				u++
 			}
 		}
-		if u >= 0 && u < len(p.entries) {
-			out = d.createItem(&p.entries[u], rng, depth, out)
+		if u >= 0 && u < len(p.entries) && *picks > 0 {
+			*picks--
+			out = d.createItem(&p.entries[u], rng, depth, picks, out)
 		}
 		return out
 	}
 	n := p.rolls.draw(rng)
 	rng.NextFloat() // The bonus rolls' float, always drawn (LR); times luck 0 it adds none.
 	for range n {
+		if *picks <= 0 {
+			break
+		}
+		*picks--
 		var live []*lootEntry
 		total := 0
 		for i := range p.entries {
@@ -245,7 +293,7 @@ func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth in
 		k := int(rng.NextIntN(int32(total)))
 		for _, e := range live {
 			if k -= e.weight; k < 0 {
-				out = d.createItem(e, rng, depth, out)
+				out = d.createItem(e, rng, depth, picks, out)
 				break
 			}
 		}
@@ -254,7 +302,7 @@ func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth in
 }
 
 // createItem makes an entry's items (LR): an item, a referenced table with the same random, or nothing.
-func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, out []item.Stack) []item.Stack {
+func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, picks *int, out []item.Stack) []item.Stack {
 	switch e.kind {
 	case "item":
 		if s, ok := d.makeItem(e, rng); ok {
@@ -262,7 +310,7 @@ func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, 
 		}
 	case "loot_table":
 		if sub := d.loot[e.name]; sub != nil && depth < 8 {
-			out = append(out, d.items(sub, rng, depth+1)...)
+			out = append(out, d.items(sub, rng, depth+1, picks)...)
 		}
 	}
 	return out
@@ -367,7 +415,8 @@ func (d *Data) Fill(table string, seed int32, inv *inventory.Inventory) bool {
 		seed = int32(rand.Uint32())
 	}
 	rng := worldgen.NewBedrockRandom(uint32(seed))
-	stacks := d.items(t, rng, 0)
+	picks := lootPicksPer * inv.Size()
+	stacks := d.items(t, rng, 0, &picks)
 	var slots []int
 	for i := range inv.Size() {
 		if it, _ := inv.Item(i); it.Empty() {
@@ -384,6 +433,8 @@ func (d *Data) Fill(table string, seed int32, inv *inventory.Inventory) bool {
 			split = append(split, s)
 		}
 	}
+	// Checked once, before the loop (N2 2.3: unlike Java, BDS does not re-test inside it). The loop ends:
+	// every pass takes one stack out and puts back at most two smaller ones, never a stack of one.
 	if len(slots)-len(keep) > 0 {
 		for len(split) > 0 {
 			i := int(rng.NextIntN(int32(len(split))))
