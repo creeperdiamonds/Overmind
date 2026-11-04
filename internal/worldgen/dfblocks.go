@@ -83,6 +83,7 @@ func ownBlocksList() {
 	plain("flowering_azalea", "flowering_azalea", false)
 	plain("brown_mushroom", "brown_mushroom", false)
 	plain("red_mushroom", "red_mushroom", false)
+	plain("cactus_flower", "cactus_flower", false)
 	addOwn("sweet_berry_bush[age=3]", "sweet_berry_bush", map[string]any{"growth": int32(3)}, false)
 	addOwn("bee_nest[facing=south,honey_level=0]", "bee_nest", map[string]any{"direction": int32(0), "honey_level": int32(0)}, true)
 	for mask := range 64 {
@@ -160,7 +161,7 @@ func ownBlocksList() {
 			addOwn(j, cap, map[string]any{"huge_mushroom_bits": v}, true)
 		}
 	}
-	addOwn("mushroom_stem[down=false,east=true,north=true,south=true,up=false,west=true]", "brown_mushroom_block", map[string]any{"huge_mushroom_bits": int32(10)}, true)
+	addOwn("mushroom_stem[down=false,east=true,north=true,south=true,up=false,west=true]", "mushroom_stem", map[string]any{"huge_mushroom_bits": int32(10)}, true)
 	lushOwnBlocks()
 }
 

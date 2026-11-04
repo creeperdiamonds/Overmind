@@ -38,6 +38,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 	}
 	switch id {
 	case "minecraft:dirt_feature":
+		// Measured, not read from the code (ruling 39): BDS's built-in dirt rule places like an ore of
+		// count 33 over stone with no air discard, 144/144 first blobs matching (NOTES-bedrock-exact 4b).
 		o := newBedrockOre(33, 0, []oreRule{{"dirt", "stone"}})
 		fc.bd.lastOre = o
 		return voidFeat(o.place), true, nil
@@ -287,15 +289,15 @@ func forestRock(d *decoration, r *bmt, p pos) bool {
 // ---------------------------------------------------------------- ocean
 
 var (
-	sKelpTop     = laterState("kelp")
-	sKelpPlant   = laterState("kelp_plant")
-	sSeagrass    = laterState("seagrass")
-	sTallSeaLo   = laterState("tall_seagrass[half=lower]")
-	sTallSeaHi   = laterState("tall_seagrass[half=upper]")
-	sPickle      = laterState("sea_pickle")
-	bnKelp       = internBName("kelp")
-	bnPickle     = internBName("sea_pickle")
-	bnNoKelpOn   = bnameSetOf("magma soul_sand oak_fence spruce_fence birch_fence jungle_fence acacia_fence dark_oak_fence mangrove_fence cherry_fence pale_oak_fence bamboo_fence nether_brick_fence crimson_fence warped_fence")
+	sKelpTop   = laterState("kelp")
+	sKelpPlant = laterState("kelp_plant")
+	sSeagrass  = laterState("seagrass")
+	sTallSeaLo = laterState("tall_seagrass[half=lower]")
+	sTallSeaHi = laterState("tall_seagrass[half=upper]")
+	sPickle    = laterState("sea_pickle")
+	bnKelp     = internBName("kelp")
+	bnPickle   = internBName("sea_pickle")
+	bnNoKelpOn = bnameSetOf("magma soul_sand oak_fence spruce_fence birch_fence jungle_fence acacia_fence dark_oak_fence mangrove_fence cherry_fence pale_oak_fence bamboo_fence nether_brick_fence crimson_fence warped_fence")
 )
 
 // bKelp is KelpFeature::place (0x5170f40): one try in worlds of 1.21.60 and later. A try that
@@ -449,17 +451,18 @@ func seaPickle(d *decoration, r *bmt, p pos) bool {
 // ---------------------------------------------------------------- land plants (p4_land)
 
 var (
-	sSugarCane  = laterState("sugar_cane")
-	sCactus     = laterState("cactus")
-	sDeadBush   = laterState("dead_bush")
-	sMelon      = laterState("melon")
-	sLilyPad    = laterState("lily_pad")
-	bnReeds     = internBName("reeds")
-	bnCactus    = internBName("cactus")
-	bnGrassBl   = internBName("grass_block")
-	bnSands     = bnameSetOf(bedrockTagMembers["sand"])
-	bnLandRepl  = bnameSetOf("air short_grass tall_grass fern large_fern deadbush snow_layer vine water flowing_water lava flowing_lava seagrass glow_lichen short_dry_grass tall_dry_grass bush leaf_litter fire")
-	bnLava      = internBName("lava")
+	sSugarCane    = laterState("sugar_cane")
+	sCactus       = laterState("cactus")
+	sCactusFlower = laterState("cactus_flower")
+	sDeadBush     = laterState("dead_bush")
+	sMelon        = laterState("melon")
+	sLilyPad      = laterState("lily_pad")
+	bnReeds       = internBName("reeds")
+	bnCactus      = internBName("cactus")
+	bnGrassBl     = internBName("grass_block")
+	bnSands       = bnameSetOf(bedrockTagMembers["sand"])
+	bnLandRepl    = bnameSetOf("air short_grass tall_grass fern large_fern deadbush snow_layer vine water flowing_water lava flowing_lava seagrass glow_lichen short_dry_grass tall_dry_grass bush leaf_litter fire")
+	bnLava        = internBName("lava")
 )
 
 func reedsOK(d *decoration, q pos) bool {
@@ -544,8 +547,7 @@ func cactusOK(d *decoration, q pos) bool {
 	return !bWaterMat(a) && bname(a) != bnLava
 }
 
-// cactusFeature is CactusFeature::place (0x514a300); cactus flowers have no block here, so the flower
-// is drawn and not placed.
+// cactusFeature is CactusFeature::place (0x514a300), with the flower of worlds of 1.21.70 and later.
 func cactusFeature(d *decoration, r *bmt, p pos) bool {
 	for range 10 {
 		dz, dy, dx := jitter(r, 7), jitter(r, 3), jitter(r, 7)
@@ -563,8 +565,10 @@ func cactusFeature(d *decoration, r *bmt, p pos) bool {
 			d.bput(c, sCactus)
 			placed = i + 1
 		}
-		if placed != 0 {
-			r.nextIntN(3)
+		if placed != 0 && r.nextIntN(3) == 0 {
+			if c := q.add(0, placed, 0); c.y <= maxY && d.at(c).isAir() {
+				d.bput(c, sCactusFlower)
+			}
 		}
 	}
 	return true
@@ -745,14 +749,14 @@ func (f *snapFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 
 // vegetationPatchFeat is VegetationPatchFeature::place (0xd8f3860).
 type vegetationPatchFeat struct {
-	ceiling                bool
-	radius, depth          bRange
-	edge, deep, vegChance  float32
-	vr                     int
-	ground                 bs
-	replace                *bmatch
-	waterlogged            bool
-	veg                    bfeat
+	ceiling               bool
+	radius, depth         bRange
+	edge, deep, vegChance float32
+	vr                    int
+	ground                bs
+	replace               *bmatch
+	waterlogged           bool
+	veg                   bfeat
 }
 
 func (fc *featCompiler) vegetationPatch(v map[string]json.RawMessage) (bfeat, error) {
@@ -881,16 +885,16 @@ func (f *vegetationPatchFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 
 // growingPlantFeat is GrowingPlantFeature::place (0xd9b9130).
 type growingPlantFeat struct {
-	heights   []bRange
-	hw        []float32
-	age       bRange
-	hasAge    bool
-	up        bool
-	water     bool
-	body      []bs
-	bw        []float32
-	head      [][26]bs // by age
-	hdw       []float32
+	heights []bRange
+	hw      []float32
+	age     bRange
+	hasAge  bool
+	up      bool
+	water   bool
+	body    []bs
+	bw      []float32
+	head    [][26]bs // by age
+	hdw     []float32
 }
 
 func (fc *featCompiler) growingPlant(v map[string]json.RawMessage) (bfeat, error) {
