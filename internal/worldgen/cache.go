@@ -244,6 +244,9 @@ var sourceDepth = 2
 // cachedSource gives what a source chunk's decoration did as the merge uses it (cachedLevel at
 // sourceDepth).
 func (g *Generator) cachedSource(s *chunkScratch, sx, sz int) *sourceResult {
+	if g.bedrockDeco() {
+		return g.cachedParity(s, sx, sz)
+	}
 	return g.cachedLevel(s, sx, sz, sourceDepth)
 }
 

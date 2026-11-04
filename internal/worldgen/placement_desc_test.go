@@ -26,6 +26,8 @@ func describeModifier(m modifier) string {
 	switch m := m.(type) {
 	case countMod:
 		return "count:" + describeInts(m.n)
+	case dataCountMod: // Its count with no Bedrock data; with the data it is the rule's.
+		return "count:" + describeInts(uniInt(m.fallback[0], m.fallback[1]))
 	case inSquareMod:
 		return "in_square"
 	case heightRangeMod:

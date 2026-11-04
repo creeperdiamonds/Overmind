@@ -248,6 +248,10 @@ type decoration struct {
 	preLen  int
 	ore     oreScratch
 	decSeed int64
+	// The Bedrock profile's two generators of a rule (section 2) and a chunk's biome list.
+	br1, br2  bmt
+	biomeList []uint8
+	menv      molangEnv // The Molang a rule and its features read.
 	placed  bool
 	// The chunk last read, a shortcut for runs of reads in one chunk.
 	lastCX, lastCZ     int
@@ -528,6 +532,25 @@ func (m countMod) apply(d *decoration, p pos, rest []modifier, f feature) {
 	}
 }
 
+// dataCountMod is a count from the Bedrock data's rule of that name when the data is read, else the
+// profile's value.
+type dataCountMod struct {
+	name     string
+	fallback [2]int
+}
+
+func (m dataCountMod) apply(d *decoration, p pos, rest []modifier, f feature) {
+	lo, hi := m.fallback[0], m.fallback[1]
+	if bd := d.g.bdata; bd != nil {
+		if c, ok := bd.counts[m.name]; ok {
+			lo, hi = c[0], c[1]
+		}
+	}
+	for range d.r.between(lo, hi) {
+		d.run(rest, f, p)
+	}
+}
+
 type inSquareMod struct{}
 
 func (inSquareMod) apply(d *decoration, p pos, rest []modifier, f feature) {
@@ -742,6 +765,10 @@ func (d *decoration) runSource(cx, cz int) {
 	d.mapsReady(l)
 	l.primed = true
 	biomes := d.biomesAround(cx, cz)
+	if d.g.bedrockDeco() {
+		d.runSourceBedrock(cx, cz, &biomes)
+		return
+	}
 	for _, pl := range d.g.profile.placements {
 		if !placementInBiomes(pl, &biomes) {
 			continue

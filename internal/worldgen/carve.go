@@ -349,6 +349,8 @@ func (g *Generator) SurfaceHeight(x, z int) int {
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
 	lx, lz := x&15, z&15
+	// Only this column is built. Its height is the whole chunk's: what a part-chunk build can get
+	// wrong is surface materials, not heights (see applyBedrockSurface).
 	g.buildBase(&s.base, s, x>>4, z>>4, stageCarvers, lx, lx, lz, lz)
 	for y := maxY; y >= minY; y-- {
 		if st := s.base.b[cellIndex(lx, y, lz)]; !st.isAir() && st != sWater {

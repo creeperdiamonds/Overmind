@@ -36,7 +36,18 @@ A source reads at most 3 chunks from itself (`sourceReach`); past that a read is
 
 ## Profiles
 
-`Profile` holds what differs in data; the algorithms are the same. `ProfileBedrock` is the default: floor pattern 1, 1, .75, .5, .25, iron size 10, medium diamond size 4, infested size 8 at Y 0 to 64 with stone and deepslate only, an extra coal batch in the mountains (past Java's indexes, so Java's streams do not move), rock patches replacing what the data files say. Ores leaving tuff alone is our own tuning to counts, not a Bedrock rule. `ProfileOverjava` uses Java's values, and is what the golden tests run.
+`ProfileOverjava` uses Java's algorithms and values throughout, and is what the Java golden tests run.
+
+`ProfileBedrock`, the default, follows Bedrock Dedicated Server 1.26.60.6 where the study of it (`bedrock-study/NOTES-bedrock-exact.md`, outside the repo) has read the code, in our own Go (Task 4e, rulings 34 to 37):
+
+- `bedrock_random.go`: Bedrock's MT19937 Random with its method semantics, the decoration chunk seed, the per-rule seed (FNV-1 of the identifier, hash_combine), and the bedrock floor from each chunk's own MT stream (R1).
+- Deepslate in the noise stage under "minecraft:depth_based_layer" (R2); `bedrock_surface.go`: the default surface builder (phase 5), with the Java rules kept for the mesa, swamp and frozen ocean builders not read yet.
+- `bedrock_carvers.go`: the two cave carvers and the canyon (5a, 5b, P2), instead of Java's carvers.
+- `bedrock_deco.go`: decoration in BDS's parity order (Q0). A source runs on top of its lower-phase neighbours' writes, each decorated the same way, so a chunk is still a pure function of seed and position; final blocks apply the nine sources by phase, then z, then x. Rule scatter (section 3) and a run per biome of the chunk.
+- `bedrock_ores.go`: OreFeature (section 4) for the underground pass's ore and rock rules, with T2's rule that a one-biome chunk does not height-test positions; `bedrock_disks.go`: the sand, gravel and clay disks (R5).
+- Since Task 4e round 3 a feature interpreter (`bedrock_feat*.go`, `bedrock_trees*.go`, `bedrock_plants.go`, `bedrock_molang.go`) runs every rule of the seven passes whose feature it knows: composites, trees, plants, lush caves, kelp and seagrass, and the freeze pass. What it does not know yet (dripstone, sculk, geodes, glow lichen, coral, mangroves, pale oaks, lakes, monster rooms and a few more) is still Java's algorithm, run among Bedrock's passes in Java's steps; `javaKeep` keeps the Java placement where a Bedrock rule is skipped.
+
+Bedrock's feature data (features, feature rules, biomes) is read at startup from a local Bedrock install (`BedrockDataDir`, `bedrock_pack.go`), by the owner's decision of 2026-11-04: the newest vanilla pack's copy of each file, the pass order from the study's libc++ map model, the server's definitions folder for what no pack has. In the repo are only algorithm constants: RNG, hashes, the floor and canyons, read from the code, and the code-registered features. Two of those are measured from BDS worlds, not read from the code, and are labelled so (ruling 39): the built-in dirt rule as an ore of 33 (144/144 first blobs) and the carvers' replaceable test (granite never carved, tuff and the iron vein always). Biome temperatures and the counts of the Java placements standing in for unwritten rules (underwater magma, glow lichen) come from the data when it is read; the tables in the repo are only the fallback. With no install the Bedrock profile keeps the floor and deepslate gradient and uses the built-in Java-based surface, carvers and features, which are approximate; the server logs one line saying so. Tests read the data from `OVERMIND_BEDROCK_DATA` and skip without it. `TestBedrockWorldsMatchBDS` and `TestBedrockFirstOreBlobs` compare with BDS worlds under `OVERMIND_GOLDEN_BEDROCK`; see the Task 4e report for the scores.
 
 ## Water
 

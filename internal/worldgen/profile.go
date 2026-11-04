@@ -1,13 +1,29 @@
 package worldgen
 
+import "strings"
+
 // Profile holds what differs between Bedrock's and Java's placement rules. The algorithms are the
 // same; only values differ. The default is Bedrock; Overjava is "Overmind as a Java server".
 type Profile struct {
 	Name string
-	// bedrockFloorTop is the first Y with no bedrock; bedrockMeasured chooses Bedrock's measured
-	// floor over Java's even fall.
+	// bedrockFloorTop is the first Y with no bedrock from the surface rule's floor, Java's even fall;
+	// minY for none.
 	bedrockFloorTop int
-	bedrockMeasured bool
+	// floorMT lays Bedrock's own floor after the noise stage, from each chunk's MT stream
+	// (NOTES-bedrock-exact R1), instead of the surface rule's floor.
+	floorMT bool
+	// deepslateName names the random of the deepslate gradient: Java's "minecraft:deepslate", or
+	// Bedrock's "minecraft:depth_based_layer" (NOTES-bedrock-exact R2; the gradient is otherwise Java's).
+	deepslateName string
+	// deepslateFirst puts the gradient before the surface materials: Bedrock lays deepslate in the noise
+	// fill, and its surface builder replaces only stone-like blocks (R2, phase 5 surface builder).
+	deepslateFirst bool
+	// surfaceBedrock builds the surface with Bedrock's default surface builder (bedrock_surface.go)
+	// where a biome uses it.
+	surfaceBedrock bool
+	// carversBedrock cuts Bedrock's two cave carvers and its canyon (bedrock_carvers.go) instead of
+	// Java's carvers.
+	carversBedrock bool
 
 	// Where the Bedrock data files differ from Java's ore table (BEDROCK-NOTES section 5).
 	ironSize, diamondMediumSize                int
@@ -24,18 +40,37 @@ type Profile struct {
 	climate *climateTable
 
 	placements []*placement
+
+	// bedrockDeco decorates in Bedrock's order with Bedrock's passes (bedrock_deco.go); the
+	// placements named in bedrockReplaces are Java's versions of rules those passes run.
+	bedrockDeco     bool
+	bedrockReplaces map[string]bool
 }
 
 var (
 	// ProfileBedrock is the default: Java's algorithms with Bedrock's data where it differs.
-	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY + 5, bedrockMeasured: true,
+	ProfileBedrock = newProfile(&Profile{Name: "bedrock", bedrockFloorTop: minY, floorMT: true, deepslateName: "minecraft:depth_based_layer", deepslateFirst: true, surfaceBedrock: true, carversBedrock: true,
 		ironSize: 10, diamondMediumSize: 4, dirtReplaces: "stone", gravelReplaces: "stone deepslate", rockReplaces: "stone",
 		oresSkipTuff: true, infestedBedrock: true, extraMountainCoal: true, climate: &bedrockClimates,
-		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30}})
+		lichenCount: [2]int{104, 157}, magmaCount: [2]int{18, 30},
+		bedrockDeco: true, bedrockReplaces: javaOresReplaced()})
 	// ProfileOverjava uses Java's values throughout.
-	ProfileOverjava = newProfile(&Profile{Name: "overjava", bedrockFloorTop: minY + 5, ironSize: 9, diamondMediumSize: 8, climate: &biomeClimates,
+	ProfileOverjava = newProfile(&Profile{Name: "overjava", bedrockFloorTop: minY + 5, deepslateName: "minecraft:deepslate", ironSize: 9, diamondMediumSize: 8, climate: &biomeClimates,
 		lichenCount: [2]int{104, 157}, magmaCount: [2]int{44, 52}})
 )
+
+// javaOresReplaced names the Java ore and rock placements whose place Bedrock's underground pass takes
+// (bedrock_ores.go): every ore_ placement of Java's ore step, the profile's extra mountain coal, and the
+// sand, clay and gravel disks of Bedrock's surface pass (bedrock_disks.go).
+func javaOresReplaced() map[string]bool {
+	m := map[string]bool{"ore_coal_mountains": true, "disk_sand": true, "disk_clay": true, "disk_gravel": true}
+	for _, n := range fieldsOf(featureOrder[oreStep]) {
+		if strings.HasPrefix(n, "ore_") {
+			m[n] = true
+		}
+	}
+	return m
+}
 
 func newProfile(p *Profile) *Profile {
 	p.placements = buildPlacements(p)

@@ -99,7 +99,7 @@ func (t *climateTable) temperature(b uint8, x, y, z int) float32 {
 
 // coldEnough says whether a biome freezes at a block under this generator's profile.
 func (g *Generator) coldEnough(b uint8, x, y, z int) bool {
-	return g.profile.climate.temperature(b, x, y, z) < 0.15
+	return g.climateT.temperature(b, x, y, z) < 0.15
 }
 
 // quartColumn is one quart column's stored biomes, by table index. A pure function of the seed and
@@ -164,9 +164,9 @@ type surfaceFactories struct {
 	bands                     [192]bs
 }
 
-func newSurfaceFactories(w seedFactory) surfaceFactories {
+func newSurfaceFactories(w seedFactory, deepslateName string) surfaceFactories {
 	bed := w.named("minecraft:bedrock_floor")
-	deep := w.named("minecraft:deepslate")
+	deep := w.named(deepslateName)
 	f := surfaceFactories{world: w, bedrock: bed.forkFactory(), deepslate: deep.forkFactory()}
 	r := w.named("minecraft:clay_bands")
 	for i := range f.bands {
@@ -362,6 +362,9 @@ func (c *ruleContext) ruleAt() bs {
 	if c.y < g.profile.bedrockFloorTop && g.bedrockAt(c.x, c.y, c.z) {
 		return sBedrock
 	}
+	if g.profile.deepslateFirst && gradient(g.sf.deepslate, c.x, c.y, c.z, 0, 8) {
+		return sDeepsl
+	}
 	if c.y >= c.minLevel {
 		if s := c.surfaceAtBlock(); s != noRule {
 			return s
@@ -373,17 +376,10 @@ func (c *ruleContext) ruleAt() bs {
 	return noRule
 }
 
-// bedrockAt is the floor. Java's falls evenly over five layers; Bedrock's was measured.
+// bedrockAt is Java's floor, falling evenly over five layers. The Bedrock profile lays its own after
+// the noise stage instead (writeBedrockFloor).
 func (g *Generator) bedrockAt(x, y, z int) bool {
-	if !g.profile.bedrockMeasured {
-		return gradient(g.sf.bedrock, x, y, z, minY, minY+5)
-	}
-	ch := bedrockChance[y-minY]
-	if ch >= 1 {
-		return true
-	}
-	r := g.sf.bedrock.at(int32(x), int32(y), int32(z))
-	return float64(r.nextFloat()) < ch
+	return gradient(g.sf.bedrock, x, y, z, minY, minY+5)
 }
 
 func (c *ruleContext) grassOrDirt() bs {
@@ -676,40 +672,48 @@ func (c *ruleContext) surfaceAtBlock() bs {
 func (g *Generator) applySurfaceRules(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int) {
 	c := &s.rule
 	c.g, c.b, c.s = g, b, s
-	ox, oz := b.cx*16, b.cz*16
 	for lx := x0; lx <= x1; lx++ {
 		for lz := z0; lz <= z1; lz++ {
-			wx, wz := ox+lx, oz+lz
-			start := int(b.wgTop[lz<<4|lx])
-			sb := s.blockBiome(g, wx, start, wz)
-			if sb == bEroded {
-				g.erodedExtension(b, lx, lz, wx, wz, start)
-			}
-			h := int(b.wgTop[lz<<4|lx])
-			c.startColumn(wx, wz)
-			above, water := 0, noWaterTop
-			for y := h; y >= minY; y-- {
-				st := b.b[cellIndex(lx, y, lz)]
-				switch {
-				case st == sAir:
-					above, water = 0, noWaterTop
-				case st.has(fLiquid):
-					if water == noWaterTop {
-						water = y + 1
-					}
-				default:
-					above++
-					if st == sStone {
-						c.setY(above, y, water)
-						if r := c.ruleAt(); r != noRule {
-							b.set(lx, y, lz, r)
-						}
+			g.surfaceRulesColumn(b, s, lx, lz)
+		}
+	}
+}
+
+// surfaceRulesColumn runs the rule tree down one column. s.rule must be readied for the chunk.
+func (g *Generator) surfaceRulesColumn(b *baseChunk, s *chunkScratch, lx, lz int) {
+	c := &s.rule
+	ox, oz := b.cx*16, b.cz*16
+	{
+		wx, wz := ox+lx, oz+lz
+		start := int(b.wgTop[lz<<4|lx])
+		sb := s.blockBiome(g, wx, start, wz)
+		if sb == bEroded {
+			g.erodedExtension(b, lx, lz, wx, wz, start)
+		}
+		h := int(b.wgTop[lz<<4|lx])
+		c.startColumn(wx, wz)
+		above, water := 0, noWaterTop
+		for y := h; y >= minY; y-- {
+			st := b.b[cellIndex(lx, y, lz)]
+			switch {
+			case st == sAir:
+				above, water = 0, noWaterTop
+			case st.has(fLiquid):
+				if water == noWaterTop {
+					water = y + 1
+				}
+			default:
+				above++
+				if st == sStone {
+					c.setY(above, y, water)
+					if r := c.ruleAt(); r != noRule {
+						b.set(lx, y, lz, r)
 					}
 				}
 			}
-			if sb == bFrozenOcean || sb == bDeepFrozen {
-				g.frozenExtension(b, c, sb, lx, lz, wx, wz, start)
-			}
+		}
+		if sb == bFrozenOcean || sb == bDeepFrozen {
+			g.frozenExtension(b, c, sb, lx, lz, wx, wz, start)
 		}
 	}
 }
@@ -752,7 +756,7 @@ func (g *Generator) frozenExtension(b *baseChunk, c *ruleContext, sb uint8, lx, 
 	}
 	roof := math.Abs(float64(n.bergCap.at(float64(fx*1.17), 0, float64(fz*1.17)) * 1.5))
 	top := min(float64(float64(ice*ice)*1.2), float64(math.Ceil(float64(roof*40.0)))+14.0)
-	if g.profile.climate.temperature(sb, x, 63, z) > 0.1 {
+	if g.climateT.temperature(sb, x, 63, z) > 0.1 {
 		top -= 2.0
 	}
 	var bot float64

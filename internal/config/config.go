@@ -95,6 +95,14 @@ type Config struct {
 	// Dragonfly's flat world instead of worldgen's. The front ends' tests build
 	// on it, at fixed heights.
 	FlatWorld bool `toml:"-"`
+	// BedrockDataDir is a local Bedrock install whose vanilla feature data (features, feature rules,
+	// biomes) the Bedrock profile reads at startup. For an exact world it must be a Bedrock Dedicated
+	// Server folder: its definitions folder holds rules and features no pack has (the clay disk, the
+	// roofed forest's trees, the trees the legacy tree table picks, the second cave carver). A game's
+	// behavior_packs folder lacks them; it is read, and the log warns that the world will not be
+	// exact. Empty, or unreadable, the profile uses its built-in features, which are approximate,
+	// and says so in the log. Nothing is copied from it.
+	BedrockDataDir string
 }
 
 // Skins is the [skins] table.

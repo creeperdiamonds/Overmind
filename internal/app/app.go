@@ -122,7 +122,20 @@ func Start(cfg config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build server config: %w", err)
 	}
-	gen := worldgen.NewWithProfile(seed, profile)
+	bd := bedrockData(log, cfg.BedrockDataDir, profile)
+	gen := worldgen.NewWithData(seed, profile, bd)
+	ident := "profile=" + profile.Name + " data=none"
+	if bd != nil {
+		ident = "profile=" + profile.Name + " data=sha256:" + bd.Hash()
+	}
+	if old, changed, err := recordProvenance(cfg.WorldFolder, ident); err != nil {
+		log.Warn("Could not record how the world is generated", "file", provenanceFile, "error", err)
+	} else if changed {
+		log.Warn("This world was generated with other settings or Bedrock data: new chunks will not fit the saved ones and will show seams.",
+			"before", old, "now", ident)
+	} else if old == "" && !newWorld {
+		log.Warn("This saved world has no record of how it was generated; it is recorded from now on.", "now", ident)
+	}
 	guard := &offTick{g: gen}
 	if !cfg.FlatWorld {
 		conf.Generator = func(dim world.Dimension) world.Generator {
@@ -459,4 +472,29 @@ func unusedGenerator(dim world.Dimension) world.Generator {
 		return generator.NewFlat(biome.NetherWastes{}, []world.Block{block.Netherrack{}, block.Bedrock{}})
 	}
 	return generator.NewFlat(biome.End{}, []world.Block{block.EndStone{}, block.Bedrock{}})
+}
+
+// bedrockData reads Bedrock's feature data for the Bedrock profile. It never fails the start: with no
+// folder set, or one it cannot read, it logs one line and the profile uses its built-in features.
+func bedrockData(log *slog.Logger, dir string, profile *worldgen.Profile) *worldgen.BedrockData {
+	if profile != worldgen.ProfileBedrock {
+		return nil
+	}
+	if dir == "" {
+		log.Warn("No Bedrock install is set (BedrockDataDir): world features are approximate, from built-in placement, not Bedrock's own.")
+		return nil
+	}
+	bd, err := worldgen.LoadBedrockData(dir)
+	if err != nil {
+		log.Warn("Bedrock feature data could not be read: world features are approximate, from built-in placement, not Bedrock's own.", "folder", dir, "error", err)
+		return nil
+	}
+	log.Info("Bedrock feature data read", "folder", dir, "read", bd.Summary())
+	for _, w := range bd.Warnings {
+		log.Warn("Bedrock feature data is incomplete: the world will not be exact", "missing", w)
+	}
+	for _, p := range bd.Problems {
+		log.Warn("Bedrock feature data: a rule is broken and was skipped", "rule", p)
+	}
+	return bd
 }
