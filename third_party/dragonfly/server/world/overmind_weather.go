@@ -6,6 +6,11 @@ import "github.com/df-mc/dragonfly/server/block/cube"
 // choosing one column for it, in both editions (minecraft.wiki "Tick", oldid 3868751): water at the top
 // may freeze, and snow may fall on it. What the check does to blocks is the block package's
 // (RegisterPrecipitation), which this package cannot import.
+//
+// The 1 in 16 is not scaled by the random tick speed. For Overjava at Java's default speed of 3 it is
+// exact on average: Java (since 1.20.2) rolls a 1 in 48 chance once for each unit of the speed, so 3/48 =
+// 1/16 checks a chunk a tick (it may, rarely, check two or three columns in one tick, where this checks
+// one). It differs only when Config.RandomTickSpeed is set by hand. Bedrock's scaling is not known.
 
 // precipitationChance is the 1 in n chance a tick that a ticked chunk checks a column (a variable, so
 // tests can raise it).

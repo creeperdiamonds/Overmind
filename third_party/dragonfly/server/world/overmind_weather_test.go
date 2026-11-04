@@ -102,7 +102,7 @@ func TestSnowfallBuildsLayers(t *testing.T) {
 }
 
 // Snowfall lies on what each edition lets snow lie on. Java 26.1 keeps it off ice, packed ice and barriers
-// (the block tag cannot_support_snow_layer, minecraft.wiki "Block tag (Java Edition)": packed ice is in it
+// (the block tag cannot_support_snow_layer, minecraft.wiki "Block tag (Java Edition)" oldid 3877595: packed ice is in it
 // until Java 26.4), and lets it lie on soul sand and mud (support_override_snow_layer; the fork has no honey block). Bedrock
 // keeps it off ice only ("Snow": "a solid block that is not ice"), and Overmind off blue ice too, as before.
 func TestSnowfallFloors(t *testing.T) {

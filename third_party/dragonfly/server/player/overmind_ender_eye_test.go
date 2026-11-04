@@ -104,19 +104,38 @@ func TestEnderEyeFliesTowardFarStronghold(t *testing.T) {
 	if target[1] <= start[1] {
 		t.Errorf("toward a far stronghold the eye flies to Y %.1f from Y %.1f, want up", target[1], start[1])
 	}
-	for range 50 {
-		w.AdvanceTick()
+	ticks := 0
+	// Where vanilla's EyeOfEnder.tick puts an eye thrown at rest toward this target, from the thrower, after
+	// as many ticks (worked out apart from this code): slow at first, over the target by tick 50 and
+	// bobbing about its height after.
+	for _, c := range []struct {
+		tick int
+		at   mgl64.Vec3
+	}{
+		{10, mgl64.Vec3{1.3166, 0.6487, -0.0007}},
+		{30, mgl64.Vec3{10.6125, 5.6972, -0.0053}},
+		{50, mgl64.Vec3{11.9935, 8.1449, -0.0060}},
+		{80, mgl64.Vec3{12.0000, 8.0998, -0.0060}},
+	} {
+		for ; ticks < c.tick; ticks++ {
+			w.AdvanceTick()
+		}
+		want := start.Add(c.at)
+		if _, pos := eyes(w); len(pos) != 1 || !pos[0].ApproxEqualThreshold(want, 1e-3) {
+			t.Fatalf("after %d ticks the eye is at %v, want %v", c.tick, pos, want)
+		}
+		if c.tick >= 50 && !eyes1(w).ApproxEqualThreshold(target, 0.2) {
+			t.Errorf("after %d ticks the eye is not over its target %v", c.tick, target)
+		}
 	}
-	if _, pos := eyes(w); len(pos) != 1 || !pos[0].ApproxEqualThreshold(target, 0.01) {
-		t.Fatalf("after its flight the eye is at %v, want %v", pos, target)
-	}
-	for range 40 {
-		w.AdvanceTick()
-	}
+	w.AdvanceTick()
 	if bs, _ := eyes(w); len(bs) != 0 {
-		t.Fatalf("the eye is still there after its life")
+		t.Fatalf("the eye is still there after its life of 80 ticks")
 	}
 }
+
+// eyes1 is where the one eye in the world is.
+func eyes1(w *world.World) mgl64.Vec3 { _, pos := eyes(w); return pos[0] }
 
 // Near a stronghold the eye flies down to it.
 func TestEnderEyeFliesDownToNearStronghold(t *testing.T) {
