@@ -17,6 +17,12 @@ type Generator interface {
 	DefaultSpawn(dim Dimension) cube.Pos
 }
 
+// ColumnGenerator is a Generator that also fills a new column's block entities, such as the chests of
+// generated structures (Overmind fork). The world calls GenerateColumn instead of GenerateChunk.
+type ColumnGenerator interface {
+	GenerateColumn(pos ChunkPos, col *chunk.Column)
+}
+
 // NopGenerator is the default generator a world. It places no blocks in the world which results in a void
 // world.
 type NopGenerator struct{}
@@ -38,6 +44,17 @@ func (l *lockedGenerator) GenerateChunk(pos ChunkPos, c *chunk.Chunk) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.g.GenerateChunk(pos, c)
+}
+
+// GenerateColumn passes a ColumnGenerator through (Overmind fork).
+func (l *lockedGenerator) GenerateColumn(pos ChunkPos, col *chunk.Column) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if cg, ok := l.g.(ColumnGenerator); ok {
+		cg.GenerateColumn(pos, col)
+		return
+	}
+	l.g.GenerateChunk(pos, col.Chunk)
 }
 
 func (l *lockedGenerator) DefaultSpawn(dim Dimension) cube.Pos {
