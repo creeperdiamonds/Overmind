@@ -798,6 +798,8 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		row := surfaceRow{biome: name, kind: strings.TrimPrefix(kind, "minecraft:"), top: str(sb.Builder, "top_material"),
 			mid: str(sb.Builder, "mid_material"), floor: str(sb.Builder, "sea_floor_material"),
 			foundation: str(sb.Builder, "foundation_material"), sea: str(sb.Builder, "sea_material"), seaDepth: depth, temperature: cl.T}
+		json.Unmarshal(sb.Builder["bryce_pillars"], &row.bryce)
+		json.Unmarshal(sb.Builder["has_forest"], &row.forest)
 		var mp struct {
 			Steep map[string]json.RawMessage `json:"steep_material_adjustment"`
 		}
