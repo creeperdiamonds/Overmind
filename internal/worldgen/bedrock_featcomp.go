@@ -235,12 +235,16 @@ type searchFeat struct {
 }
 
 // place tries the volume along +y; across x and z (the creaking heart's 3 x 3 columns) the order is not
-// read: y outer, then x, then z, the study's approximation (T17).
+// read: y outer, then x, then z, the study's approximation (T17). Every try costs one placement of the
+// source's budget, so no volume the limits allow can stall a worker.
 func (f *searchFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	got := 0
 	for dy := f.min[1]; dy <= f.max[1]; dy++ {
 		for dx := f.min[0]; dx <= f.max[0]; dx++ {
 			for dz := f.min[2]; dz <= f.max[2]; dz++ {
+				if !d.spend() {
+					return p, false
+				}
 				if _, ok := f.f.place(d, r, p.add(dx, dy, dz)); ok {
 					got++
 					if got >= f.need {
@@ -265,6 +269,12 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 	json.Unmarshal(v["required_successes"], &need)
 	if axis != "+y" || vol.Min[0] > vol.Max[0] || vol.Min[1] > vol.Max[1] || vol.Min[2] > vol.Max[2] {
 		return nil, unimpl("search %s %v", axis, vol)
+	}
+	for _, a := range [2]int{0, 2} {
+		if vol.Min[a] < -maxDataRadius || vol.Max[a] > maxDataRadius {
+			// Across x and z a search is a radius (vanilla's widest is the creaking heart's 3 x 3).
+			return nil, fmt.Errorf("search volume %v..%v is wider than %d", vol.Min, vol.Max, maxDataRadius)
+		}
 	}
 	c, err := fc.child(v["places_feature"])
 	if err != nil {

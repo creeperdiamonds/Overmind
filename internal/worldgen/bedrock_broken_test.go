@@ -63,6 +63,7 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 		"cycle2":    brokenRule("t:cycle2", "t:q", good),
 		"wide":      brokenRule("t:wide", "t:widepatch", good),
 		"tall":      brokenRule("t:tall", "t:tallnest", good),
+		"search":    brokenRule("t:search", "t:widesearch", good),
 	}
 	features := map[string]string{
 		"ore":     oreFile("t:ore", "8", "minecraft:coal_ore"),
@@ -77,6 +78,8 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 			"replaceable_blocks":["minecraft:stone"],"ground_block":"minecraft:dirt","vegetation_feature":"t:ore","surface":"floor",
 			"depth":2,"vertical_range":5,"vegetation_chance":0.5,"horizontal_radius":{"range_min":100000,"range_max":100001}}}`,
 		"tallnest": scatterFile("t:tallnest", "t:ore", "100000000"),
+		// A search volume of 1025 x 1025 x 1025 (each number within its own limit).
+		"widesearch": searchFile("t:widesearch", "t:ore", "[-512,-512,-512]", "[512,512,512]"),
 	}
 	bd := brokenData(t, rules, features)
 	func() {
@@ -95,7 +98,7 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 		t.Errorf("rules kept: %v, want only t:good", got)
 	}
 	for _, id := range []string{"t:order", "t:upper", "t:twice", "t:huge", "t:negative", "t:count", "t:block", "t:exprorder",
-		"t:cycle", "t:cycle2", "t:wide", "t:tall"} {
+		"t:cycle", "t:cycle2", "t:wide", "t:tall", "t:search"} {
 		n := 0
 		for _, p := range bd.Problems {
 			if strings.Contains(p, id+":") {
@@ -106,6 +109,17 @@ func TestBrokenPackDataIsSkipped(t *testing.T) {
 			t.Errorf("%s named %d times in Problems %q, want once", id, n, bd.Problems)
 		}
 	}
+}
+
+func searchFile(id, feature, lo, hi string) string {
+	return `{"format_version":"1.13.0","minecraft:search_feature":{"description":{"identifier":"` + id + `"},"places_feature":"` + feature +
+		`","search_volume":{"min":` + lo + `,"max":` + hi + `},"search_axis":"+y","required_successes":1}}`
+}
+
+// neverFile is a feature that never places: a block it may only put over bedrock, in the open air.
+func neverFile(id string) string {
+	return `{"format_version":"1.13.0","minecraft:single_block_feature":{"description":{"identifier":"` + id +
+		`"},"places_block":"minecraft:stone","enforce_placement_rules":false,"enforce_survivability_rules":false,"may_replace":["minecraft:bedrock"]}}`
 }
 
 func composite(kind, id, list string) string {
@@ -121,19 +135,24 @@ func scatterFile(id, feature, iterations string) string {
 // each: 64 million placements a rule, within every number's limit. The placement budget must make the
 // chunks finish, without a panic.
 func TestNestedScattersFinish(t *testing.T) {
-	rules := map[string]string{"nest": brokenRule("t:nest", "t:n1", `{"iterations":400,"x":{"extent":[0,16]},"y":{"extent":[0,64]},"z":{"extent":[0,16]}}`)}
+	rules := map[string]string{"nest": brokenRule("t:nest", "t:n1", `{"iterations":400,"x":{"extent":[0,16]},"y":{"extent":[0,64]},"z":{"extent":[0,16]}}`),
+		// The widest search the limits allow (129 x 1025 x 129 tries a placement), whose feature never
+		// places, 400 times: its tries are charged to the same budget.
+		"search": brokenRule("t:search", "t:s1", `{"iterations":400,"x":{"extent":[0,16]},"y":{"extent":[0,64]},"z":{"extent":[0,16]}}`)}
 	features := map[string]string{
-		"ore": oreFile("t:ore", "4", "minecraft:coal_ore"),
-		"n1":  scatterFile("t:n1", "t:n2", "400"),
-		"n2":  scatterFile("t:n2", "t:n3", "400"),
-		"n3":  scatterFile("t:n3", "t:ore", "400"),
+		"s1":    searchFile("t:s1", "t:never", "[-64,-512,-64]", "[64,512,64]"),
+		"never": neverFile("t:never"),
+		"ore":   oreFile("t:ore", "4", "minecraft:coal_ore"),
+		"n1":    scatterFile("t:n1", "t:n2", "400"),
+		"n2":    scatterFile("t:n2", "t:n3", "400"),
+		"n3":    scatterFile("t:n3", "t:ore", "400"),
 	}
 	bd := brokenData(t, rules, features)
 	if err := bd.compile(); err != nil {
 		t.Fatal(err)
 	}
-	if len(bd.passes[2]) != 1 {
-		t.Fatalf("the nested rule was not kept: %q", bd.Problems)
+	if len(bd.passes[2]) != 2 {
+		t.Fatalf("the nested and search rules were not both kept: %q", bd.Problems)
 	}
 	g := NewWithData(5, ProfileBedrock, bd)
 	done := make(chan struct{})
