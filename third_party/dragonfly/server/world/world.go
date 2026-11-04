@@ -368,7 +368,7 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 	rid := w.conf.Blocks.BlockRuntimeID(b)
 	redstoneAfterRelevant := isRedstoneRelevant(b)
 	needOldBlock := !opts.DisableRedstoneUpdates || !redstoneAfterRelevant
-	needOldRID := needOldBlock || (rid != w.conf.Blocks.AirRuntimeID() && !opts.DisableLiquidDisplacement)
+	needOldRID := needOldBlock || !opts.DisableBlockUpdates || (rid != w.conf.Blocks.AirRuntimeID() && !opts.DisableLiquidDisplacement) // Overmind fork: || !DisableBlockUpdates, for Replacer
 
 	var oldRID uint32
 	if needOldRID {
@@ -440,6 +440,10 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 
 	if !opts.DisableBlockUpdates {
 		w.doBlockUpdatesAround(pos)
+		// Overmind fork: a block that reacts to being replaced hears of it.
+		if r, ok := w.conf.Blocks.BlockByRuntimeIDOrAir(oldRID).(Replacer); ok && oldRID != rid {
+			r.Replaced(pos, b, tx)
+		}
 	}
 	if !opts.DisableRedstoneUpdates {
 		w.redstone.invalidateAroundBlockChange(pos, oldBlock, b, RedstoneUpdateCauseBlockUpdate, w.Range())

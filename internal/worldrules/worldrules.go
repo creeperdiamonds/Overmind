@@ -3,6 +3,8 @@
 // (spec, "Each edition plays by its own rules" and "Overjava"). Values cite minecraft.wiki by oldid.
 package worldrules
 
+import "github.com/df-mc/dragonfly/server/world"
+
 // Rules is one edition's world mechanics.
 type Rules struct {
 	// Name is the world profile these rules belong to.
@@ -13,13 +15,20 @@ type Rules struct {
 	// every 16 random ticks, on average every 18 minutes on Java and 54 on Bedrock ("Sugar Cane",
 	// oldid 3810018), which is one block per sub chunk a tick.
 	RandomTickSpeed int
+	// Mechanics are the rest, which the Dragonfly fork's worlds apply themselves.
+	Mechanics world.Mechanics
 }
 
 var (
 	// Bedrock is the default profile's rules.
 	Bedrock = Rules{Name: "bedrock", RandomTickSpeed: 1}
 	// Java is the Overjava profile's rules.
-	Java = Rules{Name: "overjava", RandomTickSpeed: 3}
+	Java = Rules{Name: "overjava", RandomTickSpeed: 3, Mechanics: world.Mechanics{
+		// Leaves stay up to 6 steps from a log, against Bedrock's 4 ("Leaves", oldid 3873085), and any change
+		// beside a leaf has it checked; Bedrock checks leaves only around a removed log or leaf (measured on
+		// a Bedrock Dedicated Server, Task W report).
+		JavaLeafDecay: true,
+	}}
 )
 
 // ForProfile gives the rules of the world profile with this name: Java's for "overjava", Bedrock's

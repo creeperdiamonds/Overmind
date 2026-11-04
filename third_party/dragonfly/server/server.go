@@ -616,6 +616,7 @@ func (srv *Server) createWorld(dim world.Dimension, nether, end **world.World) *
 		Provider:            srv.conf.WorldProvider,
 		Generator:           srv.conf.Generator(dim),
 		RandomTickSpeed:     srv.conf.RandomTickSpeed,
+		Mechanics:           srv.conf.Mechanics, // Overmind fork
 		ReadOnly:            srv.conf.ReadOnlyWorld,
 		SaveInterval:        srv.conf.SaveInterval,
 		ChunkUnloadInterval: srv.conf.ChunkUnloadInterval,

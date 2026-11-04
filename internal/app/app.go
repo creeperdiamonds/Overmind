@@ -151,6 +151,7 @@ func Start(cfg config.Config) (*Server, error) {
 	if conf.RandomTickSpeed == 0 {
 		conf.RandomTickSpeed = rules.RandomTickSpeed
 	}
+	conf.Mechanics = rules.Mechanics
 	conf.ChunkLoadWorkers = chunkWorkers(cfg.ChunkWorkers)
 
 	// The settings are read when the worlds open. Dragonfly asks the generator for a spawn only when it

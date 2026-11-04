@@ -59,6 +59,8 @@ type Config struct {
 	// will stop random ticking altogether, while setting it higher results in
 	// faster ticking.
 	RandomTickSpeed int
+	// Mechanics are the shared rules that differ by edition (Overmind fork). The zero value is Bedrock's.
+	Mechanics Mechanics
 	// RandSource is the rand.Source used for generation of random numbers in a
 	// World, such as when selecting blocks to tick or when deciding where to
 	// strike lightning. If set to nil, RandSource defaults to a `rand.PCG`

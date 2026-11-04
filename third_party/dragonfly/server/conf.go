@@ -112,6 +112,8 @@ type Config struct {
 	// left as 0, the RandomTickSpeed will default to a speed of 3 blocks per
 	// sub chunk per tick (normal ticking speed).
 	RandomTickSpeed int
+	// Mechanics are the default worlds' rules that differ by edition (Overmind fork).
+	Mechanics world.Mechanics
 	// SaveInterval specifies how often a World should be automatically saved to
 	// disk. This includes chunks, entities and level.dat data. If ReadOnlyWorld
 	// is set to true, changing SaveInterval will have no effect.
