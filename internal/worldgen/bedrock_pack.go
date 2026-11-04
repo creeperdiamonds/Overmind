@@ -46,6 +46,12 @@ type BedrockData struct {
 	surfaceBiomes        [len(biomeTableNames)]surfaceBiome
 	// Skipped counts the rules of the passes used that are not written yet, by reason.
 	Skipped map[string]int
+	// Problems names the rules whose data is broken (unreadable values, unknown blocks, absurd
+	// counts), each once; they are skipped.
+	Problems    []string
+	problemSeen map[string]bool
+	// Warnings says what the install lacks for an exact world (a game's packs with no definitions).
+	Warnings []string
 }
 
 type packRule struct {
@@ -521,12 +527,7 @@ func packBlockName(raw json.RawMessage) (string, bool) {
 
 // compile builds what the generator runs from the data.
 func (bd *BedrockData) compile() error {
-	bd.fc = &featCompiler{bd: bd, slots: map[string]*featSlot{}, ores: map[string]*bedrockOre{}}
-	bd.javaKeep = map[string]bool{}
-	for i, pass := range bedrockPasses {
-		bd.passes[i] = bd.compilePass(pass)
-	}
-	bd.underground, bd.surface = bd.passes[2], bd.passes[5]
+	bd.compileRules()
 	for _, id := range bd.order["pregeneration_pass"] {
 		r := bd.rules[id]
 		f, ok := bd.features[r.Description.PlacesFeature]
@@ -547,6 +548,10 @@ func (bd *BedrockData) compile() error {
 		}
 		if err := json.Unmarshal(f.body, &c); err != nil {
 			return fmt.Errorf("%s: %w", r.Description.PlacesFeature, err)
+		}
+		if c.Skip < 0 || c.Skip > 1<<16 || c.Height < 0 || c.Height > maxY-minY+1 {
+			bd.problem(id, fmt.Sprintf("cave carver values out of range (skip %d, height %d)", c.Skip, c.Height))
+			continue
 		}
 		bd.carvers = append(bd.carvers, caveCarver{skip: c.Skip, heightLimit: c.Height, yScale: c.YScale, roomH: c.H, roomV: c.V,
 			floor: c.Floor, width: c.Width})
@@ -572,36 +577,76 @@ func (bd *BedrockData) ruleBiomes(r *packRule) (set [2]uint64) {
 var bedrockPasses = [7]string{"first_pass", "before_underground_pass", "underground_pass", "after_underground_pass",
 	"before_surface_pass", "surface_pass", "after_surface_pass"}
 
+// compileRules builds the passes' rules.
+func (bd *BedrockData) compileRules() {
+	bd.fc = &featCompiler{bd: bd, slots: map[string]*featSlot{}, ores: map[string]*bedrockOre{}}
+	bd.javaKeep = map[string]bool{}
+	for i, pass := range bedrockPasses {
+		bd.passes[i] = bd.compilePass(pass)
+	}
+	bd.underground, bd.surface = bd.passes[2], bd.passes[5]
+}
+
+// problem notes data that cannot be used, once per rule, for the server log.
+func (bd *BedrockData) problem(id, why string) {
+	if bd.problemSeen == nil {
+		bd.problemSeen = map[string]bool{}
+	}
+	if bd.problemSeen[id] {
+		return
+	}
+	bd.problemSeen[id] = true
+	bd.Problems = append(bd.Problems, id+": "+why)
+}
+
+// maxOreCount is the largest ore count read (vanilla's largest is 64).
+const maxOreCount = 256
+
 // compilePass makes the rules of a pass whose features are written, in the pass's order.
 func (bd *BedrockData) compilePass(pass string) []*bedrockRule {
 	var out []*bedrockRule
 	for _, id := range bd.order[pass] {
-		r := bd.rules[id]
-		bd.lastOre = nil
-		feat, err := bd.fc.feature(r.Description.PlacesFeature)
-		if err != nil {
-			why := err.Error()
-			if !isUnimpl(err) {
-				why = "error: " + why
-			}
-			bd.Skipped[pass+": "+shortReason(why)]++
-			bd.keepJava(id)
-			continue
+		if rule := bd.compileRule(pass, id); rule != nil {
+			out = append(out, rule)
 		}
-		sc, err := parseScatterParams(r.Distribution, bd)
-		if err != nil {
-			bd.Skipped[pass+": scatter "+shortReason(err.Error())]++
-			bd.keepJava(id)
-			continue
-		}
-		rule := &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
-		if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
-			bd.ores[id] = o
-		}
-		rule.biomes = bd.ruleBiomes(r)
-		out = append(out, rule)
 	}
 	return out
+}
+
+// compileRule builds one rule. A rule whose data is broken (an error that is not just "not written
+// yet", or a panic while reading it) is skipped and named in Problems.
+func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
+	skip := func(why string, err error) *bedrockRule {
+		if isUnimpl(err) {
+			bd.Skipped[pass+": "+why+shortReason(err.Error())]++
+		} else {
+			bd.Skipped[pass+": broken data"]++
+			bd.problem(id, err.Error())
+		}
+		bd.keepJava(id)
+		return nil
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			rule = skip("", fmt.Errorf("cannot be read: %v", p))
+		}
+	}()
+	r := bd.rules[id]
+	bd.lastOre = nil
+	feat, err := bd.fc.feature(r.Description.PlacesFeature)
+	if err != nil {
+		return skip("", err)
+	}
+	sc, err := parseScatterParams(r.Distribution, bd)
+	if err != nil {
+		return skip("scatter ", err)
+	}
+	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
+	if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
+		bd.ores[id] = o
+	}
+	rule.biomes = bd.ruleBiomes(r)
+	return rule
 }
 
 // shortReason keeps the innermost part of a reason, for the Skipped counts.
@@ -625,17 +670,26 @@ func (bd *BedrockData) oreFeature(body json.RawMessage) (func(d *decoration, r *
 	if json.Unmarshal(body, &o) != nil {
 		return nil, "ore file"
 	}
+	if o.Count < 0 || o.Count > maxOreCount {
+		return nil, fmt.Sprintf("ore count %v out of range", o.Count)
+	}
 	var rules []oreRule
 	for _, q := range o.Rules {
 		pb, ok := packBlockName(q.Places)
 		if !ok {
 			return nil, "ore block"
 		}
+		if _, err := safeState(pb); err != nil {
+			return nil, "unknown ore block " + pb
+		}
 		var may []string
 		for _, m := range q.May {
 			n, ok := packBlockName(m)
 			if !ok {
 				return nil, "ore block"
+			}
+			if _, err := safeState(n); err != nil {
+				return nil, "unknown ore block " + n
 			}
 			may = append(may, n)
 		}

@@ -47,7 +47,7 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 	case "minecraft:ore_feature":
 		place, why := fc.bd.oreFeature(pf.body)
 		if place == nil {
-			return nil, unimpl("ore %s", why)
+			return nil, fmt.Errorf("ore: %s", why)
 		}
 		f = voidFeat(place)
 		fc.ores[id] = fc.bd.lastOre
@@ -299,9 +299,17 @@ func (sc *bScatter) chance(r *bmt, e *molangEnv) bool {
 	return true
 }
 
+// maxIterations bounds a scatter's iterations (vanilla's largest is a few hundred).
+const maxIterations = 4096
+
+// isAxisOrder says whether s orders x, y and z, each once.
+func isAxisOrder(s string) bool {
+	return len(s) == 3 && strings.Count(s, "x") == 1 && strings.Count(s, "y") == 1 && strings.Count(s, "z") == 1
+}
+
 func (sc *bScatter) count(e *molangEnv) int {
 	if sc.itExpr != nil {
-		return molangRound(sc.itExpr(e))
+		return min(max(molangRound(sc.itExpr(e)), 0), maxIterations)
 	}
 	return sc.iterations
 }
@@ -370,6 +378,9 @@ func parseScatterParams(d map[string]json.RawMessage, bd *BedrockData) (*bScatte
 			return nil, err
 		}
 		if isNum {
+			if n < 0 || n > maxIterations {
+				return nil, fmt.Errorf("iterations %v out of range", n)
+			}
 			sc.iterations = int(math.Round(n))
 		} else {
 			sc.itExpr = f
@@ -398,8 +409,8 @@ func parseScatterParams(d map[string]json.RawMessage, bd *BedrockData) (*bScatte
 	}
 	if raw, ok := d["coordinate_eval_order"]; ok {
 		var s string
-		if json.Unmarshal(raw, &s) != nil || len(s) != 3 {
-			return nil, fmt.Errorf("order %s", raw)
+		if json.Unmarshal(raw, &s) != nil || !isAxisOrder(s) {
+			return nil, fmt.Errorf("coordinate_eval_order %s is not an order of x, y and z", raw)
 		}
 		sc.order = evalOrder(s)
 	}

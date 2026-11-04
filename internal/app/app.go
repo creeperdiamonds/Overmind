@@ -142,5 +142,8 @@ func bedrockData(log *slog.Logger, dir string, profile *worldgen.Profile) *world
 		return nil
 	}
 	log.Info("Bedrock feature data read", "folder", dir, "read", bd.Summary())
+	for _, p := range bd.Problems {
+		log.Warn("Bedrock feature data: a rule is broken and was skipped", "rule", p)
+	}
 	return bd
 }
