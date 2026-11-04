@@ -218,6 +218,11 @@ func (b *Bot) watch(pk packet.Packet) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	switch pk := pk.(type) {
+	case *packet.MovePlayer:
+		// The server moved the bot itself (a respawn, a teleport): a client goes on from there.
+		if pk.EntityRuntimeID == b.conn.GameData().EntityRuntimeID && pk.Mode != packet.MoveModeNormal {
+			b.pos = pk.Position
+		}
 	case *packet.GameRulesChanged:
 		if b.rules == nil {
 			b.rules = map[string]any{}
@@ -393,6 +398,11 @@ func (b *Bot) loop() {
 			}
 		}
 	}
+}
+
+// Respawn asks to come back from the death screen, as the client's respawn button does.
+func (b *Bot) Respawn() error {
+	return b.conn.WritePacket(&packet.Respawn{State: packet.RespawnStateClientReadyToSpawn, EntityRuntimeID: b.conn.GameData().EntityRuntimeID})
 }
 
 // Walk starts walking in the direction angle (radians; 0 is +X, pi/2 is +Z).

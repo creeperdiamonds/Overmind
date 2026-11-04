@@ -997,6 +997,9 @@ func (p *Player) respawn(f func(p *Player)) {
 
 	blockPos, w, spawnObstructed, _ := p.spawnLocation()
 	pos := blockPos.Vec3Middle()
+	// Overmind fork: a player whose spawn world is not the one it died in (the Nether or the End; its bed is
+	// in the Overworld) has its bed looked up in that world's transaction below, unless a handler moves it.
+	bedElsewhere, before := w != p.tx.World(), pos
 
 	if spawnObstructed {
 		p.Messaget(chat.MessageBedNotValid)
@@ -1023,8 +1026,16 @@ func (p *Player) respawn(f func(p *Player)) {
 		}
 		np.quit("respawn failed")
 	}
+	bedElsewhere = bedElsewhere && pos == before
 	task := w.Do(func(tx *world.Tx) {
 		np := tx.AddEntity(handle).(*Player)
+		if bedElsewhere {
+			at, lost := np.bedSpawn(tx)
+			pos = at.Vec3Middle()
+			if lost {
+				np.Messaget(chat.MessageBedNotValid)
+			}
+		}
 		np.Teleport(pos)
 		np.session().SendRespawn(pos, p)
 		np.SetVisible()
@@ -1065,6 +1076,12 @@ func (p *Player) spawnLocation() (playerSpawn cube.Pos, w *world.World, spawnBlo
 	tx := p.tx
 	w = tx.World()
 	previousDimension = w.Dimension()
+	// Overmind fork: a player's spawn is in the Overworld, the only world with beds. Its blocks cannot be
+	// read from another world's transaction, so for a player elsewhere the Overworld's spawn is given here
+	// and respawn checks the bed there (bedSpawn).
+	if home := w.PortalDestination(w.Dimension()); home != w {
+		return home.Spawn(), home, false, previousDimension
+	}
 	playerSpawn = w.PlayerSpawn(p.UUID())
 	if b, ok := tx.Block(playerSpawn).(block.Bed); ok && b.CanRespawnOn() {
 		pos, ok := b.SafeSpawn(playerSpawn, tx)
@@ -1078,6 +1095,19 @@ func (p *Player) spawnLocation() (playerSpawn cube.Pos, w *world.World, spawnBlo
 	w = w.PortalDestination(w.Dimension())
 	worldSpawn := w.Spawn()
 	return worldSpawn, w, playerSpawn != worldSpawn, previousDimension
+}
+
+// bedSpawn is where the player respawns in tx's world: beside its bed while the bed stands and is clear, or
+// at the world spawn, with lost true if a spawn of its own was set there (Overmind fork).
+func (p *Player) bedSpawn(tx *world.Tx) (pos cube.Pos, lost bool) {
+	w := tx.World()
+	at := w.PlayerSpawn(p.UUID())
+	if b, ok := tx.Block(at).(block.Bed); ok && b.CanRespawnOn() {
+		if pos, ok := b.SafeSpawn(at, tx); ok {
+			return pos, false
+		}
+	}
+	return w.Spawn(), at != w.Spawn()
 }
 
 // StartSprinting makes a player start sprinting, increasing the speed of the player by 30% and making
