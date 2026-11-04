@@ -1,10 +1,12 @@
 package javafront
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 
@@ -12,13 +14,15 @@ import (
 )
 
 // The Java state of a block depends on more than its Dragonfly runtime ID in
-// two ways, both handled here:
+// three ways, all handled here:
 //
 //   - Water inside a block. Dragonfly keeps it on the chunk's second layer, as
 //     Bedrock does; Java has it as the block's waterlogged property. A block
 //     whose Java counterpart cannot be waterlogged shows without the water.
 //   - A paired chest. Dragonfly keeps the pair in the chest's block entity
 //     (pairx, pairz); Java has it as the chest's type, left or right.
+//   - The colour of a bed or banner. Dragonfly keeps it in the block entity,
+//     as Bedrock does; Java has a block per colour (red_bed).
 //
 // Connections (fences, panes, bars, fire, chorus plants, redstone wire) are in
 // the runtime ID itself, since Dragonfly works them out for Bedrock 1.26, and
@@ -57,10 +61,42 @@ func stateOf(pos cube.Pos, rid, liquid uint32, be world.Block) (state int32, flu
 			s, fluid = w, true
 		}
 	}
-	if ch, ok := be.(block.Chest); ok && ch.Paired() {
-		s = chestHalf(s, pos, ch)
+	switch b := be.(type) {
+	case block.Chest:
+		if b.Paired() {
+			s = chestHalf(s, pos, b)
+		}
+	case block.Bed:
+		s = coloured(s, b.Colour)
+	case block.Banner:
+		s = coloured(s, b.Colour)
 	}
 	return int32(s), fluid
+}
+
+// coloured is a bed or banner state in its colour. Bedrock keeps the colour in
+// the block entity and its block state has none, so the tables give the black
+// block (black_bed, black_banner, black_wall_banner); Java has a block per
+// colour, with the same properties.
+func coloured(s uint16, c item.Colour) uint16 {
+	rest, ok := strings.CutPrefix(java261.BlockName(s), "minecraft:black_")
+	if !ok {
+		return s
+	}
+	out, _ := java261.AsBlock(s, "minecraft:"+c.String()+"_"+rest)
+	return out
+}
+
+// needsEntity says whether a block's Java state needs its block entity
+// (stateOf): a paired chest, a bed or a banner.
+func needsEntity(b world.Block) bool {
+	switch v := b.(type) {
+	case block.Chest:
+		return v.Paired()
+	case block.Bed, block.Banner:
+		return true
+	}
+	return false
 }
 
 // chestHalf sets a paired chest's Java type. Java names the half by the side
@@ -101,13 +137,13 @@ func columnState(col *world.Column, pos cube.Pos) int32 {
 }
 
 // sectionExtras are the blocks of one chunk whose Java state needs their block
-// entity (paired chests), by section and index in it, worked out by stateOf.
+// entity (paired chests, beds, banners), by section and index in it, worked
+// out by stateOf.
 func sectionExtras(cx, cz int32, c *chunk.Chunk, blockEntities map[cube.Pos]world.Block) map[int]map[int]int32 {
 	var out map[int]map[int]int32
 	minY := c.Range().Min()
 	for pos, b := range blockEntities {
-		ch, ok := b.(block.Chest)
-		if !ok || !ch.Paired() || pos[0]>>4 != int(cx) || pos[2]>>4 != int(cz) {
+		if !needsEntity(b) || pos[0]>>4 != int(cx) || pos[2]>>4 != int(cz) {
 			continue
 		}
 		x, y, z := uint8(pos[0]&15), int16(pos[1]), uint8(pos[2]&15)

@@ -108,6 +108,27 @@ func WithProperty(state uint16, name, value string) (uint16, bool) {
 	return state, false
 }
 
+// AsBlock is the state of another Java block ("minecraft:red_bed") with the
+// property values of state: for blocks that differ only by name, such as the
+// colours of a bed or banner. ok is false, and the state is returned as it
+// was, unless both blocks have the same properties.
+func AsBlock(state uint16, name string) (uint16, bool) {
+	from := blockOfState(state)
+	to := propByName[name]
+	if from == nil || to == nil || len(from.props) != len(to.props) {
+		return state, false
+	}
+	out := to.min
+	for i, p := range from.props {
+		q := to.props[i]
+		if p.name != q.name || strings.Join(p.values, ",") != strings.Join(q.values, ",") {
+			return state, false
+		}
+		out += (state - from.min) / p.stride % uint16(len(p.values)) * q.stride
+	}
+	return out, true
+}
+
 // BlockName is the Java block name of a state with properties ("minecraft:
 // oak_fence"), or "" for a block without.
 func BlockName(state uint16) string {

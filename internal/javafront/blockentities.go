@@ -38,7 +38,7 @@ func javaBlockEntity(b world.Block) (typ int32, nbt []byte, ok bool) {
 	case block.Bed:
 		name = "bed"
 	case block.Banner:
-		name = "banner" // its colour is in the block; patterns are not sent yet
+		name = "banner" // its colour is in the Java block (stateOf); patterns are not sent yet
 	case block.Skull:
 		name = "skull"
 	case block.ShulkerBox:

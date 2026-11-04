@@ -63,6 +63,46 @@ func setWith(t *testing.T, srv *testserver.Server, pos cube.Pos, b world.Block, 
 	require.NoError(t, err)
 }
 
+// Beds and banners reach Java in their own colour. Bedrock keeps the colour in
+// the block entity, not the block state, which Java has as the block itself
+// (red_bed, light_blue_wall_banner): the tables alone gave every one the
+// black block. Seen as they are set (block updates) and by a Java player who
+// joins later (chunks).
+func TestJavaSeesBedAndBannerColours(t *testing.T) {
+	srv := testserver.Start(t)
+	j := startBot(t, srv, "JColours")
+	waitOnGround(t, srv, "JColours")
+	require.Eventually(t, func() bool { return j.column(-2, -2, -61, -61).Loaded && j.column(2, 2, -61, -61).Loaded }, 20*time.Second, 50*time.Millisecond)
+	still := &world.SetOpts{DisableBlockUpdates: true}
+	type check struct {
+		pos   cube.Pos
+		name  string
+		props map[string]any
+	}
+	var checks []check
+	for i, c := range []item.Colour{item.ColourRed(), item.ColourLightBlue(), item.ColourWhite(), item.ColourLime(), item.ColourBlack()} {
+		x := i - 2
+		bed := cube.Pos{x, -60, 2}
+		setWith(t, srv, bed, block.Bed{Colour: c, Facing: cube.North, Head: true}, still)
+		checks = append(checks, check{bed, c.String() + "_bed", map[string]any{"part": "head"}})
+		standing := cube.Pos{x, -60, -2}
+		setWith(t, srv, standing, block.Banner{Colour: c, Attach: block.StandingAttachment(4)}, still)
+		checks = append(checks, check{standing, c.String() + "_banner", nil})
+		setWith(t, srv, cube.Pos{x, -59, -3}, block.Stone{}, still)
+		wall := cube.Pos{x, -59, -2}
+		setWith(t, srv, wall, block.Banner{Colour: c, Attach: block.WallAttachment(cube.South)}, still)
+		checks = append(checks, check{wall, c.String() + "_wall_banner", nil})
+	}
+	for _, c := range checks {
+		shows(t, j, c.pos, c.name, c.props)
+	}
+	late := startBot(t, srv, "JColoursLate")
+	require.Eventually(t, func() bool { return late.column(-2, -2, -61, -61).Loaded && late.column(2, 2, -61, -61).Loaded }, 20*time.Second, 50*time.Millisecond)
+	for _, c := range checks {
+		shows(t, late, c.pos, c.name, c.props)
+	}
+}
+
 // Blocks whose Java state depends on their neighbours, on the water in them or
 // on their block entity reach Java as a Java client expects: fences, panes and
 // wire connect, a double chest has its two halves, a door and tall grass have

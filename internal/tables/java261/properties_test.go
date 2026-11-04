@@ -88,3 +88,28 @@ func TestNewerPropertiesReachJava(t *testing.T) {
 	require.Equal(t, java["minecraft:redstone_wire"].state(t, map[string]string{"north": "up", "east": "side", "south": "side", "west": "none", "power": "9"}),
 		JavaState(rid("minecraft:redstone_wire", wire)))
 }
+
+// AsBlock keeps every property value when a bed or banner changes colour, by
+// the state rule, and refuses blocks with other properties.
+func TestAsBlock(t *testing.T) {
+	java := loadJava(t)
+	for _, c := range []struct {
+		from, to string
+		props    map[string]string
+	}{
+		{"minecraft:black_bed", "minecraft:red_bed", map[string]string{"facing": "east", "part": "head", "occupied": "true"}},
+		{"minecraft:black_banner", "minecraft:light_blue_banner", map[string]string{"rotation": "11"}},
+		{"minecraft:black_wall_banner", "minecraft:white_wall_banner", map[string]string{"facing": "west"}},
+	} {
+		s := java[c.from].state(t, c.props)
+		got, ok := AsBlock(s, c.to)
+		require.True(t, ok, c.to)
+		require.Equal(t, java[c.to].state(t, c.props), got, c.to)
+	}
+	s := java["minecraft:black_bed"].state(t, nil)
+	got, ok := AsBlock(s, "minecraft:black_banner")
+	require.False(t, ok)
+	require.Equal(t, s, got)
+	_, ok = AsBlock(s, "minecraft:no_such_block")
+	require.False(t, ok)
+}
