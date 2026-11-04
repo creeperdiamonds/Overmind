@@ -2274,7 +2274,7 @@ func (p *Player) drops(held item.Stack, b world.Block) []item.Stack {
 	var drops []item.Stack
 	if breakable, ok := b.(block.Breakable); ok && !p.GameMode().CreativeInventory() {
 		if breakable.BreakInfo().Harvestable(t) {
-			drops = breakable.BreakInfo().Drops(t, held.Enchantments())
+			drops = block.DropsAt(breakable, p.tx, t, held.Enchantments()) // Overmind fork: by edition
 		}
 	} else if it, ok := b.(world.Item); ok && !p.GameMode().CreativeInventory() {
 		drops = []item.Stack{item.NewStack(it, 1)}

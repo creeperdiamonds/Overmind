@@ -36,7 +36,7 @@ func (s SnowLayer) ReplaceableBy(world.Block) bool { return s.Height == 0 }
 func (SnowLayer) LightDiffusionLevel() uint8 { return 0 }
 
 // BreakInfo drops Bedrock's snowballs for the layers: 1 for 1 to 3 layers, 2 for 4 or 5, 3 for 6 or 7
-// and 4 for 8 ("Snow", oldid 3859371).
+// and 4 for 8 ("Snow", oldid 3859371). DropsIn gives Java's in a Java world.
 func (s SnowLayer) BreakInfo() BreakInfo {
 	return BreakInfo{
 		Hardness:        0.1,
@@ -48,6 +48,15 @@ func (s SnowLayer) BreakInfo() BreakInfo {
 			return []item.Stack{item.NewStack(item.Snowball{}, n)}
 		},
 	}
+}
+
+// DropsIn gives Java's snowballs in a Java world (world.Mechanics.JavaWeather, Overjava), 1 a layer
+// ("Snow", oldid 3859371), and Bedrock's from BreakInfo otherwise.
+func (s SnowLayer) DropsIn(tx *world.Tx, t item.Tool, e []item.Enchantment) []item.Stack {
+	if tx.World().Mechanics().JavaWeather {
+		return []item.Stack{item.NewStack(item.Snowball{}, s.Height+1)}
+	}
+	return s.BreakInfo().Drops(t, e)
 }
 
 // NeighbourUpdateTick removes the snow when what it lay on has gone.

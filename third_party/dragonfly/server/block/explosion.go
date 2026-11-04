@@ -198,7 +198,7 @@ func (c ExplosionConfig) Explode(tx *world.Tx, src world.ExplosionSource) {
 				breakHandler(pos, tx, nil)
 			}
 			if itemDropChance > r.Float64() {
-				for _, drop := range breakable.BreakInfo().Drops(item.ToolNone{}, nil) {
+				for _, drop := range DropsAt(breakable, tx, item.ToolNone{}, nil) { // Overmind fork: by edition
 					dropItem(tx, drop, pos.Vec3Centre())
 				}
 			}

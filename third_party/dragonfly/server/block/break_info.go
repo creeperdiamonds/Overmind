@@ -406,7 +406,7 @@ func cropSeedDrops(seed, crop world.Item, growth int) func(item.Tool, []item.Enc
 func breakBlock(b world.Block, pos cube.Pos, tx *world.Tx) {
 	breakBlockNoDrops(b, pos, tx)
 	if breakable, ok := b.(Breakable); ok {
-		for _, drop := range breakable.BreakInfo().Drops(item.ToolNone{}, nil) {
+		for _, drop := range DropsAt(breakable, tx, item.ToolNone{}, nil) { // Overmind fork: by edition
 			dropItem(tx, drop, pos.Vec3Centre())
 		}
 	}
