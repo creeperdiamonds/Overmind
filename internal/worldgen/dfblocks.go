@@ -453,6 +453,10 @@ func dragonflyBlock(name string) world.Block {
 		return block.Netherrack{}
 	case "end_stone":
 		return block.EndStone{}
+	case "fire":
+		return block.Fire{Type: block.NormalFire()}
+	case "soul_fire":
+		return block.Fire{Type: block.SoulFire()}
 	case "obsidian":
 		return block.Obsidian{}
 	case "iron_bars":

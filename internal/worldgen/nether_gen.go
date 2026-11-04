@@ -14,7 +14,9 @@ type NetherGenerator struct {
 	noise    *netherNoise
 	biomes   *netherBiomes
 	surfaces [5]netherSurfaceBiome // By Nether biome, from the data; none without it.
-	adj      *bedrockSurface       // The adjustment noise, with the data.
+	adj      *bedrockSurface       // The adjustment noise.
+	seeds    bedrockSeeds          // The decoration seeds the cave carver starts from.
+	caves    bool                  // The data's carver rule is there.
 }
 
 var (
@@ -29,10 +31,11 @@ func NewNether(seed int64) *NetherGenerator { return NewNetherWithData(seed, def
 // netherrack surfaces).
 func NewNetherWithData(seed int64, bd *BedrockData) *NetherGenerator {
 	n := &NetherGenerator{seed: seed, noise: newNetherNoise(seed), biomes: newNetherBiomes(seed)}
+	n.adj = &bedrockSurface{adjust: n.noise.adjust}
+	n.seeds = newBedrockSeeds(seed)
 	if bd != nil {
-		n.surfaces = readNetherSurfaces(bd)
-		root := xoroFromSeed(seed)
-		n.adj = newBedrockSurface(seed, root.forkFactory(), bd)
+		n.surfaces = readNetherSurfaces(seed, bd)
+		n.caves = true
 	}
 	return n
 }
@@ -52,6 +55,9 @@ func (n *NetherGenerator) cells(cx, cz int, out *[netherHeight * 256]bs) {
 			b := n.biome(x, z)
 			n.netherColumn(out, r, x, z, &n.surfaces[b-bNetherWastes], depth[lz*16+lx])
 		}
+	}
+	if n.caves {
+		n.carveCaves(out, cx, cz, n.seeds)
 	}
 }
 

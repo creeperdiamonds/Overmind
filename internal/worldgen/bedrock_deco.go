@@ -187,7 +187,10 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	bd := d.g.bdata
 	d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
 	if d.g.dim == dimNether {
-		// The Nether runs Bedrock's passes alone: no Java placement stands in, and no freeze pass.
+		// The Nether runs its own code's decoration (nether_deco.go), then Bedrock's passes on a
+		// reseeded MT: no Java placement stands in, and no freeze pass.
+		d.netherDecorate(&d.chunkR, cx, cz)
+		d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
 		for i := range bd.passes {
 			d.bedrockPass(bd.passes[i])
 		}

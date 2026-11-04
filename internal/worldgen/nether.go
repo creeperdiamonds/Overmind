@@ -10,11 +10,10 @@ import (
 // terrain is the legacy Nether noise of Java 1.12's ChunkGeneratorHell in single precision: a 5 x 17 x 5
 // grid of densities per chunk from three Perlin octave stacks, interpolated over 4 x 8 x 4 cells.
 //
-// What is read and what is not: the noise construction and draw order, the fill's constants (684.412,
-// 2053.236, 8.55515, 34.2206, 1/512, the cosine and falloff table, the top falloff), the bedrock rows and
-// the biome source are from the code. The octave sampler (0xd9127e0) is not decompiled; it is taken to
-// be Java's NoiseGeneratorOctaves with its y-cell cache, in float32, and checked against the BDS Nether
-// worlds (TestNetherMatchesBDS).
+// All of it is read from the code (NOTES-bedrock-nether N1 to N3, R2-6): the noise construction and
+// draw order, the octave sampler (Perlin_getRegion, region in end.go), the fill's constants (684.412,
+// 2053.2358, 8.55515, 34.220596, 1/512, the cosine and fall-off table, the top fall-off) and its
+// interpolation, the bedrock rows and the biome source.
 
 const (
 	netherHeight = 128
@@ -82,73 +81,14 @@ func ffloor(v float32) int32 {
 	return i
 }
 
-// populate adds one octave over a grid, Java 1.12's populateNoiseArray (3D path): the y lattice values
-// are only recomputed when the y cell changes, and reused otherwise, including their stale fractions.
-func (o *legacyOctave) populate(out []float32, xOff, yOff, zOff float32, xs, ys, zs int, sx, sy, sz, freq float32) {
-	amp := 1 / freq
-	last := int32(-1)
-	var d1, d2, d3, d4 float32
-	j := 0
-	for ix := range xs {
-		fx := xOff + float32(ix)*sx + o.xo
-		xi := ffloor(fx)
-		X := xi & 255
-		fx -= float32(xi)
-		u := legacyFade(fx)
-		for iz := range zs {
-			fz := zOff + float32(iz)*sz + o.zo
-			zi := ffloor(fz)
-			Z := zi & 255
-			fz -= float32(zi)
-			w := legacyFade(fz)
-			for iy := range ys {
-				fy := yOff + float32(iy)*sy + o.yo
-				yi := ffloor(fy)
-				Y := yi & 255
-				fy -= float32(yi)
-				v := legacyFade(fy)
-				if iy == 0 || Y != last {
-					last = Y
-					p := o.p[:]
-					a := p[X] + Y
-					aa, ab := p[a]+Z, p[a+1]+Z
-					b := p[X+1] + Y
-					ba, bb := p[b]+Z, p[b+1]+Z
-					d1 = legacyLerp(u, legacyGrad(p[aa], fx, fy, fz), legacyGrad(p[ba], fx-1, fy, fz))
-					d2 = legacyLerp(u, legacyGrad(p[ab], fx, fy-1, fz), legacyGrad(p[bb], fx-1, fy-1, fz))
-					d3 = legacyLerp(u, legacyGrad(p[aa+1], fx, fy, fz-1), legacyGrad(p[ba+1], fx-1, fy, fz-1))
-					d4 = legacyLerp(u, legacyGrad(p[ab+1], fx, fy-1, fz-1), legacyGrad(p[bb+1], fx-1, fy-1, fz-1))
-				}
-				out[j] += legacyLerp(w, legacyLerp(v, d1, d2), legacyLerp(v, d3, d4)) * amp
-				j++
-			}
-		}
-	}
-}
-
-// sample is NoiseGeneratorOctaves.generateNoiseOctaves over a grid at origin (x, y, z): octave i at
-// frequency 2^-i, its x and z origins wrapped at 2^24.
-func (l legacyPerlin) sample(out []float32, x, y, z float32, xs, ys, zs int, sx, sy, sz float32) {
-	clear(out)
-	freq := float32(1)
-	for i := range l {
-		dx, dy, dz := x*freq*sx, y*freq*sy, z*freq*sz
-		kx, kz := math.Floor(float64(dx)), math.Floor(float64(dz))
-		dx -= float32(kx)
-		dz -= float32(kz)
-		dx += float32(math.Mod(kx, 16777216))
-		dz += float32(math.Mod(kz, 16777216))
-		l[i].populate(out, dx, dy, dz, xs, ys, zs, sx*freq, sy*freq, sz*freq, freq)
-		freq *= 0.5
-	}
-}
-
 // netherNoise is what a world's Nether keeps: the generator's noises in the ctor's order (MT of the
-// 32-bit level seed): min limit 16, max limit 16, main 8, then a 4-octave Perlin, a 4-octave simplex,
-// scale 10, depth 16 and the 3-octave surface simplex.
+// 32-bit level seed, NOTES-bedrock-nether N1): min limit 16, max limit 16, main 8, a 4-octave Perlin
+// (unused), the 4-octave surface simplex, scale 10 and depth 16 (computed by BDS, unused), and the
+// 3-octave material-adjustment simplex. Both simplex stacks are order 0 (their x and z offsets swapped).
 type netherNoise struct {
 	min, max, main legacyPerlin
-	surface        *bSimplexStack
+	surface        *bSimplexStack // The surface builders' depth noise.
+	adjust         *bSimplexStack // The surface material adjustments' noise.
 	offs           [17]float32
 }
 
@@ -158,11 +98,12 @@ func newNetherNoise(seed int64) *netherNoise {
 	n.min = newLegacyPerlin(r, 16)
 	n.max = newLegacyPerlin(r, 16)
 	n.main = newLegacyPerlin(r, 8)
+	below := func(k uint32) int32 { return int32(r.u32() % k) }
 	newLegacyPerlin(r, 4)
-	newBSimplexStack(4, r.nextFloat, func(k uint32) int32 { return int32(r.u32() % k) }, false)
+	n.surface = newBSimplexStack(4, r.nextFloat, below, true)
 	newLegacyPerlin(r, 10)
 	newLegacyPerlin(r, 16)
-	n.surface = newBSimplexStack(3, r.nextFloat, func(k uint32) int32 { return int32(r.u32() % k) }, false)
+	n.adjust = newBSimplexStack(3, r.nextFloat, below, true)
 	// The y table: 2 cos(j * pi * 6 / 17) from the sine table, less a cubic fall-off near the ends.
 	for j := range n.offs {
 		fj := float32(j)
@@ -181,14 +122,15 @@ func newNetherNoise(seed int64) *netherNoise {
 	return n
 }
 
-// depthNoise is the surface simplex over a chunk's columns (index z*16 + x): three octaves at the
-// chunk origin, amplitude 1 halving per octave, sampled as the Overworld builder's depth noise is.
+// depthNoise is the surface noise over a chunk's columns (index z*16 + x), as loadChunk 0x52d5ad0 adds
+// it (N3): octave k at scale 0.0625 * 0.5^k and amplitude 0.55 / 0.5^k, each 2D simplex at the column
+// plus the octave's x and y offsets.
 func (n *netherNoise) depthNoise(cx, cz int) (out [256]float32) {
 	ox, oz := float32(cx*16), float32(cz*16)
 	sc := float32(1)
 	for o := range n.surface.oct {
 		s := &n.surface.oct[o]
-		xs, amp := float32(sc*0.125), float32(1/sc)
+		xs, amp := float32(sc*0.0625), float32(0.55/sc)
 		for j := range 16 {
 			yy := float32(float32(float32(j)+oz)*xs) + s.yo
 			for k := range 16 {
@@ -202,23 +144,24 @@ func (n *netherNoise) depthNoise(cx, cz int) (out [256]float32) {
 }
 
 // fill writes a chunk's terrain: netherrack where the density is positive, lava in the open below the
-// lava sea, air above; ids in Y, Z, X order (index y<<8 | z<<4 | x).
+// lava sea, air above; ids in Y, Z, X order (index y<<8 | z<<4 | x). The cells are 4 x 8 x 4; each
+// block's value is worked out from the cell's corners as the code does (N2), not stepped.
 func (n *netherNoise) fill(cx, cz int, out *[netherHeight * 256]bs, rack, lava bs) {
 	var mn, mx, mainN [5 * 17 * 5]float32
-	ox, oz := float32(cx*4), float32(cz*4)
-	n.min.sample(mn[:], ox, 0, oz, 5, 17, 5, 684.412, 2053.236, 684.412)
-	n.max.sample(mx[:], ox, 0, oz, 5, 17, 5, 684.412, 2053.236, 684.412)
-	n.main.sample(mainN[:], ox, 0, oz, 5, 17, 5, 8.55515, 34.2206, 8.55515)
+	pos := [3]float32{float32(cx * 4), 0, float32(cz * 4)}
+	n.min.region(mn[:], pos, 5, 17, 5, [3]float32{684.412, 2053.2358, 684.412})
+	n.max.region(mx[:], pos, 5, 17, 5, [3]float32{684.412, 2053.2358, 684.412})
+	n.main.region(mainN[:], pos, 5, 17, 5, [3]float32{8.55515, 34.220596, 8.55515})
 	var dens [5 * 5 * 17]float32
 	for i := range dens {
 		y := i % 17
-		lo, hi := mn[i]*(1.0/512), mx[i]*(1.0/512)
+		lo, hi := mn[i]*0.001953125, mx[i]*0.001953125
 		t := (mainN[i]/10 + 1) * 0.5
 		var d float32
 		switch {
-		case !(0 <= t):
+		case t < 0:
 			d = lo
-		case 1 < t:
+		case t > 1:
 			d = hi
 		default:
 			d = (hi-lo)*t + lo
@@ -228,46 +171,39 @@ func (n *netherNoise) fill(cx, cz int, out *[netherHeight * 256]bs, rack, lava b
 		case 14:
 			d = d*0.6666666 + -3.3333335
 		case 15:
-			d = d*0.3333333 + -6.666667
+			d = d*0.33333331 + -6.666667
 		case 16:
 			d = d*0 + -10
 		}
 		dens[i] = d
 	}
 	at := func(x, z, y int) float32 { return dens[(x*5+z)*17+y] }
-	for x := range 4 {
-		for z := range 4 {
-			for y := range 16 {
-				d1, d2, d3, d4 := at(x, z, y), at(x, z+1, y), at(x+1, z, y), at(x+1, z+1, y)
-				s1 := (at(x, z, y+1) - d1) * 0.125
-				s2 := (at(x, z+1, y+1) - d2) * 0.125
-				s3 := (at(x+1, z, y+1) - d3) * 0.125
-				s4 := (at(x+1, z+1, y+1) - d4) * 0.125
-				for yy := range 8 {
-					e1, e2 := d1, d2
-					t1, t2 := (d3-d1)*0.25, (d4-d2)*0.25
-					for xx := range 4 {
-						v := e1
-						step := (e2 - e1) * 0.25
-						for zz := range 4 {
-							by, bx, bz := y*8+yy, x*4+xx, z*4+zz
+	for X := range 4 {
+		for Z := range 4 {
+			for Y := range 16 {
+				for zs := range 4 {
+					zf := float32(zs) * 0.25
+					b0 := (at(X, Z+1, Y)-at(X, Z, Y))*zf + at(X, Z, Y)
+					t0 := (at(X, Z+1, Y+1)-at(X, Z, Y+1))*zf + at(X, Z, Y+1)
+					dB := (zf*(at(X+1, Z+1, Y)-at(X+1, Z, Y)) + at(X+1, Z, Y)) - b0
+					dT := (zf*(at(X+1, Z+1, Y+1)-at(X+1, Z, Y+1)) + at(X+1, Z, Y+1)) - t0
+					for xs := range 4 {
+						xf := float32(xs) * 0.25
+						B := dB*xf + b0
+						T := (dT*xf + t0) - B
+						for ys := range 8 {
+							y := Y*8 + ys
+							v := T*(float32(ys)*0.125) + B
 							var s bs
 							switch {
 							case v > 0:
 								s = rack
-							case by < netherLava:
+							case y < netherLava:
 								s = lava
 							}
-							out[by<<8|bz<<4|bx] = s
-							v += step
+							out[y<<8|(Z*4+zs)<<4|(X*4+xs)] = s
 						}
-						e1 += t1
-						e2 += t2
 					}
-					d1 += s1
-					d2 += s2
-					d3 += s3
-					d4 += s4
 				}
 			}
 		}

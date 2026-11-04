@@ -116,3 +116,16 @@ func BenchmarkEndChunk(b *testing.B) {
 		g.GenerateChunk(world.ChunkPos{int32(56 + i%8), int32(56 + i/8%8)}, c)
 	}
 }
+
+// BenchmarkNetherChunk generates fresh decorated Nether chunks (with the data when the tests have it),
+// a new generator (and cache) per 64.
+func BenchmarkNetherChunk(b *testing.B) {
+	var g *Generator
+	for i := range b.N {
+		if i%64 == 0 {
+			g = NewWithProfile(100, ProfileBedrock).Nether()
+		}
+		c := chunk.New(world.DefaultBlockRegistry, world.Nether.Range())
+		g.GenerateChunk(world.ChunkPos{int32(i % 8), int32(i / 8 % 8)}, c)
+	}
+}
