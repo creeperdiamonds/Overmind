@@ -8,8 +8,8 @@ import "strings"
 // geodeNoise is the study's fresh noise for a geode, the same for every geode of a seed. It is made on
 // first use and kept by the generator, so it goes when the generator does.
 func (g *Generator) geodeNoise() *normalNoise {
-	g.geodeOnce.Do(func() { g.geode = legacyNormal(g.seed, -4, []float64{1}) })
-	return g.geode
+	g.geode.once.Do(func() { g.geode.n = legacyNormal(g.seed, -4, []float64{1}) })
+	return g.geode.n
 }
 
 func patch(n, xz, y int, filter predicate) []modifier {

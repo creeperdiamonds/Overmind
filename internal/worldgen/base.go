@@ -85,7 +85,7 @@ func (g *Generator) buildBase(b *baseChunk, s *chunkScratch, cx, cz int, stage b
 	b.cx, b.cz, b.owner, b.whole = cx, cz, g, false
 	clear(b.b[:])
 	if g.dim == dimNether {
-		g.buildNetherBase(b, stage)
+		g.buildNetherBase(b)
 		return
 	}
 	if g.dim == dimEnd {

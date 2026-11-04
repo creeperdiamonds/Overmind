@@ -75,10 +75,14 @@ func Start(cfg config.Config) (*server.Server, error) {
 		log.Warn("This saved world has no record of how it was generated; it is recorded from now on.", "now", ident)
 	}
 	guard := &offTick{g: gen}
-	// The Nether is Bedrock's for every profile (Task 10); Overjava's Java Nether is not written.
+	// The Nether is Bedrock's for every profile (Task 10; Overjava's Java Nether is not written). Its
+	// terrain, surfaces, caves and the code's decoration need no data; the install's rules do.
 	netherGuard := &offTick{g: gen.Nether()} // Shares the Overworld generator's cache cap.
-	// The End likewise (Task 11): Bedrock's terrain, spikes, islands, chorus and gateways, and the
-	// inactive exit portal; no dragon fight yet.
+	if gen.Data() == nil {
+		log.Info("The Nether's data-driven features (fungi, roots, vines, deltas, basalt columns, soul sand blobs) are skipped: they need the Bedrock profile and a readable Bedrock install (BedrockDataDir).")
+	}
+	// The End (Task 11): Bedrock's terrain, spikes, islands, chorus and gateways, and the inactive exit
+	// portal, for every profile (it reads no data); no dragon fight yet.
 	endGuard := &offTick{g: gen.End()}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		switch dim {

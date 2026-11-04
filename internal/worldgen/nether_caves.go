@@ -15,7 +15,7 @@ const (
 
 // carveCaves carves a chunk (cx, cz): every source chunk within 8 runs its tunnels, each from an MT
 // seeded with the source's decoration seed.
-func (n *NetherGenerator) carveCaves(out *[netherHeight * 256]bs, cx, cz int, seeds bedrockSeeds) {
+func (n *netherGen) carveCaves(out *[netherHeight * 256]bs, cx, cz int, seeds bedrockSeeds) {
 	var r bmt
 	for sx := cx - 8; sx <= cx+8; sx++ {
 		for sz := cz - 8; sz <= cz+8; sz++ {

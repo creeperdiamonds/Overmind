@@ -9,6 +9,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/biome"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
@@ -38,15 +39,14 @@ type Generator struct {
 	profile   *Profile
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
 	// climateT is the biome temperatures: the profile's table, with the pack's values when the data is read.
-	climateT  *climateTable
-	bseeds    bedrockSeeds // Bedrock's decoration seeds.
-	bdata     *BedrockData // Bedrock's feature data, nil when no install was read.
-	geodeOnce sync.Once
-	geode     *normalNoise
-	// dim is the dimension generated: the Overworld, or the Nether for the generator Nether makes.
+	climateT *climateTable
+	bseeds   bedrockSeeds // Bedrock's decoration seeds.
+	bdata    *BedrockData // Bedrock's feature data, nil when no install was read.
+	geode    *lazyNoise   // The geodes' noise, made on first use; shared by a world's dimensions.
+	// dim is the dimension generated: the Overworld, or the Nether or End of Nether and End.
 	dim     uint8
-	netherN *NetherGenerator // The Nether's terrain, biomes and surface, for dim == dimNether.
-	endN    *endGenerator    // The End's terrain and spikes, for dim == dimEnd.
+	netherN *netherGen    // The Nether's terrain, biomes, surface and caves, for dim == dimNether.
+	endN    *endGenerator // The End's terrain and spikes, for dim == dimEnd.
 	// biomeTree is the biome table's search tree: Java's, or Bedrock's with its own cave biome.
 	biomeTree *biomeNode
 	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
@@ -55,6 +55,31 @@ type Generator struct {
 
 	structs StructurePlacer // Structures placed after decoration (structures_api.go), nil for none.
 }
+
+// Dimensions a Generator makes.
+const (
+	dimOverworld = 0
+	dimNether    = 1
+	dimEnd       = 2
+)
+
+// lazyNoise is a noise made on first use.
+type lazyNoise struct {
+	once sync.Once
+	n    *normalNoise
+}
+
+// dimension is this world's generator of another dimension: a copy sharing every noise, the data and
+// the cache (whose keys carry the dimension), with no structures.
+func (g *Generator) dimension(dim uint8) *Generator {
+	n := *g
+	n.dim, n.structs = dim, nil
+	return &n
+}
+
+// parityDeco says whether decoration runs in Bedrock's parity order: the Bedrock profile with data in
+// the Overworld; the Nether and End always, whose decoration is mostly code.
+func (g *Generator) parityDeco() bool { return g.dim != dimOverworld || g.bedrockDeco() }
 
 // New returns a Generator for a seed, with the default profile, Bedrock's.
 func New(seed int64) *Generator { return NewWithProfile(seed, ProfileBedrock) }
@@ -88,6 +113,7 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 		surface:    newSurfaceNoises(w),
 		blocks:     newBlocks(),
 		bseeds:     newBedrockSeeds(seed),
+		geode:      &lazyNoise{},
 	}
 	if !profile.bedrockDeco && !profile.surfaceBedrock && !profile.carversBedrock {
 		bd = nil
@@ -191,15 +217,18 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	if g.dim == dimNether {
-		writeNetherCells(c, g.finalCells(s, cx, cz))
+	switch g.dim {
+	case dimNether:
+		writeRows(c, g.finalCells(s, cx, cz), netherHeight)
 		g.netherN.storeBiomes(c, cx, cz)
 		return
-	}
-	if g.dim == dimEnd {
+	case dimEnd:
 		cells := g.finalCells(s, cx, cz)
-		placeEndPodium(cells, cx, cz, g.endPodiumTop(s))
-		writeEndCells(c, cells)
+		if endPodiumChunk(cx, cz) {
+			placeEndPodium(cells, cx, cz, g.endPodiumTop(s))
+		}
+		writeRows(c, cells, 256)
+		storeUniformBiome(c, uint32(biome.End{}.EncodeBiome()), 256)
 		return
 	}
 	writeCells(c, g.finalCells(s, cx, cz))
@@ -698,7 +727,7 @@ func (g *Generator) spawnClear(x, y, z int) bool {
 func (g *Generator) DefaultSpawn(world.Dimension) cube.Pos {
 	switch g.dim {
 	case dimNether:
-		return g.netherN.DefaultSpawn(world.Nether)
+		return cube.Pos{0, 64, 0} // Players reach the Nether through portals, which find their own place.
 	case dimEnd:
 		return cube.Pos{100, 49, 0} // Where the End's arrival platform goes.
 	}
@@ -759,4 +788,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.t11n2"
+const GeneratorVersion = "2026-11-05.t11n3"

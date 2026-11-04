@@ -55,13 +55,6 @@ func newCappedBuilder(seed int64, floor, ceil []bs, beach bs) *cappedBuilder {
 	return c
 }
 
-// eval is Perlin_eval 0xd815700 for one octave: one sample at (x, y, z), frequency and amplitude 1.
-func (o *legacyOctave) eval(x, y, z float32) float32 {
-	var v [1]float32
-	o.regionOctave(v[:], [3]float32{x, y, z}, 1, 1, 1, [3]float32{1, 1, 1}, 1)
-	return v[0]
-}
-
 // pickCapped is the material whose noise is highest at the column (strictly, from -1); one material
 // is taken without a sample.
 func pickCapped(mats []bs, ns []legacyOctave, x, z float32) bs {
@@ -70,7 +63,7 @@ func pickCapped(mats []bs, ns []legacyOctave, x, z float32) bs {
 	}
 	best, m := float32(-1), mats[0]
 	for i := range mats {
-		if v := ns[i].eval(x, netherSea, z); best < v {
+		if v := ns[i].improved(x, netherSea, z); best < v {
 			best, m = v, mats[i]
 		}
 	}
@@ -197,7 +190,7 @@ func readNetherSurfaces(seed int64, bd *BedrockData) (out [5]netherSurfaceBiome)
 }
 
 // netherColumn builds one column with its biome's builder.
-func (n *NetherGenerator) netherColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, nsb *netherSurfaceBiome, depthN float32) {
+func (n *netherGen) netherColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, nsb *netherSurfaceBiome, depthN float32) {
 	if nsb.capped != nil {
 		n.cappedColumn(out, r, x, z, nsb.capped, depthN)
 		return
@@ -210,7 +203,7 @@ func (n *NetherGenerator) netherColumn(out *[netherHeight * 256]bs, r *bmt, x, z
 // materials are chosen at its first block: the biome's, with the adjustments whose noise and height
 // range hold there. At or above Y 31 (the sea's top) that block takes the top material; below, the sea
 // floor material deeper than the sea floor depth plus depth under the sea, else the mid one.
-func (n *NetherGenerator) defaultColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, nsb *netherSurfaceBiome, depthN float32) {
+func (n *netherGen) defaultColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, nsb *netherSurfaceBiome, depthN float32) {
 	lx, lz := x&15, z&15
 	f := r.nextFloat()
 	if !nsb.ok {
@@ -285,13 +278,13 @@ func (n *NetherGenerator) defaultColumn(out *[netherHeight * 256]bs, r *bmt, x, 
 // ceiling materials by noise, the beach by noise; then up the column, under every top of solid ground
 // (solid: neither air nor lava) up to d1 blocks of floor (beach from Y 27 to 32), over every bottom up
 // to d2 blocks of ceiling, each run stopping at the first open block.
-func (n *NetherGenerator) cappedColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, c *cappedBuilder, depthN float32) {
+func (n *netherGen) cappedColumn(out *[netherHeight * 256]bs, r *bmt, x, z int, c *cappedBuilder, depthN float32) {
 	lx, lz := x&15, z&15
 	r1, r2 := r.nextFloat(), r.nextFloat()
 	fx, fz := float32(float32(x)*0.0625), float32(float32(z)*0.0625)
 	floor := pickCapped(c.floor, c.floorN, fx, fz)
 	ceil := pickCapped(c.ceil, c.ceilN, fx, fz)
-	beach := !c.beach.isAir() && c.beachN.eval(float32(float32(x)*0.03125), 109, float32(float32(z)*0.03125)) > 0
+	beach := !c.beach.isAir() && c.beachN.improved(float32(float32(x)*0.03125), 109, float32(float32(z)*0.03125)) > 0
 	d1 := int(float32(float32(float32(r1*0.25)+float32(depthN/3)) + 3))
 	d2 := int(float32(r2*0.25) + float32(float32(depthN/3)+3))
 	solid := func(y int) bool { s := out[y<<8|lz<<4|lx]; return !s.isAir() && !s.has(fLava) }
@@ -322,6 +315,36 @@ func (n *NetherGenerator) cappedColumn(out *[netherHeight * 256]bs, r *bmt, x, z
 
 // adjustValue is the adjustment noise at a column: the Overworld builder's formula (S1) on the Nether
 // generator's own 3-octave simplex (R2-2).
-func (n *NetherGenerator) adjustValue(a *surfaceAdj, x, z int) float32 {
+func (n *netherGen) adjustValue(a *surfaceAdj, x, z int) float32 {
 	return n.adj.adjustValue(a, x, z)
+}
+
+// netherSurfacesBuiltIn is the Nether biomes' builders as the install's biome files give them (the
+// study's reading, NOTES-bedrock-nether R2-1 and R2-2), for a world with no install read: the
+// Overjava profile, or the Bedrock profile without one. TestNetherSurfacesBuiltInMatchData holds it to
+// the files.
+func netherSurfacesBuiltIn(seed int64) (out [5]netherSurfaceBiome) {
+	st := surfaceState
+	mats := func(top, mid, floor string) surfaceMats {
+		return surfaceMats{st(top), st(mid), st(floor), st("netherrack"), st("lava")}
+	}
+	band := func(scale, lo, hi float32, yLo, yHi int, ranged bool, m surfaceMats, has [5]bool) netherAdjust {
+		return netherAdjust{surfaceAdj: surfaceAdj{scale: scale, lo: lo, hi: hi, mats: m, has: has}, yLo: yLo, yHi: yHi, hasRange: ranged}
+	}
+	topFloor := [5]bool{true, false, true}
+	out[bNetherWastes-bNetherWastes] = netherSurfaceBiome{ok: true, mats: mats("netherrack", "netherrack", "netherrack"), seaDepth: 7, adj: []netherAdjust{
+		band(0.03125, -1, -0.4, netherSea-3, netherSea+2, true, surfaceMats{top: st("gravel"), floor: st("gravel")}, topFloor),
+		band(0.03125, 0.4, 1, netherSea-3, netherSea+2, true, surfaceMats{top: st("soul_sand"), mid: st("soul_sand"), floor: st("soul_sand")}, [5]bool{true, true, true}),
+	}}
+	out[bCrimsonForest-bNetherWastes] = netherSurfaceBiome{ok: true, mats: mats("crimson_nylium", "netherrack", "crimson_nylium"), seaDepth: 1, adj: []netherAdjust{
+		band(0.1, 0.4, 1, 0, 0, false, surfaceMats{top: st("netherrack"), floor: st("netherrack")}, topFloor),
+		band(1, -0.75, -0.5, 0, 0, false, surfaceMats{top: st("nether_wart_block"), floor: st("nether_wart_block")}, topFloor),
+	}}
+	out[bWarpedForest-bNetherWastes] = netherSurfaceBiome{ok: true, mats: mats("warped_nylium", "netherrack", "warped_nylium"), seaDepth: 1, adj: []netherAdjust{
+		band(0.1, 0.4, 1, 0, 0, false, surfaceMats{top: st("netherrack"), floor: st("netherrack")}, topFloor),
+	}}
+	soul := []bs{st("soul_sand"), st("soul_soil")}
+	out[bSoulSandValley-bNetherWastes] = netherSurfaceBiome{ok: true, capped: newCappedBuilder(seed, soul, soul, st("gravel"))}
+	out[bBasaltDeltas-bNetherWastes] = netherSurfaceBiome{ok: true, capped: newCappedBuilder(seed, []bs{st("basalt"), st("blackstone")}, []bs{st("basalt")}, sAir)}
+	return out
 }

@@ -51,7 +51,8 @@ func newBPerlin(r *bmt, n int) bPerlin {
 	return p
 }
 
-// improved is Java's ImprovedNoise at one point, in float32.
+// improved is Java's ImprovedNoise at one point, in float32: Perlin_eval 0xd815700 for one octave (the
+// biome noises and the capped builder's).
 func (o *legacyOctave) improved(x, y, z float32) float32 {
 	x, y, z = x+o.xo, y+o.yo, z+o.zo
 	fx, fy, fz := float32(math.Floor(float64(x))), float32(math.Floor(float64(y))), float32(math.Floor(float64(z)))

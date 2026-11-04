@@ -191,6 +191,9 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 		// reseeded MT: no Java placement stands in, and no freeze pass.
 		d.netherDecorate(&d.chunkR, cx, cz)
 		d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
+		if bd == nil {
+			return // Without an install there are no rules (the app logs it).
+		}
 		for i := range bd.passes {
 			d.bedrockPass(bd.passes[i])
 		}
