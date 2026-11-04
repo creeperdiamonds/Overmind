@@ -13,14 +13,14 @@ Overworld structures (plan Task 9), our own Go from the study of BDS 1.26.60.6: 
 | Structure | Start (placement) | Pieces |
 |---|---|---|
 | Buried treasure | N1 2.2, checked | built (N2 2.1); y rule's "solid" flag and heightmap measured on 27 chests |
-| Ancient city | N1 2.2, checked | legacy jigsaw (N2 1.3-1.6), same 74 pieces as the study's model; first 44 match BDS. Degradation processors, the sculk feature elements and terrain adaptation are not read, so the city sits in solid deepslate |
-| Village | N1 2.2 + village_type biomes, checked | not built: element table (template, projection, processors) and terrain adaptation not decoded |
+| Ancient city | N1 2.2, checked; BDS locate 28/28 | legacy jigsaw (N2 1.3-1.6, sculk pool with its empty element, N2 phase 3): 78 pieces, 15/15 chests with BDS's loot seed on seed 100. Terrain adaptation (beard and shave) in the generator's density (`worldgen/structures_terrain.go`, N2 phase 3 round 2). Block-rot processors and the sculk feature elements are not applied (their random is not read) |
+| Village | N1 2.2 + village_type biomes, checked; BDS locate 12/12 | not built: element table (template, projection, processors) and terrain adaptation not decoded |
 | Desert pyramid, jungle temple, witch hut, igloo | N1 2.2 (one scattered feature), sea-level field 63 assumed; windows agree | not built: pieces not decoded (N2 3) |
-| Ocean monument, mansion | N1 2.2 | not built: not decoded |
+| Ocean monument, mansion | N1 2.2; BDS locate 28/28 each | not built: not decoded |
 | Pillager outpost | N1 2.2, checked | not built: N2 3 has only its first draws |
 | Shipwreck, ocean ruin, ruined portal | N1 2.2, checked | not built: not decoded (N2 3) |
 | Mineshaft | N1 2.3, checked against cave spider spawners | not built: not decoded |
-| Stronghold | N1 2.5 (rings and grid), not checked against a world | not built: not decoded |
+| Stronghold | N1 2.5 and N2 phase 3 round 2; `NearestStronghold` equals BDS locate from 24 of 28 origins | not built: not decoded |
 | Trail ruins, trial chambers, abandoned camps | Java LCG sets (N1 2.4), checked | not built: the br::worldgen placer was not read (N2 1). Trial chambers keep every candidate (biome filter not read); camps and trail ruins test their JSON biome filter at the chunk centre, at surf (position not read) |
 | Fossils | feature, not a structure start | not built |
 
@@ -32,7 +32,8 @@ Biome tests sample at "surf" (N1 2.2), the preliminary-surface cache, whose fill
 
 - `Data.Template`: Java structure NBT (gzip, big-endian; `nbt.go` is our reader). Newest vanilla pack wins.
 - `javablocks.go`: Java block states to Bedrock 1.26 names and states, then the nearest registered Dragonfly state. BDS's own table is code, not data; names are what the tests compare, states are best effort.
-- Loot (`loot.go`): fill as read (N2 2.3). getRandomItems (N2 2.5) was not decoded: pools, rolls, weighted pick, `set_count`, `set_data`, `set_damage` follow Java's LootPool shape, unconfirmed; enchanting, maps, potions, dyes, book and stew functions are not applied.
+- Loot (`loot.go`): fill (N2 2.3) and rolls, tiers, entry pick, set_count, set_data, set_damage and the enchant functions' draws as read from the code (N2 phase 3). BDS picks the enchantment with a thread-local random, not the loot seed; ours picks one compatible enchantment at random (the choice rule was not read). Maps, potions, dyes, books and stew are not read: the item is made without them. Not validated: no BDS chest has been opened.
+- Terrain adaptation: `TerrainAdjustments` gives the generator each rigid city piece (feature elements included) whose box grown by 12 reaches the chunk; the generator adds the kernel term to every block's density after the squeeze and does not take its all-solid or all-sky cell shortcuts there.
 
 ## Tests
 

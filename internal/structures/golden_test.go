@@ -173,7 +173,7 @@ func TestAncientCityMatchesBDS(t *testing.T) {
 		if p.elem.template != nil {
 			boxes = append(boxes, p.box)
 			if i < 44 {
-				early = append(early, p.box) // The pieces the study's model found right (N2 1.9).
+				early = append(early, p.box) // The pieces the first pool table got right (N2 1.9).
 			}
 		}
 		for i := range 3 {
@@ -200,7 +200,7 @@ func TestAncientCityMatchesBDS(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	got := map[[3]int]int32{}
-	var same, sameBare, total, sameE, totalE int
+	var same, sameBare, total, sameE, totalE, wholeSame, wholeBare, wholeTotal int
 	conf := map[[2]string]int{}
 	sem := make(chan struct{}, 4)
 	for c := range chunks {
@@ -213,6 +213,8 @@ func TestAncientCityMatchesBDS(t *testing.T) {
 			var cf map[[2]string]int
 			if _, ok := w.chunks[c]; ok {
 				sm, tt, cf = boxScore(w, col.Chunk, c[0], c[1], boxes)
+				whole := []box{{c[0] * 16, minY, c[1] * 16, c[0]*16 + 15, maxY - 1, c[1]*16 + 15}}
+				ws, wt, _ := boxScore(w, col.Chunk, c[0], c[1], whole)
 				se, te, _ := boxScore(w, col.Chunk, c[0], c[1], early)
 				mu.Lock()
 				sameE, totalE = sameE+se, totalE+te
@@ -220,6 +222,10 @@ func TestAncientCityMatchesBDS(t *testing.T) {
 				plain := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 				bare.GenerateChunk(world.ChunkPos{int32(c[0]), int32(c[1])}, plain)
 				smb, _, _ = boxScore(w, plain, c[0], c[1], boxes)
+				wsb, _, _ := boxScore(w, plain, c[0], c[1], whole)
+				mu.Lock()
+				wholeSame, wholeBare, wholeTotal = wholeSame+ws, wholeBare+wsb, wholeTotal+wt
+				mu.Unlock()
 			}
 			mu.Lock()
 			defer mu.Unlock()
@@ -245,9 +251,11 @@ func TestAncientCityMatchesBDS(t *testing.T) {
 	t.Logf("chests: BDS %d in the city, ours %d; %d at BDS positions, %d of them with BDS's loot seed", len(want), len(got), pos, seeds)
 	t.Logf("blocks in piece boxes (chunks -10..9): with structures %d/%d = %.2f%%, without %d/%d = %.2f%%", same, total,
 		100*float64(same)/float64(max(total, 1)), sameBare, total, 100*float64(sameBare)/float64(max(total, 1)))
+	t.Logf("  whole chunks of the city in the export: with structures %d/%d = %.3f%%, without %.3f%%", wholeSame, wholeTotal,
+		100*float64(wholeSame)/float64(max(wholeTotal, 1)), 100*float64(wholeBare)/float64(max(wholeTotal, 1)))
 	t.Logf("  in the boxes of pieces 0..43 only: %d/%d = %.2f%%", sameE, totalE, 100*float64(sameE)/float64(max(totalE, 1)))
 	t.Logf("  top confusions (BDS<-ours): %s", topConfusions(conf, 12))
-	if pos < 5 || seeds != pos {
-		t.Errorf("chests at BDS positions %d (the study's model had 5), with BDS's seed %d", pos, seeds)
+	if pos != len(want) || seeds != pos {
+		t.Errorf("chests at BDS positions %d of %d, with BDS's seed %d", pos, len(want), seeds)
 	}
 }

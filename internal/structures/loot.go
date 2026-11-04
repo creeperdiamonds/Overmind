@@ -3,6 +3,7 @@ package structures
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strings"
 
@@ -14,11 +15,11 @@ import (
 )
 
 // Loot. A generated chest stores its table's path and a loot seed; the table is rolled when the chest is
-// first opened (N2 2.1, 2.2, owner's decision). Filling the container follows LootTable::fill as read
-// (N2 2.3). How a table makes its items (getRandomItems, N2 2.5) was decompiled but not decoded: the
-// pools, rolls, weighted pick and item functions here have Java's LootPool shape, the shape the notes
-// expect, and are not confirmed against Bedrock. Functions with draws we do not know (enchanting, maps,
-// potions, dyes ...) are left off the item. See NOTES.md.
+// first opened (N2 2.1, 2.2, owner's decision). Filling the container follows LootTable::fill (N2 2.3);
+// rolls, the entry pick and the item functions follow getRandomItems as read from the code (N2 phase 3,
+// "loot pool rolls, entry pick, item functions", cited LR below). Not validated: no BDS chest has been
+// opened. Exploration maps, potions, dyes, books and stew functions were not read and are not applied;
+// the item is still made.
 
 // LootTable is a parsed loot table.
 type LootTable struct {
@@ -26,10 +27,15 @@ type LootTable struct {
 }
 
 type lootPool struct {
-	rolls      intRange
-	bonusRolls float64
-	entries    []lootEntry
-	conds      []lootCond
+	rolls   floatRange
+	entries []lootEntry
+	conds   []lootCond
+	tiers   *lootTiers
+}
+
+type lootTiers struct {
+	initial, bonusRolls int
+	bonusChance         float32
 }
 
 type lootEntry struct {
@@ -41,11 +47,13 @@ type lootEntry struct {
 }
 
 type lootFunc struct {
-	fn    string
-	count intRange // set_count
-	data  intRange // set_data
-	dmg   [2]float64
-	set   bool // count/data/damage given.
+	fn     string
+	count  floatRange // set_count
+	data   floatRange // set_data
+	dmg    [2]float64 // set_damage
+	levels floatRange // enchant_with_levels
+	set    bool       // The function's value was read.
+	conds  []lootCond
 }
 
 type lootCond struct {
@@ -53,37 +61,46 @@ type lootCond struct {
 	chance float64
 }
 
-// intRange is a number or a {min, max} range.
-type intRange struct{ min, max int }
+// floatRange is a number or a {min, max} range, as the tables write them.
+type floatRange struct {
+	min, max float64
+	isRange  bool
+}
 
-func (r *intRange) UnmarshalJSON(b []byte) error {
+func (r *floatRange) UnmarshalJSON(b []byte) error {
 	var n float64
 	if json.Unmarshal(b, &n) == nil {
-		r.min, r.max = int(n), int(n)
+		r.min, r.max = n, n
 		return nil
 	}
 	var m struct{ Min, Max float64 }
 	if err := json.Unmarshal(b, &m); err != nil {
 		return err
 	}
-	r.min, r.max = int(m.Min), int(m.Max)
+	r.min, r.max, r.isRange = m.Min, m.Max, true
 	return nil
 }
 
-// roll draws a whole number in the range, as Java's uniform generator (nextInt(max - min + 1) + min).
-func (r intRange) roll(rng *worldgen.BedrockRandom) int {
-	if r.max <= r.min {
-		return r.min
+// draw is LR's integer range: lo = floor(min), hi = floor(max), lo + nextInt(hi - lo + 1) when lo <= hi.
+// It draws even when lo == hi.
+func (r floatRange) draw(rng *worldgen.BedrockRandom) int {
+	lo, hi := int(math.Floor(r.min)), int(math.Floor(r.max))
+	if lo > hi {
+		return lo
 	}
-	return int(rng.NextIntN(int32(r.max-r.min+1))) + r.min
+	return lo + int(rng.NextIntN(int32(hi-lo+1)))
 }
 
 func parseLootTable(text []byte) (*LootTable, error) {
 	var raw struct {
 		Pools []struct {
-			Rolls      json.RawMessage `json:"rolls"`
-			BonusRolls float64         `json:"bonus_rolls"`
-			Entries    []struct {
+			Rolls json.RawMessage `json:"rolls"`
+			Tiers *struct {
+				Initial     int     `json:"initial_range"`
+				BonusRolls  int     `json:"bonus_rolls"`
+				BonusChance float32 `json:"bonus_chance"`
+			} `json:"tiers"`
+			Entries []struct {
 				Type       string            `json:"type"`
 				Name       string            `json:"name"`
 				Weight     *int              `json:"weight"`
@@ -98,13 +115,14 @@ func parseLootTable(text []byte) (*LootTable, error) {
 	}
 	t := &LootTable{}
 	for _, p := range raw.Pools {
-		lp := lootPool{bonusRolls: p.BonusRolls, conds: parseConds(p.Conditions)}
+		lp := lootPool{conds: parseConds(p.Conditions), rolls: floatRange{min: 1, max: 1}}
 		if len(p.Rolls) > 0 {
 			if err := json.Unmarshal(p.Rolls, &lp.rolls); err != nil {
 				return nil, fmt.Errorf("rolls: %w", err)
 			}
-		} else {
-			lp.rolls = intRange{1, 1}
+		}
+		if p.Tiers != nil {
+			lp.tiers = &lootTiers{p.Tiers.Initial, p.Tiers.BonusRolls, p.Tiers.BonusChance}
 		}
 		for _, e := range p.Entries {
 			le := lootEntry{kind: e.Type, name: e.Name, weight: 1, conds: parseConds(e.Conditions)}
@@ -129,20 +147,22 @@ func parseConds(raw []json.RawMessage) []lootCond {
 			Chance    float64 `json:"chance"`
 		}
 		json.Unmarshal(r, &c)
-		out = append(out, lootCond{kind: c.Condition, chance: c.Chance})
+		out = append(out, lootCond{kind: strings.TrimPrefix(c.Condition, "minecraft:"), chance: c.Chance})
 	}
 	return out
 }
 
 func parseFunc(raw json.RawMessage) lootFunc {
 	var f struct {
-		Function string          `json:"function"`
-		Count    json.RawMessage `json:"count"`
-		Data     json.RawMessage `json:"data"`
-		Damage   struct{ Min, Max float64 }
+		Function   string          `json:"function"`
+		Count      json.RawMessage `json:"count"`
+		Data       json.RawMessage `json:"data"`
+		Levels     json.RawMessage `json:"levels"`
+		Damage     struct{ Min, Max float64 }
+		Conditions []json.RawMessage `json:"conditions"`
 	}
 	json.Unmarshal(raw, &f)
-	lf := lootFunc{fn: strings.TrimPrefix(f.Function, "minecraft:")}
+	lf := lootFunc{fn: strings.TrimPrefix(f.Function, "minecraft:"), conds: parseConds(f.Conditions)}
 	switch lf.fn {
 	case "set_count":
 		lf.set = json.Unmarshal(f.Count, &lf.count) == nil
@@ -150,6 +170,10 @@ func parseFunc(raw json.RawMessage) lootFunc {
 		lf.set = json.Unmarshal(f.Data, &lf.data) == nil
 	case "set_damage":
 		lf.dmg, lf.set = [2]float64{f.Damage.Min, f.Damage.Max}, true
+	case "enchant_with_levels":
+		lf.set = json.Unmarshal(f.Levels, &lf.levels) == nil
+	case "enchant_randomly":
+		lf.set = true
 	}
 	return lf
 }
@@ -173,84 +197,163 @@ func condsPass(cs []lootCond, rng *worldgen.BedrockRandom) bool {
 	return true
 }
 
-// items makes a table's items with the random (Java's LootPool shape; unconfirmed, see the top).
+// items is getRandomItems (LR): every pool in order.
 func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int) []item.Stack {
 	var out []item.Stack
-	for _, p := range t.Pools {
-		if !condsPass(p.conds, rng) {
+	for i := range t.Pools {
+		out = d.addRandomItems(&t.Pools[i], rng, depth, out)
+	}
+	return out
+}
+
+// addRandomItems is LootPool::addRandomItems (LR). Luck is 0 when a chest is opened, so bonus rolls and
+// qualities add nothing, but the bonus float is still drawn.
+func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth int, out []item.Stack) []item.Stack {
+	if !condsPass(p.conds, rng) {
+		return out
+	}
+	if p.tiers != nil {
+		u := 0
+		if p.tiers.initial >= 1 {
+			u = int(rng.NextIntN(int32(p.tiers.initial)))
+		}
+		for range p.tiers.bonusRolls {
+			if rng.NextFloat() < p.tiers.bonusChance {
+				u++
+			}
+		}
+		if u >= 0 && u < len(p.entries) {
+			out = d.createItem(&p.entries[u], rng, depth, out)
+		}
+		return out
+	}
+	n := p.rolls.draw(rng)
+	rng.NextFloat() // The bonus rolls' float, always drawn (LR); times luck 0 it adds none.
+	for range n {
+		var live []*lootEntry
+		total := 0
+		for i := range p.entries {
+			e := &p.entries[i]
+			if condsPass(e.conds, rng) && e.weight > 0 { // Conditions are run every roll (LR).
+				live = append(live, e)
+				total += e.weight
+			}
+		}
+		if total == 0 {
 			continue
 		}
-		for range p.rolls.roll(rng) {
-			var live []*lootEntry
-			total := 0
-			for i := range p.entries {
-				if e := &p.entries[i]; condsPass(e.conds, rng) && e.weight > 0 {
-					live = append(live, e)
-					total += e.weight
-				}
-			}
-			if total == 0 {
-				continue
-			}
-			k := int(rng.NextIntN(int32(total)))
-			var e *lootEntry
-			for _, c := range live {
-				if k -= c.weight; k < 0 {
-					e = c
-					break
-				}
-			}
-			switch e.kind {
-			case "item":
-				if s, ok := d.makeItem(e, rng); ok {
-					out = append(out, s)
-				}
-			case "loot_table":
-				if sub := d.loot[e.name]; sub != nil && depth < 8 {
-					out = append(out, d.items(sub, rng, depth+1)...)
-				}
+		k := int(rng.NextIntN(int32(total)))
+		for _, e := range live {
+			if k -= e.weight; k < 0 {
+				out = d.createItem(e, rng, depth, out)
+				break
 			}
 		}
 	}
 	return out
 }
 
-// makeItem makes one entry's stack and applies the functions we can.
-func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, bool) {
-	count, meta := 1, 0
-	var dmg [2]float64
-	hasDmg := false
-	for _, f := range e.functions {
-		switch {
-		case f.fn == "set_count" && f.set:
-			count = f.count.roll(rng)
-		case f.fn == "set_data" && f.set:
-			meta = f.data.roll(rng)
-		case f.fn == "set_damage" && f.set:
-			// A fraction of durability left, uniform in the range (Java's shape; one draw).
-			dmg, hasDmg = f.dmg, true
-			dmg[0] += float64(rng.NextFloat()) * (dmg[1] - dmg[0])
+// createItem makes an entry's items (LR): an item, a referenced table with the same random, or nothing.
+func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, out []item.Stack) []item.Stack {
+	switch e.kind {
+	case "item":
+		if s, ok := d.makeItem(e, rng); ok {
+			out = append(out, s)
+		}
+	case "loot_table":
+		if sub := d.loot[e.name]; sub != nil && depth < 8 {
+			out = append(out, d.items(sub, rng, depth+1)...)
 		}
 	}
+	return out
+}
+
+// makeItem is LootItem::createItem (LR): a stack of one, then each function whose conditions pass, in
+// order, with the loot random.
+func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, bool) {
 	name := e.name
 	if !strings.Contains(name, ":") {
 		name = "minecraft:" + name
 	}
-	it, ok := world.ItemByName(name, int16(meta))
+	it, ok := world.ItemByName(name, 0)
 	if !ok {
-		it, ok = world.ItemByName(name, 0)
+		return item.Stack{}, false
 	}
-	if !ok || count <= 0 {
-		return item.Stack{}, count <= 0 && ok
-	}
-	s := item.NewStack(it, count)
-	if hasDmg {
-		if dr, ok := it.(item.Durable); ok {
-			mx := dr.DurabilityInfo().MaxDurability
-			s = s.Damage(int(float64(mx) * (1 - dmg[0])))
+	count, meta, damage := 1, 0, 0
+	var enchants []item.Enchantment
+	for _, f := range e.functions {
+		if !f.set || !condsPass(f.conds, rng) {
+			continue
+		}
+		switch f.fn {
+		case "set_count":
+			count = f.count.draw(rng)
+		case "set_data":
+			if f.data.isRange { // Draws only with a range (LR).
+				meta = f.data.draw(rng)
+			} else {
+				meta = int(math.Floor(f.data.min))
+			}
+		case "set_damage":
+			if dr, ok := it.(item.Durable); ok { // Only damageable items draw (LR).
+				fr := float64(rng.NextFloat())
+				mx := float64(dr.DurabilityInfo().MaxDurability)
+				damage = int(math.Floor(mx * (1 - (f.dmg[0] + (f.dmg[1]-f.dmg[0])*fr))))
+			}
+		case "enchant_randomly":
+			rng.NextIntN(30) // LR: always drawn from the loot random first.
+			enchants = append(enchants, randomEnchant(it))
+		case "enchant_with_levels":
+			f.levels.draw(rng)
+			enchants = append(enchants, randomEnchant(it))
 		}
 	}
+	if meta > 0 {
+		if m, ok := world.ItemByName(name, int16(meta)); ok {
+			it = m
+		}
+	}
+	s := item.NewStack(it, 1)
+	count = min(max(count, 0), s.MaxCount()) // Clamped to [0, max stack] (LR set_count).
+	if count <= 0 {
+		return item.Stack{}, false
+	}
+	s = s.Grow(count - 1)
+	if damage > 0 {
+		s = s.Damage(damage)
+	}
+	var keep []item.Enchantment
+	for _, en := range enchants {
+		if en.Type() != nil {
+			keep = append(keep, en)
+		}
+	}
+	if len(keep) > 0 {
+		if _, isBook := it.(item.Book); isBook {
+			s = item.NewStack(item.EnchantedBook{}, count)
+		}
+		s = s.WithEnchantments(keep...)
+	}
 	return s, true
+}
+
+// randomEnchant picks the enchantment of enchant_randomly and enchant_with_levels. BDS chooses it with a
+// thread-local random that is not the loot random (LR), so it is not a function of the loot seed, and
+// its choice rule was not read. Here: one enchantment the item takes, at a level from 1 to its maximum,
+// from an unseeded random.
+func randomEnchant(it world.Item) item.Enchantment {
+	var fit []item.EnchantmentType
+	_, isBook := it.(item.Book)
+	for _, t := range item.Enchantments() {
+		if isBook || t.CompatibleWithItem(it) {
+			fit = append(fit, t)
+		}
+	}
+	if len(fit) == 0 {
+		return item.Enchantment{}
+	}
+	t := fit[rand.IntN(len(fit))]
+	return item.NewEnchantment(t, 1+rand.IntN(t.MaxLevel()))
 }
 
 // Fill rolls a table into a container: LootTable::fill (N2 2.3) on MT(seed), a fresh seed when 0 (N2

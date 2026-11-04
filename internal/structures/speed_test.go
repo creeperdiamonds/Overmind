@@ -40,3 +40,38 @@ func BenchmarkPlaceChunk(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkGenerateWithStructures is whole-chunk generation with and without structures attached, over
+// seed 100's ancient city (where every base build also gathers the city's terrain adaptation) and open
+// ground. Each run uses a fresh generator, so the shared cache starts empty.
+func BenchmarkGenerateWithStructures(b *testing.B) {
+	for _, area := range []struct {
+		name   string
+		cx, cz int
+	}{{"city", -2, -17}, {"open", 200, 200}} {
+		for _, with := range []bool{false, true} {
+			name := area.name + "/without"
+			if with {
+				name = area.name + "/with"
+			}
+			b.Run(name, func(b *testing.B) {
+				bd, d := installData(b)
+				n := 0
+				for b.Loop() {
+					g := worldgen.NewWithData(100, worldgen.ProfileBedrock, bd)
+					if with {
+						g.SetStructures(New(g, d))
+					}
+					for i := range 4 {
+						for j := range 4 {
+							c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+							g.GenerateChunk(world.ChunkPos{int32(area.cx + i), int32(area.cz + j)}, c)
+							n++
+						}
+					}
+				}
+				b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(n), "ms/chunk")
+			})
+		}
+	}
+}

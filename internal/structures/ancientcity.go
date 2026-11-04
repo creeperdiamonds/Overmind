@@ -10,9 +10,9 @@ type poolEntry struct {
 	name   string // Element name after "minecraft:ancient_city_"; "" is the empty element; a full name is a feature.
 }
 
-// ancientPools are the ancient city's pools as registered in the server (N2 1.7; the study's table
-// out/anc_pools.txt, read from the registration code at 0x53ac3e0). Fallback "" is the dump's "-": the
-// fallback string was not visible at the call; the study's model treats it as none.
+// ancientPools are the ancient city's pools as registered in the server (N2 1.7 and phase 3; the study's
+// table out/anc_pools_v2.txt, read from the registration code at 0x53ac3e0). Fallback "": the pool's
+// helper builds no fallback (0x53c8830, used by sculk and walls; N2 phase 3).
 var ancientPools = []struct {
 	name, fallback string
 	entries        []poolEntry
@@ -28,7 +28,9 @@ var ancientPools = []struct {
 		{1, "structures_medium_pillar_1"}, {1, "structures_ice_box_1"}, {1, "structures_camp_1"}, {1, "structures_camp_2"},
 		{1, "structures_camp_3"},
 	}},
-	{"minecraft:ancient_city/sculk", "", []poolEntry{{6, "minecraft:sculk_catalyst_with_patches_city"}}},
+	// The empty element after the feature was lost by the first extraction (N2 phase 3, "ancient city
+	// divergence FOUND"; out/anc_pools_v2.txt).
+	{"minecraft:ancient_city/sculk", "", []poolEntry{{6, "minecraft:sculk_catalyst_with_patches_city"}, {1, ""}}},
 	{"minecraft:ancient_city/walls", "", []poolEntry{
 		{1, "walls_intact_corner_wall_1"}, {1, "walls_intact_intersection_wall_1"}, {1, "walls_intact_lshape_wall_1"},
 		{1, "walls_intact_horizontal_wall_1"}, {1, "walls_intact_horizontal_wall_2"}, {1, "walls_intact_horizontal_wall_stairs_1"},

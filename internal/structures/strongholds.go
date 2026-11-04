@@ -68,7 +68,7 @@ func (s *Structures) gridStronghold(cx, cz int) ([2]int, bool) {
 		uint32(int32(gz))*uint32(0x100000000-0x41975147) + 0x5d534e7)
 	px := base(gx) + int(r.NextIntN(100)) + 50
 	pz := base(gz) + int(r.NextIntN(100)) + 50
-	ok := float64(r.U32())*(1.0/4294967296.0) < 0.25
+	ok := float64(r.U32())*(1.0/4294967296.0) < 0.2499999925494194 // N2 phase 3 round 2 (out/sh.c).
 	return [2]int{px, pz}, ok && px*px+pz*pz >= 100
 }
 
@@ -83,9 +83,9 @@ func (s *Structures) strongholdAt(cx, cz int) bool {
 	return ok && p == [2]int{cx, cz}
 }
 
-// NearestStronghold is the stronghold start nearest pos, as the block at the middle of its start chunk,
-// Y 0: where an eye of ender leads. The stronghold's pieces are not built yet (NOTES.md); the position
-// is the start's, from placement.
+// NearestStronghold is the stronghold start nearest pos, as block (cx*16+2, 0, cz*16+2) of its start
+// chunk, the block BDS's locate names (N2 phase 3 round 2): where an eye of ender leads. The
+// stronghold's pieces are not built yet (NOTES.md); the position is the start's, from placement.
 func (s *Structures) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
 	pcx, pcz := floorDiv(pos[0], 16), floorDiv(pos[2], 16)
 	best, bestD, found := [2]int{}, int64(math.MaxInt64), false
@@ -121,5 +121,5 @@ func (s *Structures) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
 	if !found {
 		return cube.Pos{}, false
 	}
-	return cube.Pos{best[0]*16 + 8, 0, best[1]*16 + 8}, true
+	return cube.Pos{best[0]*16 + 2, 0, best[1]*16 + 2}, true
 }

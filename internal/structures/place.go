@@ -87,23 +87,49 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	return w.bes
 }
 
-// placeAncientCities writes the pieces of every city that reaches the chunk.
-func (s *Structures) placeAncientCities(w *writer) {
+// citiesNear calls f with the pieces of every ancient city whose start is within reach chunks of (cx, cz).
+func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
 	sp := spreads[AncientCity]
-	for rx := floorDiv(w.cx-ancientReach, sp.spacing); rx <= floorDiv(w.cx+ancientReach, sp.spacing); rx++ {
-		for rz := floorDiv(w.cz-ancientReach, sp.spacing); rz <= floorDiv(w.cz+ancientReach, sp.spacing); rz++ {
+	for rx := floorDiv(cx-reach, sp.spacing); rx <= floorDiv(cx+reach, sp.spacing); rx++ {
+		for rz := floorDiv(cz-reach, sp.spacing); rz <= floorDiv(cz+reach, sp.spacing); rz++ {
 			st, ok := s.regionStart(AncientCity, rx, rz)
-			if !ok || abs(st.CX-w.cx) > ancientReach || abs(st.CZ-w.cz) > ancientReach {
-				continue
-			}
-			chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
-			for _, p := range s.assembled.get(st, s.ancientCity) {
-				if p.elem.template != nil && p.box.intersects(chunkBox) {
-					s.placeTemplate(w, p)
-				}
+			if ok && abs(st.CX-cx) <= reach && abs(st.CZ-cz) <= reach {
+				f(s.assembled.get(st, s.ancientCity))
 			}
 		}
 	}
+}
+
+// placeAncientCities writes the pieces of every city that reaches the chunk.
+func (s *Structures) placeAncientCities(w *writer) {
+	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
+	s.citiesNear(w.cx, w.cz, ancientReach, func(pieces []*piece) {
+		for _, p := range pieces {
+			if p.elem.template != nil && p.box.intersects(chunkBox) {
+				s.placeTemplate(w, p)
+			}
+		}
+	})
+}
+
+// TerrainAdjustments are the terrain adaptations of the pieces near chunk (cx, cz), for the generator's
+// density (N2 phase 3 round 2, terrain adaptation): every rigid piece of an ancient city, beard and
+// shave with widths 1 and 5, registered in the chunks its box grown by 12 blocks in x and z reaches.
+// Feature elements are rigid pieces too, with their one-block box.
+func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjustment) []worldgen.TerrainAdjustment {
+	if s.data == nil {
+		return into
+	}
+	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
+		for _, p := range pieces {
+			b := p.box
+			if (b[0]-12)>>4 <= cx && cx <= (b[3]+12)>>4 && (b[2]-12)>>4 <= cz && cz <= (b[5]+12)>>4 {
+				into = append(into, worldgen.TerrainAdjustment{Mode: worldgen.AdaptBeardAndShave, Box: b,
+					DeltaY: p.deltaY, MinW: 1, MaxW: 5})
+			}
+		}
+	})
+	return into
 }
 
 // placeTemplate writes a rigid template piece's blocks inside the chunk, in template order. Jigsaw

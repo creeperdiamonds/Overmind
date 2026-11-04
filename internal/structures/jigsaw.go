@@ -124,6 +124,9 @@ type piece struct {
 	rot   int
 	depth int
 	box   box
+	// deltaY lifts the terrain adaptation's base above the box bottom: 1 for the start piece, the target
+	// jigsaw's local y for a child (N2 phase 3 round 2, terrain adaptation).
+	deltaY int
 }
 
 type region struct{ outer, excl []box }
@@ -177,7 +180,7 @@ func assemble(r *worldgen.BedrockRandom, pools map[string]*pool, start *element,
 	dy := height(cx, cz) - 1 - (anchor[1] + b[1])
 	b = b.shift(dy)
 	apos[1] += dy
-	p := &piece{elem: start, pos: apos, rot: rot, box: b}
+	p := &piece{elem: start, pos: apos, rot: rot, box: b, deltaY: 1}
 	a.pieces = append(a.pieces, p)
 	cy := b[1] + (b[4]-b[1]+1)/2
 	d := maxDist
@@ -313,7 +316,7 @@ func (a *assembly) tryPool(p *piece, sbox box, sj *jigsaw, target [3]int, pl *po
 					continue
 				}
 				reg.excl = append(reg.excl, tb)
-				child := &piece{elem: e, pos: raw, rot: rot, depth: p.depth + 1, box: tb}
+				child := &piece{elem: e, pos: raw, rot: rot, depth: p.depth + 1, box: tb, deltaY: tj.pos[1]}
 				a.pieces = append(a.pieces, child)
 				a.push(tj.placePrio, child, fi)
 				return true
