@@ -202,12 +202,14 @@ func TestJavaHearsTheWorld(t *testing.T) {
 
 // A Java player hears its own container open, which its client does not play itself (vanilla plays a
 // chest's, barrel's or ender chest's sound to everyone near, the opener too), but not its own fence gate
-// or flint and steel, which its client played already. The flint and steel's sound is at the block the
-// fire goes in, beside the block used.
+// or flint and steel, which its client played already; another player hears the flint and steel. Its
+// sound is at the block the fire goes in, beside the block used.
 func TestJavaHearsItsOwnContainers(t *testing.T) {
 	srv := testserver.Start(t)
 	j := startBot(t, srv, "JOpener")
 	waitOnGround(t, srv, "JOpener")
+	near := startBot(t, srv, "JNear")
+	waitOnGround(t, srv, "JNear")
 	heard := func(name string) bool {
 		for _, s := range j.world().Sounds {
 			if s.Name == name {
@@ -226,8 +228,17 @@ func TestJavaHearsItsOwnContainers(t *testing.T) {
 	holdJava(t, srv, "JOpener", item.NewStack(item.FlintAndSteel{}, 1))
 	j.place(ground, cube.FaceUp, 0.5, 1, 0.5, 2)
 	require.Eventually(t, func() bool { _, fire := blockAt(t, srv, ground.Side(cube.FaceUp)).(block.Fire); return fire }, 5*time.Second, 50*time.Millisecond, "no fire was lit")
+	require.Eventually(t, func() bool {
+		for _, s := range near.world().Sounds {
+			if s.Name == "item.flintandsteel.use" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 50*time.Millisecond, "another Java player did not hear the flint and steel")
 	holdJava(t, srv, "JOpener", item.Stack{})
 	j.place(chest, cube.FaceUp, 0.5, 1, 0.5, 3)
 	require.Eventually(t, func() bool { return heard("block.chest.open") }, 5*time.Second, 50*time.Millisecond, "Java did not hear its own chest open: %+v", j.world().Sounds)
 	require.False(t, heard("block.fence_gate.open"), "Java was sent its own fence gate's sound")
+	require.False(t, heard("item.flintandsteel.use"), "Java was sent its own flint and steel's sound")
 }

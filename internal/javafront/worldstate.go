@@ -255,13 +255,17 @@ func (c *conn) own(pos cube.Pos) { c.ownActs[pos] = struct{}{} }
 // predicted reports whether the Java client played s at pos itself, for a block its player used this
 // tick. The vanilla server leaves the player out of only the sounds its client plays as it acts:
 // opening a door or a fence gate (DoorBlock and FenceGateBlock play them with the player, so to the
-// others only). A chest's, barrel's or ender chest's sound is played by the server to everyone, the
+// others only), and striking flint and steel (FlintAndSteelItem.useOn, likewise), whose sound Dragonfly
+// plays at the fire's block beside the one used. A chest's, barrel's or ender chest's sound is played by the server to everyone, the
 // opener too (ChestBlockEntity, BarrelBlockEntity and EnderChestBlockEntity play it with no player), and
 // so is TNT priming and fire put out.
 func (c *conn) predicted(pos cube.Pos, s world.Sound) bool {
 	switch s.(type) {
 	case sound.DoorOpen, sound.DoorClose, sound.FenceGateOpen, sound.FenceGateClose:
 		_, own := c.ownActs[pos]
+		return own
+	case sound.Ignite:
+		_, own := c.ownLit[pos]
 		return own
 	}
 	return false
@@ -289,4 +293,5 @@ func (c *conn) flushSounds() {
 	}
 	c.sounds = c.sounds[:0]
 	clear(c.ownActs)
+	clear(c.ownLit)
 }

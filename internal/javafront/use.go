@@ -64,6 +64,10 @@ func (c *conn) useOn(p *player.Player, u javaproto.BlockPlace) {
 	}
 	used = true
 	c.own(pos)
+	if _, flint := held.Item().(item.FlintAndSteel); flint && u.Hand != javaproto.HandOff {
+		// Its sound is at the block lit, or at the fire's block beside it.
+		c.ownLit[pos], c.ownLit[pos.Side(face)] = struct{}{}, struct{}{}
+	}
 	c.withHand(p, u.Hand, func() { p.UseItemOnBlock(pos, face, click) })
 }
 

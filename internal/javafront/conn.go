@@ -159,24 +159,25 @@ type conn struct {
 	pending []pendingChunk // chunks waiting for this tick's batch
 
 	// World goroutine.
-	loader   *world.Loader
-	edits    map[cube.Pos]world.Block    // blocks changed this tick: the first layer's block, nil for a change to the second only
+	loader *world.Loader
+	edits  map[cube.Pos]world.Block // blocks changed this tick: the first layer's block, nil for a change to the second only
 	// The world's state as the client was last shown it, and this tick's sounds (worldstate.go).
 	dayTime          int64
 	dayStill         bool
 	raining, thunder bool
 	sounds           []pendingSound
 	events           [][]byte
-	ownActs          map[cube.Pos]struct{} // blocks the player used or broke this tick
-	dirty    map[world.ChunkPos]struct{} // to be sent again whole
-	center   world.ChunkPos
-	health   float32
-	food     int32
-	foodSat  float32
-	ents     map[*world.EntityHandle]*shown
-	nextEnt  int32
-	lastPing time.Time
-	joined   bool // Options.Joined was called, so Options.Left is owed
+	ownActs          map[cube.Pos]struct{}       // blocks the player used or broke this tick
+	ownLit           map[cube.Pos]struct{}       // where its flint and steel struck this tick
+	dirty            map[world.ChunkPos]struct{} // to be sent again whole
+	center           world.ChunkPos
+	health           float32
+	food             int32
+	foodSat          float32
+	ents             map[*world.EntityHandle]*shown
+	nextEnt          int32
+	lastPing         time.Time
+	joined           bool // Options.Joined was called, so Options.Left is owed
 	// lastCommand is the command the player is running, without its slash, as
 	// it sent it; set and read on the player's world goroutine.
 	lastCommand string
@@ -250,6 +251,7 @@ func newConn(f *Front, wc *javawire.Conn, nc net.Conn, id *javalogin.Identity) *
 		wake:      make(chan struct{}, 1),
 		edits:     map[cube.Pos]world.Block{},
 		ownActs:   map[cube.Pos]struct{}{},
+		ownLit:    map[cube.Pos]struct{}{},
 		dirty:     map[world.ChunkPos]struct{}{},
 		health:    20,
 		food:      20,
