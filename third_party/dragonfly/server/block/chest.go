@@ -69,10 +69,10 @@ func (c Chest) ContainerSize() int {
 // Inventory returns the inventory of the chest. The size of the inventory will be 27 or 54, depending on
 // whether the chest is single or double.
 func (c Chest) Inventory(tx *world.Tx, pos cube.Pos) *inventory.Inventory {
-	c.unpackLoot(tx, pos)
+	c.unpackLoot(tx, pos) // Overmind fork: roll a generated chest's loot first.
 	if c.paired {
 		if p, ok := tx.Block(c.pairPos(pos)).(Chest); ok {
-			p.unpackLoot(tx, c.pairPos(pos))
+			p.unpackLoot(tx, c.pairPos(pos)) // Overmind fork: and its other half's.
 		}
 	}
 	inv, _ := c.tryPair(tx, pos)
@@ -84,14 +84,18 @@ func (c Chest) Inventory(tx *world.Tx, pos cube.Pos) *inventory.Inventory {
 var LootFiller func(table string, seed int32, inv *inventory.Inventory) bool
 
 // unpackLoot rolls the chest's loot table into its inventory the first time it is asked for, and clears
-// the table (Overmind fork; Bedrock's unpackLootTable).
+// the table (Overmind fork; Bedrock's unpackLootTable). The chest without its table is written back
+// only while a chest still stands there: a break handler asks for the inventory after the block is
+// gone, to drop what it held, and must not put the chest back.
 func (c Chest) unpackLoot(tx *world.Tx, pos cube.Pos) {
 	if c.LootTable == "" || LootFiller == nil || c.inventory == nil {
 		return
 	}
 	table, seed := c.LootTable, c.LootTableSeed
 	c.LootTable, c.LootTableSeed = "", 0
-	tx.SetBlock(pos, c, nil)
+	if _, ok := tx.Block(pos).(Chest); ok {
+		tx.SetBlock(pos, c, nil)
+	}
 	LootFiller(table, seed, c.inventory)
 }
 
