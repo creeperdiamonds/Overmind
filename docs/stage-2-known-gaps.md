@@ -10,6 +10,14 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 - **Snow does not melt; there are no items for snow layers and seagrass** (see worldgen NOTES).
 - **The Nether and End are generated (Tasks 10 and 11); the Nether can be reached, the End not yet.** Dragonfly lights an obsidian frame with flint and steel (or fire) into a Nether portal, and its travel takes a player to the generated Nether. The End is generated (terrain, outer islands, spikes, chorus, natural gateways, the inactive exit portal) but needs an End portal to reach, and nothing generates one yet (no strongholds). There is no dragon fight: no dragon, no end crystals on the spikes, no gateways from kills. `TestDayCycleAdvances` lights a frame and checks the Overworld's portal destinations.
 
+## Fitted values (ruling 41)
+
+Values the study fitted to BDS worlds instead of reading them from the code. Each stays, labelled in the code with its match, until the code is read; removing one would cost accuracy.
+- The Nether's ore sizes (`nether_deco.go`): gold 10 and quartz 14 (99.2% to 99.8% recall and precision on seed 100's 1024 chunks), magma 28 (99.5%), gravel and blackstone 33 (99.8% to 100%).
+- The Nether's soul fire block: soul soil only (253 of 253 BDS soul fires, one extra), where the study's round-2 text says both soul blocks.
+- The Nether mushrooms' ground list (95% / 96%) and the solid test of the deltas, basalt columns and huge fungi (the study's delta box 99.82%).
+- Earlier rounds' measured values (the dirt rule, the iron-bar and chorus states) match N of N and stay under ruling 39.
+
 ## Seeds
 
 - **Bedrock's handling of negative seeds and seeds of 2^31 or more is not verified.** Every seed in `testSeeds` (0, negatives, past 32 bits, both int64 limits) generates, spawns on land, is kept in `overmind-seed.txt` and gives the same world after a restart. Whether Bedrock itself gives the same terrain for those seeds is untested.

@@ -26,6 +26,7 @@ var (
 		}
 		return t
 	}()
+	// The decorate's magma, gravel and blackstone blobs: sizes fitted, see nether_deco.go.
 	netherMagma = newBedrockOre(28, 0, []oreRule{{"magma_block", "netherrack blackstone"}})
 	netherGrav  = newBedrockOre(33, 0, []oreRule{{"gravel", "netherrack"}})
 	netherBlack = newBedrockOre(33, 0, []oreRule{{"blackstone", "netherrack"}})
@@ -38,7 +39,8 @@ func itoaSmall(n int) string {
 	return string(rune('0'+n/10)) + string(rune('0'+n%10))
 }
 
-// netherSolid is the study's solid test for these features: not open (air, liquids, fire, plants).
+// netherSolid is the solid test of these features: not open (air, liquids, fire, plants). Fitted
+// (ruling 41): the study's list, not read from the code; with it the study's delta box matches 99.82%.
 func netherSolid(s bs) bool { return !netherOpen[stateBlock[s]] }
 
 // deltaFeature is DeltaFeature (0x515e1e0): from the rule's position, up through solid or down through

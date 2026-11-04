@@ -11,10 +11,14 @@ package worldgen
 // Not placed: ancient debris (steps 14 and 15, after the passes). Its walk is read, but the state of
 // the MT after the passes and its counts are fitted and match half the blocks (the study's 51%).
 //
-// The ore sizes are in code-registered feature objects the study did not read; each is measured on the
-// BDS worlds (ruling 39): gold 10 and quartz 14 (Java's; 99.3% / 99.6% and 99.2% / 99.1% recall /
-// precision), magma 28 (from the first blob of 64 chunks, whose position does not depend on the size:
-// 99.1% of its blocks are BDS magma; Java's 33 gives 72%), gravel and blackstone 33 (Java's; 99.9%).
+// Fitted, not read (ruling 41: kept, labelled with their match, until the study reads the code; listed in
+// docs/stage-2-known-gaps.md). The ore sizes are in code-registered feature objects nobody has read:
+//   - gold 10, quartz 14 (Java's): fitted, 99.7% / 99.2% (gold) and 99.8% / 99.1% (quartz) recall /
+//     precision on seed 100's 1024 chunks (TestNetherMatchesBDS); the study: 99.0 to 99.3% on 2 worlds;
+//   - magma 28: fitted, the study's best of sizes 26 to 33 on the first blob of 64 chunks of seed 1
+//     (99.1% of its blocks are BDS magma; Java's 33 gives 72%), 99.5% / 99.5% on its seed 100 box;
+//   - gravel and blackstone 33 (Java's): fitted, 99.9% and 100% / 99.8% on the study's seed 100 box;
+//   - the soul fire block (netherFire) and the mushrooms' ground (netherMushroomGround): see there.
 
 var (
 	sFire       = laterState("fire")
@@ -27,7 +31,9 @@ var (
 	netherQuarz = newBedrockOre(14, 0, []oreRule{{"nether_quartz_ore", "netherrack"}})
 	// glowstoneRoof is what a glowstone cluster may hang from.
 	glowstoneRoof = blockSet("netherrack basalt blackstone")
-	// netherMushroomGround is what the study's model lets a mushroom stand on in the Nether.
+	// netherMushroomGround is what a mushroom may stand on in the Nether. Fitted (ruling 41): the study's
+	// list of full solid blocks, not read; 95% of BDS's 1682 brown and red mushrooms on seed 100's 1024
+	// chunks are placed, and 96% of ours are BDS's.
 	netherMushroomGround = blockSet("netherrack soul_sand soul_soil crimson_nylium warped_nylium basalt blackstone gravel magma_block nether_gold_ore nether_quartz_ore glowstone bedrock")
 )
 
@@ -120,9 +126,10 @@ func spread6(r *bmt) (dx, dy, dz int) {
 }
 
 // netherFire is NetherFireFeature (0x54075d0): 64 tries around the position, fire in air over
-// netherrack, soul fire over the one soul block the code tests. Which soul block that is was not read;
-// soul soil is measured: on seed 100's 1024 chunks BDS has 253 soul fires and we place all 253 and one
-// more (with soul sand as well the study measured 45% precision).
+// netherrack, soul fire over the one soul block the code tests. Which soul block that is was not read
+// (the study's round-2 text says both); soul soil is fitted (ruling 41): on seed 100's 1024 chunks BDS
+// has 253 soul fires and we place all 253 and one more (with both blocks the study measured 45%
+// precision).
 func (d *decoration) netherFire(r *bmt, x, y, z int) {
 	for range 64 {
 		dx, dy, dz := spread6(r)
