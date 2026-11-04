@@ -684,38 +684,36 @@ func (g *Generator) surfaceRulesColumn(b *baseChunk, s *chunkScratch, lx, lz int
 	c := &s.rule
 	ox, oz := b.cx*16, b.cz*16
 	{
-		{
-			wx, wz := ox+lx, oz+lz
-			start := int(b.wgTop[lz<<4|lx])
-			sb := s.blockBiome(g, wx, start, wz)
-			if sb == bEroded {
-				g.erodedExtension(b, lx, lz, wx, wz, start)
-			}
-			h := int(b.wgTop[lz<<4|lx])
-			c.startColumn(wx, wz)
-			above, water := 0, noWaterTop
-			for y := h; y >= minY; y-- {
-				st := b.b[cellIndex(lx, y, lz)]
-				switch {
-				case st == sAir:
-					above, water = 0, noWaterTop
-				case st.has(fLiquid):
-					if water == noWaterTop {
-						water = y + 1
-					}
-				default:
-					above++
-					if st == sStone {
-						c.setY(above, y, water)
-						if r := c.ruleAt(); r != noRule {
-							b.set(lx, y, lz, r)
-						}
+		wx, wz := ox+lx, oz+lz
+		start := int(b.wgTop[lz<<4|lx])
+		sb := s.blockBiome(g, wx, start, wz)
+		if sb == bEroded {
+			g.erodedExtension(b, lx, lz, wx, wz, start)
+		}
+		h := int(b.wgTop[lz<<4|lx])
+		c.startColumn(wx, wz)
+		above, water := 0, noWaterTop
+		for y := h; y >= minY; y-- {
+			st := b.b[cellIndex(lx, y, lz)]
+			switch {
+			case st == sAir:
+				above, water = 0, noWaterTop
+			case st.has(fLiquid):
+				if water == noWaterTop {
+					water = y + 1
+				}
+			default:
+				above++
+				if st == sStone {
+					c.setY(above, y, water)
+					if r := c.ruleAt(); r != noRule {
+						b.set(lx, y, lz, r)
 					}
 				}
 			}
-			if sb == bFrozenOcean || sb == bDeepFrozen {
-				g.frozenExtension(b, c, sb, lx, lz, wx, wz, start)
-			}
+		}
+		if sb == bFrozenOcean || sb == bDeepFrozen {
+			g.frozenExtension(b, c, sb, lx, lz, wx, wz, start)
 		}
 	}
 }

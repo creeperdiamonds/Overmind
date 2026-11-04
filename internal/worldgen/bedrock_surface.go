@@ -469,6 +469,11 @@ func (g *Generator) bedrockDeepslate(b *baseChunk, x0, x1, z0, z1 int) {
 // the chunk draws from the floor stream in order, so a column built alone skips the ones before it by
 // one draw each; it differs from the whole chunk's only after a sandstone run's draw in an earlier
 // column of the chunk.
+//
+// A part-chunk build (SurfaceHeight builds one column) draws one word of the floor stream for each
+// column it skips, as a plain column does. A skipped column with a sandstone run draws one more, and
+// the steep test reads the neighbours' tops, so the columns built after such a column can get other
+// surface materials than in the whole chunk. Heights never change: the builder only picks materials.
 func (g *Generator) applyBedrockSurface(b *baseChunk, s *chunkScratch, floor *bmt, x0, x1, z0, z1 int) {
 	c := &s.rule
 	c.g, c.b, c.s = g, b, s

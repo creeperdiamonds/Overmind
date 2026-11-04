@@ -2,7 +2,6 @@ package worldgen
 
 import "strings"
 
-
 // Profile holds what differs between Bedrock's and Java's placement rules. The algorithms are the
 // same; only values differ. The default is Bedrock; Overjava is "Overmind as a Java server".
 type Profile struct {
