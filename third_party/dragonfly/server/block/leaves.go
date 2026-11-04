@@ -80,8 +80,9 @@ func (l Leaves) RandomTick(pos cube.Pos, tx *world.Tx, _ *rand.Rand) {
 			l.ShouldUpdate = false
 			// Overmind fork: clearing the mark changes nothing a neighbour reads, so it sends no block
 			// update. Upstream sent one, which marked the neighbours again, and so on for ever: every
-			// leaf of a canopy beside any change searched for its log on every random tick.
-			tx.SetBlock(pos, l, &world.SetOpts{DisableBlockUpdates: true})
+			// leaf of a canopy beside any change searched for its log on every random tick. Nor is it sent
+			// to viewers: no client shows the mark.
+			tx.SetBlock(pos, l, &world.SetOpts{DisableBlockUpdates: true, Unseen: true})
 			return
 		}
 		ctx := tx.Event()
@@ -103,7 +104,7 @@ func (l Leaves) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 	// Overmind fork: on Bedrock a change beside a leaf marks nothing; only removing a log or leaf does (Replaced).
 	if !l.Persistent && !l.ShouldUpdate && tx.World().Mechanics().JavaLeafDecay {
 		l.ShouldUpdate = true
-		tx.SetBlock(pos, l, nil)
+		tx.SetBlock(pos, l, &world.SetOpts{Unseen: true}) // Overmind fork: no client shows the mark
 	}
 }
 

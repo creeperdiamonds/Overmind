@@ -165,3 +165,53 @@ func TestBedrockRemovalMarks(t *testing.T) {
 		})
 	}
 }
+
+// blockUpdates counts the block updates a viewer is sent, by position.
+type blockUpdates struct {
+	world.NopViewer
+	at map[cube.Pos]int
+}
+
+func (v *blockUpdates) ViewBlockUpdate(pos cube.Pos, _ world.Block, _ int) { v.at[pos]++ }
+
+// A leaf's decay mark is not part of what a viewer is shown: marking leaves when a log is cut, and
+// clearing the mark when a leaf finds another log, send viewers nothing. Only the log's removal is sent.
+func TestLeafMarksSendNothing(t *testing.T) {
+	for _, java := range []bool{false, true} {
+		w := leafWorld(t, java)
+		v := &blockUpdates{at: map[cube.Pos]int{}}
+		l := world.NewLoader(1, w, v)
+		w.Do(func(tx *world.Tx) { l.Load(tx, 9) })
+		cut, kept := cube.Pos{8, leafY, 8}, cube.Pos{9, leafY, 8}
+		b := map[cube.Pos]world.Block{cut: block.Log{Wood: block.OakWood()}, kept: block.Log{Wood: block.OakWood()}}
+		var leaves []cube.Pos
+		for x := 7; x <= 10; x++ {
+			for y := leafY - 1; y <= leafY+1; y++ {
+				for z := 7; z <= 9; z++ {
+					if p := (cube.Pos{x, y, z}); p != cut && p != kept {
+						b[p] = markedLeaf(false)
+						leaves = append(leaves, p)
+					}
+				}
+			}
+		}
+		setLeafBlocks(w, b)
+		clear(v.at)
+		setLeafBlocks(w, map[cube.Pos]world.Block{cut: block.Air{}})
+		leafTicks(w, 40)
+		marked := 0
+		for _, p := range leaves {
+			if !isLeafAt(w, p) {
+				t.Fatalf("java %v: the leaf at %v decayed beside a log", java, p)
+			}
+			marked += v.at[p]
+		}
+		if marked != 0 {
+			t.Errorf("java %v: viewers were sent %d block updates of leaves whose look did not change", java, marked)
+		}
+		if v.at[cut] == 0 {
+			t.Errorf("java %v: the log's removal was not sent", java)
+		}
+		w.Do(func(tx *world.Tx) { l.Close(tx) })
+	}
+}

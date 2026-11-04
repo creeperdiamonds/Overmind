@@ -42,7 +42,8 @@ func logLike(b world.Block) bool {
 }
 
 // markLeavesAround marks for a decay check every leaf that may decay in the cube of radius r around pos, on
-// Bedrock. The marks are set without block updates, as they change nothing a neighbour reads.
+// Bedrock. The marks are set without block updates, as they change nothing a neighbour reads, and unseen,
+// as they change nothing a client shows: a cut log would otherwise send up to 728 leaves to every viewer.
 func markLeavesAround(pos cube.Pos, r int, tx *world.Tx) {
 	if tx.World().Mechanics().JavaLeafDecay {
 		return
@@ -56,7 +57,7 @@ func markLeavesAround(pos cube.Pos, r int, tx *world.Tx) {
 				}
 				if l, ok := tx.Block(p).(Leaves); ok && !l.Persistent && !l.ShouldUpdate {
 					l.ShouldUpdate = true
-					tx.SetBlock(p, l, &world.SetOpts{DisableBlockUpdates: true})
+					tx.SetBlock(p, l, &world.SetOpts{DisableBlockUpdates: true, Unseen: true})
 				}
 			}
 		}

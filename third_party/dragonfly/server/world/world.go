@@ -336,6 +336,9 @@ type SetOpts struct {
 	// holds for the position, for a change that does not affect the power the
 	// block receives or emits, such as the shape of redstone wire.
 	KeepRedstonePower bool
+	// Unseen keeps the change from the viewers, for a change of state no client shows, such as a leaf's
+	// decay mark (Overmind fork).
+	Unseen bool
 }
 
 // setBlock writes a block to the position passed. If a chunk is not yet loaded
@@ -435,6 +438,9 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 	}
 
 	for _, viewer := range viewers {
+		if opts.Unseen { // Overmind fork
+			break
+		}
 		viewer.ViewBlockUpdate(pos, b, 0)
 	}
 
