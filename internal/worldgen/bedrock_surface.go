@@ -490,10 +490,7 @@ func (g *Generator) applyBedrockSurface(b *baseChunk, s *chunkScratch, floor *bm
 	ox, oz := b.cx*16, b.cz*16
 	// The column's biome is the stored one at its top (T11), read through the copy rule of the sky
 	// sections; a part-chunk build has no whole-chunk top and reads it as computed.
-	topSec := 1 << 10
-	if x0 == 0 && x1 == 15 && z0 == 0 && z1 == 15 {
-		topSec = bedrockTopSection(&b.wgTop)
-	}
+	topSec := buildTopSection(b, x0, x1, z0, z1)
 	for lx := range 16 {
 		for lz := range 16 {
 			if lx < x0 || lx > x1 || lz < z0 || lz > z1 {

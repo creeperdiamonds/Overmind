@@ -55,6 +55,7 @@ func (s *chunkScratch) bedrockSamples(g *Generator, gx, gz int) *bSampleColumn {
 	var last *biomeNode
 	for k := range c.ids {
 		y := (bSampleLow + k) * 8
+		// Depth as BDS sums it, rounded to float32 at each step in its order: y * -1/128 + 1, + offset.
 		t[biomeTargetDepth] = bedrockQuantize(float32(float32(float32(float32(y)*-0.0078125)+1.0) + off))
 		d := int64(math.MaxInt64)
 		if last != nil {
@@ -140,6 +141,19 @@ func bedrockTopSection(tops *[256]int16) int {
 		top = max(top, t-1)
 	}
 	return (int(top) - minY) >> 4
+}
+
+// buildTopSection is the top real section a base build uses for the copy rule: from the stage's own
+// heights in a whole-chunk build; a part-chunk build (SurfaceHeight's one column) knows no whole-chunk
+// top and reads every section as computed. When the chunk's highest column tops out at a section
+// boundary, that column's biome can then differ from the whole build's: its surface materials can, and
+// so can its height where one of the two is a biome that keeps Java's rules (eroded badlands spires,
+// frozen ocean icebergs). Rare, and only for SurfaceHeight.
+func buildTopSection(b *baseChunk, x0, x1, z0, z1 int) int {
+	if x0 == 0 && x1 == 15 && z0 == 0 && z1 == 15 {
+		return bedrockTopSection(&b.wgTop)
+	}
+	return 1 << 10
 }
 
 // storedY is the height a stored biome at y is read from: the same height in the top real section for

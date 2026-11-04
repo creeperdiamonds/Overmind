@@ -170,6 +170,9 @@ var (
 // (ruling 39; the block test 0x514c6b0 compares globals not named yet): what our carvable tag holds
 // except granite, plus tuff and the iron vein's blocks. Measured at predicted carve positions: tuff,
 // deepslate iron ore and raw iron carved 100% of the time, granite 0%, stone 98.3%.
+// Cinnabar and sulfur (the subsurface pass places them before the carvers) are left out, also
+// measured: counting them carvable takes biome window extreme_hills_5 from 99.506% to 99.320% and
+// flower_forest_20 from 99.317% to 99.306%. The code's list is not read.
 func bedrockCarvable(st bs) bool {
 	switch stateBlock[st] {
 	case idxGranite:

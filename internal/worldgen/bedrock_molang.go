@@ -428,8 +428,12 @@ func parseMolang(src string, bd *BedrockData) (mexpr, error) {
 // queryNoise is query.noise (S5): Random(2345)'s one-octave 2D simplex, no offsets.
 func queryNoise(a, b float32) float32 { return queryNoiseOctave.at2(a, b) * 70 }
 
-var queryNoiseOctave = func() *bSimplex {
-	m := newBMT(2345)
+var queryNoiseOctave = oneOctaveSimplex(2345)
+
+// oneOctaveSimplex is the one-octave simplex Bedrock builds from Random(seed) (query.noise and the
+// freeze pass's temperature).
+func oneOctaveSimplex(seed uint32) *bSimplex {
+	m := newBMT(seed)
 	st := newBSimplexStack(1, m.nextFloat, func(n uint32) int32 { return int32(m.u32() % n) }, true)
 	return &st.oct[0]
-}()
+}

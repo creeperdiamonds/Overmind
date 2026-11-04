@@ -192,12 +192,17 @@ func (g *Generator) applySubsurface(b *baseChunk, s *chunkScratch, x0, x1, z0, z
 	if !g.bedrockBiomes {
 		return
 	}
-	topSec := 1 << 10
-	if x0 == 0 && x1 == 15 && z0 == 0 && z1 == 15 {
-		topSec = bedrockTopSection(&b.wgTop)
-	}
+	// The top section comes from the surface stage's heights, where decoration takes the carvers
+	// stage's (bedrockTopSectionOf): this pass runs before the carvers. Carvers only remove blocks, so
+	// the two differ only where a cave opens the chunk's highest block, above every run built here.
+	topSec := buildTopSection(b, x0, x1, z0, z1)
 	any := false
-	s.blist = s.bedrockBiomeList(g, b.cx, b.cz, min(topSec, (maxY-minY)>>4), s.blist)
+	listTop := min(topSec, (maxY-minY)>>4)
+	if topSec > (maxY-minY)>>4 {
+		// A part-chunk build lists the biomes of the column's own sections up to its top, not all 24.
+		listTop = (int(b.wgTop[z0<<4|x0]) - minY) >> 4
+	}
+	s.blist = s.bedrockBiomeList(g, b.cx, b.cz, min(max(listTop, 0), (maxY-minY)>>4), s.blist)
 	for _, id := range s.blist {
 		any = any || g.bsurf.sub[id] != nil
 	}
@@ -208,7 +213,19 @@ func (g *Generator) applySubsurface(b *baseChunk, s *chunkScratch, x0, x1, z0, z
 		for lz := z0; lz <= z1; lz++ {
 			x, z := b.cx*16+lx, b.cz*16+lz
 			top := min(max(g.preliminarySurface(&s.prelims, x, z)-8, minY), maxY-1)
-			g.subsurfaceColumn(b, lx, lz, top-minY, func(i int) uint8 { return s.bedrockBiome(g, x, storedY(minY+i, topSec), z) })
+			// The column's biomes, one 8-block cell at a time: a cell's corners and jitters are worked out
+			// once for the eight heights in it.
+			var cell bCell
+			cellY := math.MinInt
+			biome := func(i int) uint8 {
+				y := min(max(storedY(minY+i, topSec), minY), maxY)
+				if y>>3 != cellY {
+					s.bedrockCell(g, x>>3, y>>3, z>>3, &cell)
+					cellY = y >> 3
+				}
+				return cell.at(g.bseeds.level, x&7, y&7, z&7)
+			}
+			g.subsurfaceColumn(b, lx, lz, top-minY, biome)
 		}
 	}
 }
