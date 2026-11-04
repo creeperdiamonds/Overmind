@@ -1,10 +1,13 @@
 package worldgen
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,6 +59,7 @@ type BedrockData struct {
 	// counts are the iteration ranges of rules whose features are not written yet, for the Java
 	// placements that stand in for them (dataCountMod).
 	counts map[string][2]int
+	sum    hash.Hash // Of every file read, in the order read.
 	// Warnings says what the install lacks for an exact world (a game's packs with no definitions).
 	Warnings []string
 }
@@ -161,7 +165,7 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 		}
 	}
 	slices.SortFunc(names, func(a, b string) int { return slices.Compare(packVersion(b), packVersion(a)) }) // newest first
-	bd := &BedrockData{Dir: dir, rules: map[string]*packRule{}, order: map[string][]string{}, features: map[string]packFeature{},
+	bd := &BedrockData{Dir: dir, sum: sha256.New(), rules: map[string]*packRule{}, order: map[string][]string{}, features: map[string]packFeature{},
 		biomes: map[string]*packBiome{}, Skipped: map[string]int{}, ores: map[string]*bedrockOre{}}
 	maps := map[string]*libcxxOrder{}
 	for _, pack := range names {
@@ -170,6 +174,7 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 			return nil, err
 		} else {
 			for _, e := range list {
+				bd.sum.Write([]byte(pack + "/" + e[0] + "\x00" + e[1] + "\x00"))
 				r, err := parseRule(e[1])
 				if err != nil {
 					return nil, fmt.Errorf("%s %s: %w", pack, e[0], err)
@@ -191,6 +196,7 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 			return nil, err
 		} else {
 			for _, e := range list {
+				bd.sum.Write([]byte(pack + "/" + e[0] + "\x00" + e[1] + "\x00"))
 				if err := bd.addFeature(e[1]); err != nil {
 					return nil, fmt.Errorf("%s %s: %w", pack, e[0], err)
 				}
@@ -200,6 +206,7 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 			return nil, err
 		} else {
 			for _, e := range list {
+				bd.sum.Write([]byte(pack + "/" + e[0] + "\x00" + e[1] + "\x00"))
 				if err := bd.addBiome(e[1]); err != nil {
 					return nil, fmt.Errorf("%s %s: %w", pack, e[0], err)
 				}
@@ -328,6 +335,7 @@ func (bd *BedrockData) readDefinitions(defs string) error {
 			if err != nil {
 				return err
 			}
+			bd.sum.Write([]byte(filepath.Base(f) + "\x00" + string(raw) + "\x00"))
 			if sub == "features" {
 				if err := bd.addFeature(string(raw)); err != nil {
 					return fmt.Errorf("%s: %w", f, err)
@@ -801,6 +809,15 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		bd.surfaceBiomes[i] = row.compile()
 	}
 	return nil
+}
+
+// Hash names the data read: a SHA-256 of every file's name and text in the order read. Two installs
+// with the same vanilla data give the same hash, and so the same world.
+func (bd *BedrockData) Hash() string {
+	if bd.sum == nil {
+		return ""
+	}
+	return hex.EncodeToString(bd.sum.Sum(nil))
 }
 
 // Summary is one line on what was read, for the server log.

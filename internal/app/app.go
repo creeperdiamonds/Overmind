@@ -63,7 +63,20 @@ func Start(cfg config.Config) (*server.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build server config: %w", err)
 	}
-	gen := worldgen.NewWithData(seed, profile, bedrockData(log, cfg.BedrockDataDir, profile))
+	bd := bedrockData(log, cfg.BedrockDataDir, profile)
+	gen := worldgen.NewWithData(seed, profile, bd)
+	ident := "profile=" + profile.Name + " data=none"
+	if bd != nil {
+		ident = "profile=" + profile.Name + " data=sha256:" + bd.Hash()
+	}
+	if old, changed, err := recordProvenance(cfg.WorldFolder, ident); err != nil {
+		log.Warn("Could not record how the world is generated", "file", provenanceFile, "error", err)
+	} else if changed {
+		log.Warn("This world was generated with other settings or Bedrock data: new chunks will not fit the saved ones and will show seams.",
+			"before", old, "now", ident)
+	} else if old == "" && !newWorld {
+		log.Warn("This saved world has no record of how it was generated; it is recorded from now on.", "now", ident)
+	}
 	guard := &offTick{g: gen}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		if dim == world.Overworld {
