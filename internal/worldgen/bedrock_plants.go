@@ -22,6 +22,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 			return codeFeat(forestFoliage{n: -3}.place), true, nil
 		case "flower_forest_foliage_feature":
 			return codeFeat(forestFoliage{n: -1}.place), true, nil
+		case "flower_forest_flower_feature":
+			return codeFeat(flowerForestFlower), true, nil
 		case "forest_flower_feature":
 			return legacyFlower(1), true, nil
 		case "overworld_flower_feature":
@@ -246,6 +248,32 @@ func legacyFlower(kind int) bfeat {
 		jitter(r, 7)
 		return true
 	})
+}
+
+// flowerForestFlowers is type 0's list (T19): the flower is picked by query.noise's octave.
+var flowerForestFlowers = func() (l []bs) {
+	for _, n := range []string{"dandelion", "poppy", "allium", "azure_bluet", "red_tulip", "orange_tulip", "white_tulip", "pink_tulip",
+		"oxeye_daisy", "cornflower", "lily_of_the_valley"} {
+		l = append(l, laterState(n))
+	}
+	return l
+}()
+
+// flowerForestFlower is LegacyFlowerFeature type 0 (T19, place 0x53fbc30, block choice 0xd901ce0): the
+// flower from Random(2345)'s simplex at (x, z) / 48 with no offsets, mapped to [0, 1) and clamped
+// below 1; one try in 1.26 worlds, then the six jitter words.
+func flowerForestFlower(d *decoration, r *bmt, p pos) bool {
+	v := float32(float32(queryNoiseOctave.at2(float32(p.x)/48, float32(p.z)/48)*70+1) * 0.5)
+	c := min(max(v, 0), 0.9999)
+	s := flowerForestFlowers[int(float32(c*float32(len(flowerForestFlowers))))]
+	ok := false
+	if p.y >= minY && p.y < maxY && d.at(p).isAir() && bnSoil.has(bname(d.at(p.add(0, -1, 0)))) {
+		ok = d.bput(p, s)
+	}
+	jitter(r, 7)
+	jitter(r, 3)
+	jitter(r, 7)
+	return ok
 }
 
 var (
