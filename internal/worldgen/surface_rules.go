@@ -117,6 +117,13 @@ func (s *chunkScratch) quartColumnAt(g *Generator, qx, qz int) *quartColumn {
 	q := &s.quarts[(qx&63)|(qz&63)<<6]
 	if q.owner != g || q.qx != int32(qx) || q.qz != int32(qz) {
 		q.owner, q.qx, q.qz = g, int32(qx), int32(qz)
+		if g.dim == dimNether {
+			b := g.netherN.biomes.quart(qx, qz)
+			for i := range q.ids {
+				q.ids[i] = b
+			}
+			return q
+		}
 		col := g.biomeColumnAt(qx*4, qz*4)
 		t := col.target
 		n := col.sky

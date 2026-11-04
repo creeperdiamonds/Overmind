@@ -95,3 +95,49 @@ func (n *NetherGenerator) storeBiomes(c *chunk.Chunk, cx, cz int) {
 
 // DefaultSpawn is a place in the Nether; players reach it through portals, which find their own.
 func (n *NetherGenerator) DefaultSpawn(world.Dimension) cube.Pos { return cube.Pos{0, 64, 0} }
+
+// Dimensions a Generator makes.
+const (
+	dimOverworld = 0
+	dimNether    = 1
+)
+
+// Nether returns the generator of this world's Nether: the same seed, profile, data and shared cache,
+// with the Nether's terrain, biomes and surface under the same decoration (Bedrock's passes on the
+// install's Nether rules). Without data it generates terrain, biomes and plain surfaces only.
+func (g *Generator) Nether() *Generator {
+	n := NewWithData(g.seed, g.profile, g.bdata)
+	n.structs = nil // Nether structures are not placed yet.
+	n.cache = g.cache
+	n.dim = dimNether
+	n.netherN = NewNetherWithData(g.seed, g.bdata)
+	return n
+}
+
+// buildNetherBase builds a Nether chunk's base in the Overworld's cell layout: the Nether's Y 0..127 in
+// place, air above and below. Only whole chunks are built.
+func (g *Generator) buildNetherBase(b *baseChunk, stage baseStage) {
+	var cells [netherHeight * 256]bs
+	g.netherN.cells(b.cx, b.cz, &cells)
+	for i, s := range cells {
+		b.b[cellIndex(i&15, i>>8, i>>4&15)] = s
+	}
+	b.computeTops(0, 15, 0, 15)
+}
+
+// writeNetherCells writes a Nether chunk's Y 0..127 from the cell layout.
+func writeNetherCells(c *chunk.Chunk, cells *[chunkCells]bs) {
+	last, lastID := bs(0), uint32(0)
+	for y := range netherHeight {
+		for i := range 256 {
+			s := cells[cellIndex(i&15, y, i>>4)]
+			if s == 0 {
+				continue
+			}
+			if s != last {
+				last, lastID = s, runtimeOf(s)
+			}
+			c.SetBlock(uint8(i&15), int16(y), uint8(i>>4), 0, lastID)
+		}
+	}
+}

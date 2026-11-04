@@ -47,3 +47,17 @@ func TestNetherChunkShape(t *testing.T) {
 		t.Errorf("%d lava and %d netherrack blocks in 16 chunks", lava, rack)
 	}
 }
+
+// TestNetherVineStates: weeping and twisting vines resolve to Bedrock blocks with their age.
+func TestNetherVineStates(t *testing.T) {
+	for _, n := range []string{"weeping_vines[age=0]", "weeping_vines[age=25]", "twisting_vines[age=7]", "weeping_vines_plant", "twisting_vines_plant"} {
+		s, err := safeState(n)
+		if err != nil {
+			t.Fatalf("%s: %v", n, err)
+		}
+		name, props := dragonflyBlock(s.name()).EncodeBlock()
+		if name != "minecraft:weeping_vines" && name != "minecraft:twisting_vines" || len(props) != 1 {
+			t.Errorf("%s: %s %v", n, name, props)
+		}
+	}
+}

@@ -73,6 +73,14 @@ func ownBlocksList() {
 	plain := func(java, name string, solid bool) { addOwn(java, name, map[string]any{}, solid) }
 	plain("moss_block", "moss_block", true)
 	// The Nether's blocks Dragonfly has no type for (Task 10).
+	// Weeping and twisting vines: Bedrock keeps the age on every block of the column (Java's
+	// *_vines[age=N] heads; Java's *_vines_plant bodies have no age, and take age 0 here).
+	for a := range 26 {
+		addOwn(fmt.Sprintf("weeping_vines[age=%d]", a), "weeping_vines", map[string]any{"weeping_vines_age": int32(a)}, false)
+		addOwn(fmt.Sprintf("twisting_vines[age=%d]", a), "twisting_vines", map[string]any{"twisting_vines_age": int32(a)}, false)
+	}
+	addOwn("weeping_vines_plant", "weeping_vines", map[string]any{"weeping_vines_age": int32(0)}, false)
+	addOwn("twisting_vines_plant", "twisting_vines", map[string]any{"twisting_vines_age": int32(0)}, false)
 	plain("crimson_nylium", "crimson_nylium", true)
 	plain("warped_nylium", "warped_nylium", true)
 	plain("crimson_fungus", "crimson_fungus", false)

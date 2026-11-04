@@ -233,6 +233,12 @@ func javaStateFor(b bdesc) (bs, error) {
 		java = "pale_hanging_moss[tip=true]"
 	case "pale_moss_carpet":
 		java = "pale_moss_carpet[bottom=true,east=none,north=none,south=none,west=none]"
+	case "weeping_vines", "twisting_vines":
+		age := 0
+		if v, ok := st(b.name + "_age").(float64); ok {
+			age = min(max(int(v), 0), 25)
+		}
+		java = fmt.Sprintf("%s[age=%d]", b.name, age)
 	case "cave_vines":
 		java = "cave_vines_plant[berries=false]"
 	case "cave_vines_body_with_berries":

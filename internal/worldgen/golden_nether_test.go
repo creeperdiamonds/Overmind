@@ -104,18 +104,18 @@ func TestNetherMatchesBDS(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(f), ".bin.gz")
 		t.Run(name, func(t *testing.T) {
 			w := loadBDSNether(t, f)
-			ng := NewNether(w.seed)
+			ng := NewWithProfile(w.seed, ProfileBedrock).Nether()
+			sc := newScratch()
 			var total, same, classSame, floorN, floorOK int
 			conf := map[[2]string]int{}
 			classConf := map[[2]byte]int{}
-			var cells [netherHeight * 256]bs
 			for k, c := range w.chunks {
-				ng.cells(k[0], k[1], &cells)
-				for i := range cells {
+				final := ng.finalCells(sc, k[0], k[1])
+				for i := range netherHeight * 256 {
 					if c.masked(i) || i>>8 == netherHeight-1 { // Y 127 holds the study's loading marker (glass).
 						continue
 					}
-					real, mine := w.names[c.ids[i]], bnameString(cells[i])
+					real, mine := w.names[c.ids[i]], bnameString(final[cellIndex(i&15, i>>8, i>>4&15)])
 					total++
 					if real == mine {
 						same++

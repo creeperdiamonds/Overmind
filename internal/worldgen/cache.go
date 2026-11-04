@@ -30,6 +30,7 @@ const (
 
 type cacheKey struct {
 	kind   cacheKind
+	dim    uint8 // The generator's dimension: the Overworld and the Nether share one cache.
 	cx, cz int32
 }
 
@@ -228,7 +229,7 @@ func (g *Generator) SetCacheBytes(limit int64) {
 // cachedBase gives a chunk's carvers stage, compact, from the cache, building it in one of the
 // worker's buffers if nobody has. Expand it to read it (compactBase.expand).
 func (g *Generator) cachedBase(s *chunkScratch, cx, cz int) *compactBase {
-	e := g.cache.get(cacheKey{cacheBase, int32(cx), int32(cz)}, func(e *cacheEntry) int64 {
+	e := g.cache.get(cacheKey{cacheBase, g.dim, int32(cx), int32(cz)}, func(e *cacheEntry) int64 {
 		b := s.takeBuffer()
 		g.buildBase(b, s, cx, cz, stageCarvers, 0, 15, 0, 15)
 		e.base = compact(b)
@@ -257,7 +258,7 @@ func (g *Generator) cachedSource(s *chunkScratch, sx, sz int) *sourceResult {
 // them change with it. A fixed number of levels keeps the result a pure function of the source and
 // the chunks around it.
 func (g *Generator) cachedLevel(s *chunkScratch, sx, sz, level int) *sourceResult {
-	e := g.cache.get(cacheKey{cacheLevel + cacheKind(level), int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
+	e := g.cache.get(cacheKey{cacheLevel + cacheKind(level), g.dim, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
 		var pre []sourceWrite
 		if level > 0 {
 			for ex := sx - 1; ex <= sx; ex++ {

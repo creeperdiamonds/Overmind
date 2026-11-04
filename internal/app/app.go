@@ -78,7 +78,7 @@ func Start(cfg config.Config) (*server.Server, error) {
 	}
 	guard := &offTick{g: gen}
 	// The Nether is Bedrock's for every profile (Task 10); Overjava's Java Nether is not written.
-	netherGuard := &offTick{g: worldgen.NewNetherWithData(seed, bd)}
+	netherGuard := &offTick{g: gen.Nether()} // Shares the Overworld generator's cache cap.
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		switch dim {
 		case world.Overworld:

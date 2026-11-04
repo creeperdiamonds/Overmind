@@ -49,7 +49,7 @@ const cacheParity cacheKind = 7
 
 // cachedParity gives what a source chunk's decoration did, in the Bedrock order.
 func (g *Generator) cachedParity(s *chunkScratch, sx, sz int) *sourceResult {
-	e := g.cache.get(cacheKey{cacheParity, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
+	e := g.cache.get(cacheKey{cacheParity, g.dim, int32(sx), int32(sz)}, func(e *cacheEntry) int64 {
 		pre := g.parityPre(s, sx, sz)
 		d := s.startDecoration(g, sx, sz)
 		d.pre = pre
@@ -186,6 +186,13 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	ox, oz := cx*16, cz*16
 	bd := d.g.bdata
 	d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
+	if d.g.dim == dimNether {
+		// The Nether runs Bedrock's passes alone: no Java placement stands in, and no freeze pass.
+		for i := range bd.passes {
+			d.bedrockPass(bd.passes[i])
+		}
+		return
+	}
 	under, surf := false, false
 	for _, pl := range d.g.profile.placements {
 		if !under && pl.step >= oreStep {
@@ -287,6 +294,21 @@ const oreStep = 6
 // 0xcfae6b0): sub-chunks bottom up, each in its storage order, first appearance only. Our stored
 // biomes are by quart, so a sub-chunk's order is quart y, then z, then x.
 func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
+	if d.g.dim == dimNether {
+		// The Nether's biomes are 2D: the list is a layer's, z then x, first appearance only.
+		list := d.biomeList[:0]
+		var seen [4]uint64
+		for z := range 16 {
+			for x := range 16 {
+				if b := d.g.netherN.biome(cx*16+x, cz*16+z); seen[b>>6]&(1<<(b&63)) == 0 {
+					seen[b>>6] |= 1 << (b & 63)
+					list = append(list, b)
+				}
+			}
+		}
+		d.biomeList = list
+		return list
+	}
 	if d.g.bedrockBiomes {
 		if k := (listKey{d.g, cx, cz}); d.listOf != k {
 			d.biomeList = d.s.bedrockBiomeList(d.g, cx, cz, d.s.bedrockTopSectionOf(d.g, cx, cz), d.biomeList)
@@ -319,6 +341,9 @@ type listKey struct {
 
 // storedBiome is the biome stored at a block, which the scatter's biome test reads (section 3).
 func (d *decoration) storedBiome(x, y, z int) uint8 {
+	if d.g.dim == dimNether {
+		return d.g.netherN.biome(x, z)
+	}
 	if d.g.bedrockBiomes {
 		return d.s.bedrockStoredBiome(d.g, x, y, z)
 	}

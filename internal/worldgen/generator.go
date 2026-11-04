@@ -43,6 +43,9 @@ type Generator struct {
 	bdata     *BedrockData // Bedrock's feature data, nil when no install was read.
 	geodeOnce sync.Once
 	geode     *normalNoise
+	// dim is the dimension generated: the Overworld, or the Nether for the generator Nether makes.
+	dim     uint8
+	netherN *NetherGenerator // The Nether's terrain, biomes and surface, for dim == dimNether.
 	// biomeTree is the biome table's search tree: Java's, or Bedrock's with its own cave biome.
 	biomeTree *biomeNode
 	// bedrockBiomes says decoration, the surface pass and the subsurface pass read Bedrock's stored 3D
@@ -187,6 +190,11 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
+	if g.dim == dimNether {
+		writeNetherCells(c, g.finalCells(s, cx, cz))
+		g.netherN.storeBiomes(c, cx, cz)
+		return
+	}
 	writeCells(c, g.finalCells(s, cx, cz))
 	g.storeBiomes(c, s, cx, cz)
 	g.placeStructures(cx, cz, c, col)

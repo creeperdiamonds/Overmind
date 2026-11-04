@@ -739,5 +739,15 @@ func bedrockMayPlace(d *decoration, name uint16, p pos) bool {
 	if bnDoublePlants.has(name) {
 		return bnSoil.has(bname(d.at(p.add(0, -1, 0)))) && d.at(p.add(0, 1, 0)).isAir()
 	}
+	if bnNetherPlants.has(name) {
+		return bnNetherGround.has(bname(d.at(p.add(0, -1, 0))))
+	}
 	return true
 }
+
+// The Nether's small plants (fungi, roots, sprouts) are placed on nylium, soul soil or the dirt family
+// (the game's placement rule, by name as the other survival rules here).
+var (
+	bnNetherPlants = bnameSetOf("crimson_fungus warped_fungus crimson_roots warped_roots nether_sprouts")
+	bnNetherGround = bnameSetOf(bedrockTagMembers["dirt"] + " crimson_nylium warped_nylium soul_soil")
+)
