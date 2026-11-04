@@ -255,3 +255,38 @@ func TestJavaHearsItsOwnContainers(t *testing.T) {
 	require.False(t, heard("block.fence_gate.open"), "Java was sent its own fence gate's sound")
 	require.False(t, heard("item.flintandsteel.use"), "Java was sent its own flint and steel's sound")
 }
+
+// An eye of ender is heard thrown (entity.ender_eye.launch) and seen shattering, as world event 2003 at its
+// block, as vanilla's EyeOfEnder sends it.
+func TestJavaSeesEnderEye(t *testing.T) {
+	srv := testserver.Start(t)
+	j := startBot(t, srv, "JEye")
+	waitOnGround(t, srv, "JEye")
+	w := srv.World()
+	doWorld(t, w, func(tx *world.Tx) { tx.PlaySound(mgl64.Vec3{1.5, -59.5, 1.5}, sound.ItemThrow{Item: item.EnderEye{}}) })
+	require.Eventually(t, func() bool {
+		for _, s := range j.world().Sounds {
+			if s.Name == "entity.ender_eye.launch" {
+				require.True(t, s.Known)
+				require.Equal(t, "neutral", s.Category)
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 50*time.Millisecond, "Java did not hear the eye thrown: %+v", j.world().Sounds)
+
+	doWorld(t, w, func(tx *world.Tx) {
+		tx.AddEntity(world.EntitySpawnOpts{Position: mgl64.Vec3{2.5, -59, 2.5}}.New(entity.EnderEyeType,
+			entity.EnderEyeBehaviourConfig{Target: mgl64.Vec3{3.5, -58, 2.5}, Survive: false}))
+	})
+	require.Eventually(t, func() bool {
+		for _, e := range j.world().WorldEvents {
+			if e.ID == 2003 {
+				require.InDelta(t, 3, e.X, 1)
+				require.InDelta(t, -58, e.Y, 2)
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 100*time.Millisecond, "Java did not see the eye shatter: %+v", j.world().WorldEvents)
+}

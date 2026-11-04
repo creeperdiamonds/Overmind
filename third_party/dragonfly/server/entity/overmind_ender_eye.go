@@ -8,6 +8,7 @@ import (
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/particle"
 	"github.com/go-gl/mathgl/mgl64"
 )
 
@@ -94,6 +95,8 @@ func (b *EnderEyeBehaviour) Tick(e *Ent, tx *world.Tx) *Movement {
 		// Its life ends where it moved to this tick.
 		if b.conf.Survive {
 			tx.AddEntity(NewItem(world.EntitySpawnOpts{Position: pos}, item.NewStack(item.EnderEye{}, 1)))
+		} else {
+			tx.AddParticle(pos, particle.EnderEyeShatter{})
 		}
 		_ = e.Close()
 		return nil

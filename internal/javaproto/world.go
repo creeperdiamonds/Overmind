@@ -36,6 +36,7 @@ func UpdateTime(age int64, clock int32, time int64, rate float32) []byte {
 const (
 	SoundWeather = 3
 	SoundBlock   = 4
+	SoundNeutral = 6
 )
 
 // SoundEffect plays a sound at a position, the sound given inline by name (ID 0, then the name, with no
@@ -59,6 +60,8 @@ func SoundEffect(name string, category int32, x, y, z float64, volume, pitch flo
 const (
 	// WorldEventBlockBreak shows a block breaking, its particles and its sound, from its state ID.
 	WorldEventBlockBreak = 2001
+	// WorldEventEnderEyeShatter shows a thrown eye of ender breaking, with data 0.
+	WorldEventEnderEyeShatter = 2003
 )
 
 // WorldEvent plays a level event at a block.

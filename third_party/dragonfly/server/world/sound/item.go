@@ -7,7 +7,12 @@ import "github.com/df-mc/dragonfly/server/world"
 type ItemBreak struct{ sound }
 
 // ItemThrow is a sound played when a player throws an item, such as a snowball.
-type ItemThrow struct{ sound }
+type ItemThrow struct {
+	sound
+	// Item is the item thrown, where the thrower gives it (Overmind fork: Java names each throw's sound by
+	// its item). It may be nil.
+	Item world.Item
+}
 
 // ItemUseOn is a sound played when a player uses its item on a block. An example of this is when a player
 // uses a shovel to turn grass into dirt path. Note that in these cases, the Block is actually the new block,

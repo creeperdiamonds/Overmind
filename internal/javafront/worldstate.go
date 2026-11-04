@@ -5,6 +5,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/particle"
 	"github.com/df-mc/dragonfly/server/world/sound"
@@ -126,6 +127,9 @@ var (
 	barrelClose    = javaSound{"block.barrel.close", javaproto.SoundBlock, 0.5, 0.9, 1}
 	enderChestOpen = javaSound{"block.ender_chest.open", javaproto.SoundBlock, 0.5, 0.9, 1}
 	enderChestShut = javaSound{"block.ender_chest.close", javaproto.SoundBlock, 0.5, 0.9, 1}
+	// "Eye of Ender", oldid 3835744, gives entity.ender_eye.launch, neutral; its volume and pitch are those
+	// of vanilla's EnderEyeItem, 0.5 and 0.4 over 0.8 to 1.2 (the wiki's row says 1 and 1).
+	eyeLaunch = javaSound{"entity.ender_eye.launch", javaproto.SoundNeutral, 0.5, 0.4 / 1.2, 0.4 / 0.8}
 )
 
 // woodSound is a wooden door's or fence gate's sound ("Door", oldid 3874236; "Fence Gate", oldid
@@ -172,6 +176,11 @@ func javaSoundsOf(s world.Sound) []javaSound {
 		return []javaSound{extinguishSound}
 	case sound.Ignite:
 		return []javaSound{igniteSound}
+	case sound.ItemThrow:
+		// Each thrown item has its own sound on Java; only the eye of ender's thrower names its item.
+		if _, eye := s.Item.(item.EnderEye); eye {
+			return []javaSound{eyeLaunch}
+		}
 	case sound.ChestOpen:
 		return []javaSound{chestOpen}
 	case sound.ChestClose:
@@ -239,6 +248,12 @@ func (c *conn) ViewSound(pos mgl64.Vec3, s world.Sound) {
 // client showed that itself.
 func (c *conn) ViewParticle(pos mgl64.Vec3, p world.Particle) {
 	if !c.viewing() {
+		return
+	}
+	if _, ok := p.(particle.EnderEyeShatter); ok {
+		// Vanilla's EyeOfEnder sends world event 2003 at its block, which shows the eye breaking.
+		at := cube.PosFromVec3(pos)
+		c.events = append(c.events, javaproto.WorldEvent(javaproto.WorldEventEnderEyeShatter, at[0], at[1], at[2], 0, false))
 		return
 	}
 	if b, ok := p.(particle.BlockBreak); ok {

@@ -24,7 +24,7 @@ func (EnderEye) Use(tx *world.Tx, user User, ctx *UseContext) bool {
 	}
 	create := tx.World().EntityRegistry().Config().EnderEye
 	tx.AddEntity(create(world.EntitySpawnOpts{Position: eyePosition(user)}, stronghold))
-	tx.PlaySound(user.Position(), sound.ItemThrow{})
+	tx.PlaySound(user.Position(), sound.ItemThrow{Item: EnderEye{}})
 	ctx.SubtractFromCount(1)
 	return true
 }
