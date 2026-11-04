@@ -520,6 +520,8 @@ type EntityRegistryConfig struct {
 	Snowball           func(opts EntitySpawnOpts, owner Entity) *EntityHandle
 	SplashPotion       func(opts EntitySpawnOpts, t any, owner Entity) *EntityHandle
 	Lightning          func(opts EntitySpawnOpts) *EntityHandle
+	// EnderEye is a thrown eye of ender flying toward a stronghold (Overmind fork).
+	EnderEye func(opts EntitySpawnOpts, stronghold cube.Pos) *EntityHandle
 }
 
 // ArrowSpawnConfig holds the options used to spawn an arrow entity.

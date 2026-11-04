@@ -8,8 +8,26 @@ import (
 	"github.com/go-gl/mathgl/mgl64"
 )
 
-// EnderEye is the item used to fill End portal frames. The stronghold-locating throw is not implemented.
+// EnderEye is the item used to fill End portal frames, and thrown to find a stronghold.
 type EnderEye struct{}
+
+// Use throws the eye toward the nearest stronghold (Overmind fork). As minecraft.wiki "Eye of Ender" (oldid
+// 3835744) has it, it flies only in the Overworld and only where a stronghold exists; elsewhere nothing
+// happens and the eye is kept.
+func (EnderEye) Use(tx *world.Tx, user User, ctx *UseContext) bool {
+	if tx.World().Dimension() != world.Overworld {
+		return false
+	}
+	stronghold, ok := tx.World().NearestStronghold(cube.PosFromVec3(user.Position()))
+	if !ok {
+		return false
+	}
+	create := tx.World().EntityRegistry().Config().EnderEye
+	tx.AddEntity(create(world.EntitySpawnOpts{Position: eyePosition(user)}, stronghold))
+	tx.PlaySound(user.Position(), sound.ItemThrow{})
+	ctx.SubtractFromCount(1)
+	return true
+}
 
 // EncodeItem ...
 func (EnderEye) EncodeItem() (name string, meta int16) {

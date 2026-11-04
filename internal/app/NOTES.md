@@ -28,4 +28,4 @@ World:
   - sets the tick range (`Config.TickDistance`, Bedrock's default 4) to at most two under the view distance, so every ticked block's neighbours are loaded. The Dragonfly fork (`third_party/dragonfly`, `tick.go`) also holds each player's tick reach, blocks and entities, two under that player's own view distance, so a client asking for a small view distance cannot cause it either (`TestSmallViewDistanceNeverGeneratesOnTick`);
   - writes the spawn into the world settings before the worlds open, since an unset spawn makes the first tick look for the top block at 0, 0;
   - loads the chunks around the spawn out to the tick range plus two on the workers before it listens.
-  `offTick` wraps the generator and counts (`GenerationsOnTick`) and logs any chunk generated on the tick goroutine; `TestGenerationDoesNotStallTicks` asserts there are none.
+  `offTick` wraps the generator (and passes on its strongholds, `NearestStronghold`, for eyes of ender) and counts (`GenerationsOnTick`) and logs any chunk generated on the tick goroutine; `TestGenerationDoesNotStallTicks` asserts there are none.

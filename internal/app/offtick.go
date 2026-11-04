@@ -46,6 +46,14 @@ func (o *offTick) GenerateChunk(pos world.ChunkPos, c *chunk.Chunk) {
 
 func (o *offTick) DefaultSpawn(dim world.Dimension) cube.Pos { return o.g.DefaultSpawn(dim) }
 
+// NearestStronghold passes the generator's strongholds through, for eyes of ender.
+func (o *offTick) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
+	if l, ok := o.g.(world.StrongholdLocator); ok {
+		return l.NearestStronghold(pos)
+	}
+	return cube.Pos{}, false
+}
+
 // watch learns the goroutine of a world's transactions.
 func (o *offTick) watch(w *world.World) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
