@@ -231,7 +231,7 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	switch pl.name {
 	case "glow_lichen":
 		return false
-	case "forest_rock", "ore_infested", "freeze_top_layer":
+	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode":
 		return true
 	}
 	return pl.step == vegetationStep
@@ -248,6 +248,7 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"mangrove_swamp_", "trees_mangrove"},
 	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
 	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"}, // eyeblossom_feature is code, not read.
+	{"amethyst_geode_feature", "amethyst_geode"},
 	{"swamp_surface_waterlily", "patch_waterlily"},
 	{"plains_surface_flowers", "flower_plains"},
 	{"flower_forest_surface_flowers", "flower_flower_forest flower_forest_flowers"},

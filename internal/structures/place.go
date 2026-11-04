@@ -100,6 +100,25 @@ func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
 	}
 }
 
+// InsideStructure says whether a block is inside a structure piece's box: the generator's geode asks
+// it at its origin and places nothing inside one (NOTES-bedrock-exact T15). Ancient cities are the only
+// structures with pieces so far, so only their pieces answer.
+func (s *Structures) InsideStructure(x, y, z int) bool {
+	if s.data == nil {
+		return false
+	}
+	in := false
+	s.citiesNear(x>>4, z>>4, ancientReach, func(pieces []*piece) {
+		for _, p := range pieces {
+			if p.box.inside([3]int{x, y, z}) {
+				in = true
+				return
+			}
+		}
+	})
+	return in
+}
+
 // placeAncientCities writes the pieces of every city that reaches the chunk.
 func (s *Structures) placeAncientCities(w *writer) {
 	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}

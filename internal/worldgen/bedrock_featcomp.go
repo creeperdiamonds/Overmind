@@ -74,6 +74,8 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.vegetationPatch(v)
 	case "minecraft:growing_plant_feature":
 		f, err = fc.growingPlant(v)
+	case "minecraft:geode_feature":
+		f, err = fc.geode(v)
 	case "minecraft:tree_feature":
 		f, err = fc.tree(v)
 	default:
