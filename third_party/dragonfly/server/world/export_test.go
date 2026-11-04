@@ -7,3 +7,11 @@ func SetLightningChance(n int) (restore func()) {
 	lightningChance = n
 	return func() { lightningChance = old }
 }
+
+// SetPrecipitationChance makes each ticked chunk check a column with a 1 in n chance a tick, for tests
+// (Overmind fork), and returns a function that restores the old chance.
+func SetPrecipitationChance(n int) (restore func()) {
+	old := precipitationChance
+	precipitationChance = n
+	return func() { precipitationChance = old }
+}

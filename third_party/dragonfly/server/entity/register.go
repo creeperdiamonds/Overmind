@@ -16,6 +16,7 @@ var DefaultRegistry = conf.New([]world.EntityType{
 	EggType,
 	EndCrystalType,
 	EnderPearlType,
+	EnderEyeType, // Overmind fork
 	ExperienceOrbType,
 	FallingBlockType,
 	FireworkType,
@@ -37,6 +38,7 @@ var conf = world.EntityRegistryConfig{
 	EnderPearl:         NewEnderPearl,
 	FallingBlock:       NewFallingBlock,
 	Lightning:          NewLightning,
+	EnderEye:           NewEnderEye, // Overmind fork
 	Firework: func(opts world.EntitySpawnOpts, firework world.Item, owner world.Entity, sidewaysVelocityMultiplier, upwardsAcceleration float64, attached bool) *world.EntityHandle {
 		return newFirework(opts, firework.(item.Firework), owner, sidewaysVelocityMultiplier, upwardsAcceleration, attached)
 	},

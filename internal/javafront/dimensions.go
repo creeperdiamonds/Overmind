@@ -126,6 +126,7 @@ func (c *conn) arrive(tx *world.Tx, p *player.Player) {
 	c.send(javaproto.GameEvent(javaproto.EventStartWaitingForChunks, 0))
 	spawn := w.Spawn()
 	c.send(javaproto.SpawnPosition(c.dim.name, spawn[0], spawn[1], spawn[2]))
+	c.sendWorldState(tx)
 	c.center = chunkPosOf(pos)
 	c.send(javaproto.CenterChunk(c.center[0], c.center[1]))
 	c.teleportSelf(pos, p.Rotation())

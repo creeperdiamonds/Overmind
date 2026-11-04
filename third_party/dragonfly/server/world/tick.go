@@ -105,6 +105,7 @@ func (t ticker) tick(tx *Tx) {
 	if thunder {
 		w.tickLightning(tx, inReach)
 	}
+	w.tickPrecipitation(tx, inReach) // Overmind fork: freezing and snowfall (overmind_weather.go)
 
 	t.tickEntities(tx, tick, inReach)
 	w.scheduledUpdates.tickIn(tx, tick, inReach)

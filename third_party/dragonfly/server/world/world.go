@@ -336,6 +336,9 @@ type SetOpts struct {
 	// holds for the position, for a change that does not affect the power the
 	// block receives or emits, such as the shape of redstone wire.
 	KeepRedstonePower bool
+	// Unseen keeps the change from the viewers, for a change of state no client shows, such as a leaf's
+	// decay mark (Overmind fork).
+	Unseen bool
 }
 
 // setBlock writes a block to the position passed. If a chunk is not yet loaded
@@ -368,7 +371,7 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 	rid := w.conf.Blocks.BlockRuntimeID(b)
 	redstoneAfterRelevant := isRedstoneRelevant(b)
 	needOldBlock := !opts.DisableRedstoneUpdates || !redstoneAfterRelevant
-	needOldRID := needOldBlock || (rid != w.conf.Blocks.AirRuntimeID() && !opts.DisableLiquidDisplacement)
+	needOldRID := needOldBlock || !opts.DisableBlockUpdates || (rid != w.conf.Blocks.AirRuntimeID() && !opts.DisableLiquidDisplacement) // Overmind fork: || !DisableBlockUpdates, for Replacer
 
 	var oldRID uint32
 	if needOldRID {
@@ -435,11 +438,18 @@ func (tx *Tx) setBlock(pos cube.Pos, b Block, opts *SetOpts) {
 	}
 
 	for _, viewer := range viewers {
+		if opts.Unseen { // Overmind fork
+			break
+		}
 		viewer.ViewBlockUpdate(pos, b, 0)
 	}
 
 	if !opts.DisableBlockUpdates {
 		w.doBlockUpdatesAround(pos)
+		// Overmind fork: a block that reacts to being replaced hears of it.
+		if r, ok := w.conf.Blocks.BlockByRuntimeIDOrAir(oldRID).(Replacer); ok && oldRID != rid {
+			r.Replaced(pos, b, tx)
+		}
 	}
 	if !opts.DisableRedstoneUpdates {
 		w.redstone.invalidateAroundBlockChange(pos, oldBlock, b, RedstoneUpdateCauseBlockUpdate, w.Range())
@@ -818,12 +828,11 @@ func (w *World) enableTimeCycle(v bool) {
 // temperature returns the temperature in the World at a specific position.
 // Higher altitudes and different biomes influence the temperature returned.
 func (tx *Tx) temperature(pos cube.Pos) float64 {
-	const (
-		tempDrop = 1.0 / 600
-		seaLevel = 64
-	)
-	diff := max(pos[1]-seaLevel, 0)
-	return tx.biome(pos).Temperature() - float64(diff)*tempDrop
+	// Overmind fork: above Y 80 the temperature drops by 0.05 every 40 blocks, as on both editions
+	// (minecraft.wiki "Biome", oldid 3878263; Bedrock's Biome::getTemperature, the study notes); the
+	// small noise term they add to the height is left out. Upstream dropped 1/600 a block above Y 64.
+	diff := max(pos[1]-80, 0)
+	return tx.biome(pos).Temperature() - float64(diff)*0.05/40
 }
 
 // addParticle spawns a Particle at a given position in the World. Viewers that

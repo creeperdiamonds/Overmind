@@ -63,6 +63,11 @@ func (c *conn) useOn(p *player.Player, u javaproto.BlockPlace) {
 		click[i] = math.Min(math.Max(click[i], 0), 1)
 	}
 	used = true
+	c.own(pos)
+	if _, flint := held.Item().(item.FlintAndSteel); flint && u.Hand != javaproto.HandOff {
+		// Its sound is at the block lit, or at the fire's block beside it.
+		c.ownLit[pos], c.ownLit[pos.Side(face)] = struct{}{}, struct{}{}
+	}
 	c.withHand(p, u.Hand, func() { p.UseItemOnBlock(pos, face, click) })
 }
 
@@ -212,6 +217,7 @@ func (c *conn) useBucket(p *player.Player, b item.Bucket) {
 	if !ok {
 		return
 	}
+	c.own(pos)
 	p.UseItemOnBlock(pos, face, hit.Sub(pos.Vec3()))
 }
 

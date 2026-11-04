@@ -120,6 +120,7 @@ func (c *conn) bridge(p *player.Player, hand int32) bool {
 		return false
 	}
 	c.bridged, c.bridgedAt = true, now
+	c.own(on)
 	c.withHand(p, hand, func() { p.UseItemOnBlock(on, face, click) })
 	if handItem(p, hand).Equal(held) {
 		c.resendHand(hand)

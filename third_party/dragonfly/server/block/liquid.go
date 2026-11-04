@@ -39,7 +39,7 @@ func tickLiquid(b world.Liquid, pos cube.Pos, tx *world.Tx) {
 	if !source(b) && !sourceAround(b, pos, tx) {
 		var res world.Liquid
 		if b.LiquidDepth()-4 > 0 {
-			res = b.WithDepth(b.LiquidDepth()-2*b.SpreadDecay(), false)
+			res = b.WithDepth(b.LiquidDepth()-2*spreadDecay(b, tx), false)
 		}
 		ctx := tx.Event()
 		if tx.World().Handler().HandleLiquidDecay(ctx, pos, b, res); ctx.Cancelled() {
@@ -60,7 +60,7 @@ func tickLiquid(b world.Liquid, pos cube.Pos, tx *world.Tx) {
 		}
 	}
 
-	depth, decay := b.LiquidDepth(), b.SpreadDecay()
+	depth, decay := b.LiquidDepth(), spreadDecay(b, tx)
 	if depth <= decay {
 		// Current depth is smaller than the decay, so spreading will result in nothing.
 		return
@@ -79,6 +79,15 @@ func tickLiquid(b world.Liquid, pos cube.Pos, tx *world.Tx) {
 			}
 		}
 	}
+}
+
+// spreadDecay is how much depth the liquid loses a block as it spreads: its own SpreadDecay, except that lava
+// in the Nether loses 1, so it runs 7 blocks instead of 3 (Overmind fork; minecraft.wiki "Lava", oldid 3870569).
+func spreadDecay(b world.Liquid, tx *world.Tx) int {
+	if _, lava := b.(Lava); lava && tx.World().Dimension() == world.Nether {
+		return 1
+	}
+	return b.SpreadDecay()
 }
 
 // source checks if a liquid is a source block.
@@ -123,7 +132,7 @@ func sourceAround(b world.Liquid, pos cube.Pos, tx *world.Tx) (sourcePresent boo
 // flowInto makes the liquid passed flow into the position passed in a world. If successful, the block at that
 // position will be broken and the liquid with a lower depth will replace it.
 func flowInto(b world.Liquid, src, pos cube.Pos, tx *world.Tx, falling bool) bool {
-	newDepth := b.LiquidDepth() - b.SpreadDecay()
+	newDepth := b.LiquidDepth() - spreadDecay(b, tx)
 	if falling {
 		newDepth = b.LiquidDepth()
 	}
@@ -188,7 +197,7 @@ func calculateLiquidPaths(b world.Liquid, pos cube.Pos, tx *world.Tx, displacer 
 		liquidQueuePool.Put(queue)
 	}()
 	queue.PushBack(liquidNode{x: pos[0], z: pos[2], depth: int8(b.LiquidDepth())})
-	decay := int8(b.SpreadDecay())
+	decay := int8(spreadDecay(b, tx))
 
 	paths := make([]liquidPath, 0, 3)
 	first := true
@@ -266,7 +275,7 @@ func canFlowInto(b world.Liquid, tx *world.Tx, pos cube.Pos, sideways bool) bool
 		return true
 	}
 	if dis, ok := bl.(world.LiquidDisplacer); ok {
-		res := b.WithDepth(b.LiquidDepth()-b.SpreadDecay(), !sideways)
+		res := b.WithDepth(b.LiquidDepth()-spreadDecay(b, tx), !sideways)
 		if dis.CanDisplace(res) {
 			return true
 		}

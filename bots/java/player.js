@@ -59,6 +59,17 @@ for (const name of ['game_state_change', 'update_view_position', 'map_chunk', 'u
 }
 
 client.on('update_health', (p) => { seen.health = p.health })
+// The world's state as the server sent it: clocks, weather events, sounds and
+// level events, in order, each sound checked against minecraft-data's list.
+const worldSeen = { time: [], gameEvents: [], sounds: [], worldEvents: [] }
+const keep = (list, e) => { list.push(e); if (list.length > 400) list.shift() }
+client.on('update_time', (p) => keep(worldSeen.time, { age: String(p.age), clocks: p.clockUpdates.map((c) => ({ id: c.id, time: Number(c.totalTicks), rate: c.rate })) }))
+client.on('game_state_change', (p) => keep(worldSeen.gameEvents, { reason: p.reason, value: p.gameMode }))
+client.on('sound_effect', (p) => {
+  const name = p.sound.data ? p.sound.data.soundName : 'id:' + p.sound.soundId
+  keep(worldSeen.sounds, { name: name, known: !!(name && mcData.soundsByName[name.replace(/^minecraft:/, '')]), category: p.soundCategory, x: p.x / 8, y: p.y / 8, z: p.z / 8, volume: p.volume, pitch: p.pitch })
+})
+client.on('world_event', (p) => keep(worldSeen.worldEvents, { id: p.effectId, x: p.location.x, y: p.location.y, z: p.location.z, data: p.data }))
 // The dimension the client is in, from Login and Respawn: its chunks are as
 // tall as its dimension type (the Nether and the End 0 to 256).
 const heights = { "minecraft:the_nether": [0, 256], "minecraft:the_end": [0, 256] }
@@ -293,6 +304,7 @@ const firstUnusedID = Math.max(...Object.keys(toServerIDs).map(Number)) + 1
 
 const commands = {
   state: () => ({ me, seen }),
+  world: () => worldSeen,
   stateName: ({ state }) => ({ name: registry.blocksByStateId[state].name }),
   maxState: () => ({ state: Math.max(...registry.blocksArray.map((b) => b.maxStateId)) }),
   // column reports what prismarine-chunk decoded for one block column.

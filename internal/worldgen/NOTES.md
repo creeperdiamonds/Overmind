@@ -59,7 +59,7 @@ Carvers carve under water as the aquifer says, and the noise pass seals nothing,
 - `caves.go`: density, cell blending, veins, `columnWalk`. `aquifer.go`. `biomes.go`, `biome_table.go`.
 - `generator.go`: the pass order, `fillNoise`. `base.go`: a chunk's carvers stage and stage heightmaps. `surface_rules.go`: the rule tree, surface pass, simplex noises, temperature. `carve.go`: carvers, `SurfaceHeight`.
 - `feature.go`: the driver, RNG, providers, modifiers, predicates. `feature_table.go`: the order, which biome has what, ores. `feature_ores.go`, `feature_trees.go`, `feature_misc.go`, `feature_defs.go`.
-- `states.go`: our block states, flags and tags. `dfblocks.go`: states to Dragonfly blocks, `OwnBlock`. `plant_blocks.go`: `SnowLayer`, `Seagrass`. `profile.go`.
+- `states.go`: our block states, flags and tags. `dfblocks.go`: states to Dragonfly blocks, `OwnBlock`. `strongholds.go`: `NearestStronghold`, which eyes of ender ask; none until strongholds generate (TODO, Task 9). `plant_blocks.go`: `Seagrass`, and `SnowLayer`, an alias of the Dragonfly fork's `block.SnowLayer` (all eight layers, for snowfall; Task W). `profile.go`.
 
 ## Heights
 
