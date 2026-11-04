@@ -16,7 +16,7 @@ import (
 // molangEnv is what an expression reads.
 type molangEnv struct {
 	d                         *decoration
-	r1                        *bmt // math.random draws from the rule's position generator.
+	r1                        *bmt // math.random's generator: the chunk's Random for a rule, the feature's in a nested scatter (T21).
 	originX, originY, originZ float32
 	worldX, worldY, worldZ    float32
 	biome                     uint8

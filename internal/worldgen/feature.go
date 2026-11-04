@@ -250,6 +250,9 @@ type decoration struct {
 	decSeed int64
 	// The Bedrock profile's two generators of a rule (section 2) and a chunk's biome list.
 	br1, br2  bmt
+	// chunkR is the chunk's decoration Random: a rule-level math.random draws nextFloat from it, one
+	// stream for every rule of every pass and biome, in evaluation order (T21).
+	chunkR bmt
 	biomeList []uint8
 	listOf    listKey // Whose list biomeList holds, in the Bedrock biome model.
 	budget    int     // Scatter placements left to this source (bedrock_limits.go).

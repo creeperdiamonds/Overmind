@@ -491,6 +491,10 @@ func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	e := &d.menv
 	e.originX, e.originY, e.originZ = float32(p.x), float32(p.y), float32(p.z)
 	e.worldX, e.worldY, e.worldZ = float32(p.x), float32(p.y), float32(p.z)
+	// The copy's math.random draws from the feature's Random (T14, T21: MolangCtx_init with it).
+	saved := e.r1
+	e.r1 = r
+	defer func() { e.r1 = saved }()
 	if !f.sc.chance(r, e) {
 		return p, false
 	}

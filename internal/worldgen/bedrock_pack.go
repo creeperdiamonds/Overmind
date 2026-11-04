@@ -685,7 +685,15 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	bd.lastOre = nil
 	feat, err := bd.fc.feature(r.Description.PlacesFeature)
 	if err != nil {
-		return skip("", err)
+		rule := skip("", err)
+		// A rule whose own scatter calls math.random still draws from the chunk's Random in BDS (T21):
+		// keep it for its draws, placing nothing, so the stream stays where BDS has it.
+		if isUnimpl(err) && distributionDraws(r.Distribution) {
+			if sc, err := parseScatterParams(r.Distribution, bd); err == nil {
+				rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, biomes: bd.ruleBiomes(r)}
+			}
+		}
+		return rule
 	}
 	sc, err := parseScatterParams(r.Distribution, bd)
 	if err != nil {
@@ -697,6 +705,16 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	}
 	rule.biomes = bd.ruleBiomes(r)
 	return rule
+}
+
+// distributionDraws says whether a rule's scatter evaluates math.random.
+func distributionDraws(dist map[string]json.RawMessage) bool {
+	for _, v := range dist {
+		if strings.Contains(strings.ToLower(string(v)), "math.random") {
+			return true
+		}
+	}
+	return false
 }
 
 // shortReason keeps the innermost part of a reason, for the Skipped counts.

@@ -185,6 +185,7 @@ func (b bedrockSeeds) chunk(cx, cz int) uint32 { return bedrockChunkSeed(b.level
 func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 	ox, oz := cx*16, cz*16
 	bd := d.g.bdata
+	d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
 	under, surf := false, false
 	for _, pl := range d.g.profile.placements {
 		if !under && pl.step >= oreStep {
@@ -231,7 +232,7 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	switch pl.name {
 	case "glow_lichen":
 		return false
-	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode":
+	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode", "large_dripstone", "dripstone_cluster", "pointed_dripstone":
 		return true
 	}
 	return pl.step == vegetationStep
@@ -249,6 +250,9 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
 	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"}, // eyeblossom_feature is code, not read.
 	{"amethyst_geode_feature", "amethyst_geode"},
+	{"dripstone_cluster_feature", "dripstone_cluster"},
+	{"large_dripstone_feature", "large_dripstone"},
+	{"small_dripstone_feature", "pointed_dripstone"},
 	{"swamp_surface_waterlily", "patch_waterlily"},
 	{"plains_surface_flowers", "flower_plains"},
 	{"flower_forest_surface_flowers", "flower_flower_forest flower_forest_flowers"},
@@ -413,7 +417,7 @@ func (d *decoration) bedrockPass(rules []*bedrockRule) {
 	for i := range list {
 		b := list[i]
 		ox, oz := float32(d.cx*16), float32(d.cz*16)
-		*e = molangEnv{d: d, r1: &d.br1, originX: ox, originZ: oz, worldX: ox, worldZ: oz, biome: b}
+		*e = molangEnv{d: d, r1: &d.chunkR, originX: ox, originZ: oz, worldX: ox, worldZ: oz, biome: b}
 		for _, rule := range rules {
 			if rule.biomes[b>>6]&(1<<(b&63)) == 0 {
 				continue
@@ -445,6 +449,8 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		if multi && (p[1] < minY || p[1] > maxY || d.storedBiome(p[0], p[1], p[2]) != b) {
 			continue
 		}
-		rule.feat.place(d, &d.br2, pos{p[0], p[1], p[2]})
+		if rule.feat != nil { // A rule kept for its draws only (compileRule): it places nothing.
+			rule.feat.place(d, &d.br2, pos{p[0], p[1], p[2]})
+		}
 	}
 }

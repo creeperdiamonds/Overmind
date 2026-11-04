@@ -21,6 +21,9 @@ type bmt struct {
 	i      int // The next word to twist and output.
 	filled int // Seeding words made so far (mtN once the first block is under way past them).
 	seed   uint32
+	// nextGaussian's second value, kept for the next call (bedrock_drip.go).
+	gauss     float32
+	haveGauss bool
 }
 
 func newBMT(seed uint32) *bmt {
@@ -32,6 +35,7 @@ func newBMT(seed uint32) *bmt {
 // setSeed restarts the generator.
 func (r *bmt) setSeed(seed uint32) {
 	r.seed = seed
+	r.haveGauss = false
 	r.mt[0] = seed
 	r.filled = 1
 	r.i = 0
