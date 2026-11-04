@@ -401,13 +401,17 @@ func TestBedrockItemNames(t *testing.T) {
 		require.Equal(t, "minecraft:"+name, back)
 		require.Zero(t, meta)
 	}
-	// No Java item may come back as a lit or double-slab name.
+	// No Java item may come back as a lit or double-slab name, but for the jack
+	// o'lantern, whose only Bedrock name is lit_pumpkin.
 	for id := int32(0); id < 2000; id++ {
-		if name, _, ok := BedrockItem(id); ok {
+		if name, _, ok := BedrockItem(id); ok && id != java["jack_o_lantern"] {
 			require.False(t, strings.HasPrefix(name, "minecraft:lit_") || strings.HasSuffix(name, "_double_slab") || name == "minecraft:unknown", name)
 		}
 	}
-	_, ok := JavaItem("minecraft:unknown", 0)
+	back, _, ok := BedrockItem(java["jack_o_lantern"])
+	require.True(t, ok)
+	require.Equal(t, "minecraft:lit_pumpkin", back)
+	_, ok = JavaItem("minecraft:unknown", 0)
 	require.False(t, ok)
 	// The lit forms still go forward, to the same Java item.
 	lit, ok := JavaItem("minecraft:lit_redstone_ore", 0)

@@ -34,8 +34,9 @@ type block struct {
 }
 
 type item struct {
-	ID   int32  `json:"id"`
-	Name string `json:"name"`
+	ID          int32  `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
 }
 
 func main() {
@@ -296,6 +297,16 @@ func (g *gen) items() {
 		}
 	}
 	g.writeJSON("testdata/items.json", javaID)
+	// Display names of both lists, for the tests: a Bedrock item and the Java item it maps to
+	// should be the same thing.
+	names := map[string]map[string]string{"bedrock": {}, "java": {}}
+	for _, it := range bi {
+		names["bedrock"][it.Name] = it.DisplayName
+	}
+	for _, it := range ji {
+		names["java"][it.Name] = it.DisplayName
+	}
+	g.writeJSON("testdata/itemnames.json", names)
 	// Java item names and IDs, for data that names Java items (recipes).
 	javaNames := make([]string, 0, len(ji))
 	for _, it := range ji {
@@ -303,15 +314,38 @@ func (g *gen) items() {
 	}
 	sort.Strings(javaNames)
 	g.writeLines("javaitems", javaNames)
-	sort.Slice(bi,func(i, j int) bool { return bi[i].Name < bi[j].Name })
+	sort.Slice(bi, func(i, j int) bool { return bi[i].Name < bi[j].Name })
+	javaDisplay := map[string]string{}
+	for _, it := range ji {
+		javaDisplay[it.Name] = it.DisplayName
+	}
+	sameThing := func(be item, java string) bool { return strings.EqualFold(be.DisplayName, javaDisplay[java]) }
 	var entries []itemEntry
 	for _, it := range bi {
 		if it.Name == "unknown" || strings.HasPrefix(it.Name, "item.") || it.Name == "bed" || it.Name == "banner" {
 			continue
 		}
 		jn := it.Name
-		if _, ok := javaID[jn]; !ok {
-			jn = blockItem[it.Name]
+		block, isBlock := blockItem[it.Name]
+		_, javaHasName := javaID[jn]
+		switch {
+		case !javaHasName:
+			jn = block
+		case isBlock && block != jn:
+			// The Bedrock name is a different Java item's (Bedrock's stone_stairs are
+			// the cobblestone stairs, Java's stone_stairs the stone ones): the block
+			// item is the item of its block. Both lists' display names must agree.
+			if !sameThing(it, block) {
+				fatal(fmt.Errorf("item %s (%q): its block is Java %s (%q), but the name is Java's %s (%q)", it.Name, it.DisplayName, block, javaDisplay[block], jn, javaDisplay[jn]))
+			}
+			fmt.Printf("item %s is Java %s, not Java %s (%q, %q)\n", it.Name, block, jn, it.DisplayName, javaDisplay[jn])
+			jn = block
+		}
+		if alias, ok := itemAliases[it.Name]; ok {
+			if _, has := javaID[jn]; has || !sameThing(it, alias) {
+				fatal(fmt.Errorf("item alias %s -> %s: already mapped, or the display names %q and %q differ", it.Name, alias, it.DisplayName, javaDisplay[alias]))
+			}
+			jn = alias
 		}
 		if id, ok := javaID[jn]; ok {
 			entries = append(entries, itemEntry{key: it.Name, java: jn, id: id})
@@ -341,15 +375,24 @@ func (g *gen) items() {
 		entries = append(entries, itemEntry{key: "arrow#+", java: "tipped_arrow", id: id})
 	}
 	// One Bedrock name per Java item for the reverse direction: the one named like the Java
-	// item if there is one, else the first. Lit, double-slab and standing or wall block names never win.
+	// item if there is one, else the first. Lit, double-slab and standing or wall block names
+	// win only where there is no other (Java's jack_o_lantern is Bedrock's lit_pumpkin).
+	rank := func(e itemEntry) int {
+		switch {
+		case e.key == e.java:
+			return 0
+		case strings.HasPrefix(e.key, "lit_") || strings.HasSuffix(e.key, "_double_slab") ||
+			strings.HasPrefix(e.key, "standing_") || strings.HasPrefix(e.key, "wall_"):
+			return 2
+		}
+		return 1
+	}
 	best := map[int32]int{}
 	for i, e := range entries {
-		last := e.key[len(e.key)-1]
-		if last == '*' || last == '+' || strings.HasPrefix(e.key, "lit_") || strings.HasSuffix(e.key, "_double_slab") ||
-			strings.HasPrefix(e.key, "standing_") || strings.HasPrefix(e.key, "wall_") {
+		if last := e.key[len(e.key)-1]; last == '*' || last == '+' {
 			continue
 		}
-		if b, ok := best[e.id]; !ok || (e.key == e.java && entries[b].key != entries[b].java) {
+		if b, ok := best[e.id]; !ok || rank(e) < rank(entries[b]) {
 			best[e.id] = i
 		}
 	}
@@ -376,6 +419,19 @@ type itemEntry struct {
 // itemColours lists the colours in Bedrock meta order, white first. The test checks the order
 // against Dragonfly.
 var itemColours = []string{"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"}
+
+// itemAliases are Bedrock items named unlike their Java item and not block items, so neither
+// the name nor the block mapping finds them. Each is the Java item of the same display name in
+// minecraft-data (the generator checks it): Bedrock's netherbrick is "Nether Brick", Java's
+// nether_brick; frame and glow_frame are "Item Frame" and "Glow Item Frame"; empty_map is
+// "Empty Map", Java's map; zombie_pigman_spawn_egg is "Zombified Piglin Spawn Egg".
+var itemAliases = map[string]string{
+	"netherbrick":             "nether_brick",
+	"frame":                   "item_frame",
+	"glow_frame":              "glow_item_frame",
+	"empty_map":               "map",
+	"zombie_pigman_spawn_egg": "zombified_piglin_spawn_egg",
+}
 
 // componentItems keep the one Java item whatever the Bedrock meta.
 var componentItems = []string{"potion", "splash_potion", "lingering_potion", "goat_horn", "suspicious_stew", "firework_star"}
