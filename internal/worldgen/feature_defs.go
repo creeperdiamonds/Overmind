@@ -163,7 +163,7 @@ func defineSteps(t *tableBuilder) {
 		}
 		return sGrass, true
 	}), countMod{constInt(1)}, inSquareMod{}, heightmapMod{hmOceanFloorWG}, offsetMod{constInt(0), constInt(-1)}, filterMod{matchBlocks("mud")}, biomeMod{})
-	t.def("underwater_magma", magmaFeature(5, 1, 0.5), countMod{uniInt(t.prof.magmaCount[0], t.prof.magmaCount[1])}, inSquareMod{}, heightRangeMod{uniHeight(minY, 256)}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -2}, biomeMod{})
+	t.def("underwater_magma", magmaFeature(5, 1, 0.5), dataCountMod{"underwater_magma", t.prof.magmaCount}, inSquareMod{}, heightRangeMod{uniHeight(minY, 256)}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -2}, biomeMod{})
 	waterRock := blockSet("stone granite diorite andesite deepslate tuff calcite dirt snow_block powder_snow packed_ice")
 	lavaRock := blockSet("stone granite diorite andesite deepslate tuff")
 	frozenRock := blockSet("snow_block powder_snow packed_ice")
@@ -171,7 +171,7 @@ func defineSteps(t *tableBuilder) {
 	t.def("spring_lava", springFeature(sLava, lavaRock, 4, 1, true), countMod{constInt(20)}, inSquareMod{}, heightRangeMod{veryBiasedHeight(minY, maxY-8, 8)}, biomeMod{})
 	t.def("spring_lava_frozen", springFeature(sLava, frozenRock, 4, 1, true), countMod{constInt(20)}, inSquareMod{}, heightRangeMod{veryBiasedHeight(minY, maxY-8, 8)}, biomeMod{})
 	t.def("glow_lichen", lichenFeature(blockSet("stone andesite diorite granite dripstone_block calcite tuff deepslate"), 20, 0.5),
-		countMod{uniInt(t.prof.lichenCount[0], t.prof.lichenCount[1])}, heightRangeMod{uniHeight(minY, 256)}, inSquareMod{}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -13}, biomeMod{})
+		dataCountMod{"glow_lichen", t.prof.lichenCount}, heightRangeMod{uniHeight(minY, 256)}, inSquareMod{}, surfaceThresholdMod{hmOceanFloorWG, -1 << 30, -13}, biomeMod{})
 	t.def("freeze_top_layer", freezeFeature, biomeMod{})
 
 	// Trees.

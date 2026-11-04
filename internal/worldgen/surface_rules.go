@@ -99,7 +99,7 @@ func (t *climateTable) temperature(b uint8, x, y, z int) float32 {
 
 // coldEnough says whether a biome freezes at a block under this generator's profile.
 func (g *Generator) coldEnough(b uint8, x, y, z int) bool {
-	return g.profile.climate.temperature(b, x, y, z) < 0.15
+	return g.climateT.temperature(b, x, y, z) < 0.15
 }
 
 // quartColumn is one quart column's stored biomes, by table index. A pure function of the seed and
@@ -758,7 +758,7 @@ func (g *Generator) frozenExtension(b *baseChunk, c *ruleContext, sb uint8, lx, 
 	}
 	roof := math.Abs(float64(n.bergCap.at(float64(fx*1.17), 0, float64(fz*1.17)) * 1.5))
 	top := min(float64(float64(ice*ice)*1.2), float64(math.Ceil(float64(roof*40.0)))+14.0)
-	if g.profile.climate.temperature(sb, x, 63, z) > 0.1 {
+	if g.climateT.temperature(sb, x, 63, z) > 0.1 {
 		top -= 2.0
 	}
 	var bot float64

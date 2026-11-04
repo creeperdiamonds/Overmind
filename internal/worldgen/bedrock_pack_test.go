@@ -95,3 +95,28 @@ func TestNoDataFallsBack(t *testing.T) {
 	}
 	generate(g, 0, 0)
 }
+
+// TestBedrockValuesFromData: with the data read, biome temperatures and the counts of the Java
+// placements that stand in for unwritten rules come from the data, not from our tables.
+func TestBedrockValuesFromData(t *testing.T) {
+	bd := testBedrockData(t)
+	g := NewWithData(1, ProfileBedrock, bd)
+	for _, name := range []string{"savanna", "meadow", "lush_caves", "snowy_plains", "frozen_peaks"} {
+		i := biomeIdx[name]
+		if !bd.climateSet[i] {
+			t.Fatalf("%s: the pack gives no temperature", name)
+		}
+		if got := g.climateT.temperature(i, 0, 64, 0); got != bd.climate[i] {
+			t.Errorf("%s temperature %v, want the pack's %v", name, got, bd.climate[i])
+		}
+	}
+	if got := bd.counts["underwater_magma"]; got != [2]int{18, 30} {
+		t.Errorf("underwater magma count %v, want the rule's Math.Random(18, 30)", got)
+	}
+	if got := bd.counts["glow_lichen"]; got != [2]int{104, 157} {
+		t.Errorf("glow lichen count %v, want the rule's 104..157", got)
+	}
+	if NewWithData(1, ProfileBedrock, nil).climateT != ProfileBedrock.climate {
+		t.Error("with no data the profile's table is not the fallback")
+	}
+}

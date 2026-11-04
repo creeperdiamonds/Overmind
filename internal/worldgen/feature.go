@@ -532,6 +532,25 @@ func (m countMod) apply(d *decoration, p pos, rest []modifier, f feature) {
 	}
 }
 
+// dataCountMod is a count from the Bedrock data's rule of that name when the data is read, else the
+// profile's value.
+type dataCountMod struct {
+	name     string
+	fallback [2]int
+}
+
+func (m dataCountMod) apply(d *decoration, p pos, rest []modifier, f feature) {
+	lo, hi := m.fallback[0], m.fallback[1]
+	if bd := d.g.bdata; bd != nil {
+		if c, ok := bd.counts[m.name]; ok {
+			lo, hi = c[0], c[1]
+		}
+	}
+	for range d.r.between(lo, hi) {
+		d.run(rest, f, p)
+	}
+}
+
 type inSquareMod struct{}
 
 func (inSquareMod) apply(d *decoration, p pos, rest []modifier, f feature) {

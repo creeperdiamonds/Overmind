@@ -50,6 +50,12 @@ type BedrockData struct {
 	// counts), each once; they are skipped.
 	Problems    []string
 	problemSeen map[string]bool
+	// climate is each of our biomes' temperature from its pack file, where the file gives one.
+	climate    [len(biomeTableNames)]float32
+	climateSet [len(biomeTableNames)]bool
+	// counts are the iteration ranges of rules whose features are not written yet, for the Java
+	// placements that stand in for them (dataCountMod).
+	counts map[string][2]int
 	// Warnings says what the install lacks for an exact world (a game's packs with no definitions).
 	Warnings []string
 }
@@ -546,6 +552,20 @@ func packBlockName(raw json.RawMessage) (string, bool) {
 // compile builds what the generator runs from the data.
 func (bd *BedrockData) compile() error {
 	bd.compileRules()
+	bd.counts = map[string][2]int{}
+	for name, rule := range map[string]string{"underwater_magma": "minecraft:overworld_underwater_magma_feature",
+		"glow_lichen": "minecraft:overworld_underground_glow_lichen_feature"} {
+		if r := bd.rules[rule]; r != nil {
+			var it string
+			if json.Unmarshal(r.Distribution["iterations"], &it) == nil {
+				if m := randomRange.FindStringSubmatch(it); m != nil {
+					lo, _ := strconv.Atoi(m[1])
+					hi, _ := strconv.Atoi(m[2])
+					bd.counts[name] = [2]int{lo, hi}
+				}
+			}
+		}
+	}
 	for _, id := range bd.order["pregeneration_pass"] {
 		r := bd.rules[id]
 		f, ok := bd.features[r.Description.PlacesFeature]
@@ -616,6 +636,9 @@ func (bd *BedrockData) problem(id, why string) {
 	bd.problemSeen[id] = true
 	bd.Problems = append(bd.Problems, id+": "+why)
 }
+
+// randomRange reads an iteration count written as Math.Random(lo, hi).
+var randomRange = regexp.MustCompile(`(?i)^\s*math\.random(?:_integer)?\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*$`)
 
 // maxOreCount is the largest ore count read (vanilla's largest is 64).
 const maxOreCount = 256
@@ -744,7 +767,9 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 		var cl struct {
 			T float32 `json:"temperature"`
 		}
-		json.Unmarshal(b.components["minecraft:climate"], &cl)
+		if raw, ok := b.components["minecraft:climate"]; ok && json.Unmarshal(raw, &cl) == nil {
+			bd.climate[i], bd.climateSet[i] = cl.T, true
+		}
 		row := surfaceRow{biome: name, kind: strings.TrimPrefix(kind, "minecraft:"), top: str(sb.Builder, "top_material"),
 			mid: str(sb.Builder, "mid_material"), floor: str(sb.Builder, "sea_floor_material"),
 			foundation: str(sb.Builder, "foundation_material"), sea: str(sb.Builder, "sea_material"), seaDepth: depth, temperature: cl.T}

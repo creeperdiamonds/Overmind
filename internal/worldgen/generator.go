@@ -37,6 +37,8 @@ type Generator struct {
 	regionFac seedFactory
 	profile   *Profile
 	bsurf     *bedrockSurface // Bedrock's surface builder, for a profile that uses it.
+	// climateT is the biome temperatures: the profile's table, with the pack's values when the data is read.
+	climateT *climateTable
 	bseeds    bedrockSeeds    // Bedrock's decoration seeds.
 	bdata     *BedrockData    // Bedrock's feature data, nil when no install was read.
 	geodeOnce sync.Once
@@ -80,6 +82,16 @@ func NewWithData(seed int64, profile *Profile, bd *BedrockData) *Generator {
 		bd = nil
 	}
 	g.bdata = bd
+	g.climateT = profile.climate
+	if bd != nil {
+		t := *profile.climate
+		for i := range t {
+			if bd.climateSet[i] {
+				t[i].temp = bd.climate[i]
+			}
+		}
+		g.climateT = &t
+	}
 	if profile.surfaceBedrock && bd != nil {
 		g.bsurf = newBedrockSurface(seed, w, bd)
 	}

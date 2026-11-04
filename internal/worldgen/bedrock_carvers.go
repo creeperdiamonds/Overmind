@@ -166,8 +166,10 @@ var (
 	idxRawIron  = stateBlockIndex("raw_iron_block")
 )
 
-// bedrockCarvable is the replaceable test as the study measured it (P2): what our carvable tag holds
-// except granite, plus tuff and the iron vein's blocks.
+// bedrockCarvable is the replaceable test as the study measured it (P2), not read from the code
+// (ruling 39; the block test 0x514c6b0 compares globals not named yet): what our carvable tag holds
+// except granite, plus tuff and the iron vein's blocks. Measured at predicted carve positions: tuff,
+// deepslate iron ore and raw iron carved 100% of the time, granite 0%, stone 98.3%.
 func bedrockCarvable(st bs) bool {
 	switch stateBlock[st] {
 	case idxGranite:
