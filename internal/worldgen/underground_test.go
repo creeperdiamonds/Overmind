@@ -200,7 +200,8 @@ func TestSomeCavesReachSurface(t *testing.T) {
 				mu.Lock()
 				land++
 				if opened {
-					if open == 0 {
+					// The first open column in x, then z order, whichever worker finds it.
+					if open == 0 || x < found[0] || x == found[0] && z < found[1] {
 						found = [2]int{x, z}
 					}
 					open++
@@ -214,11 +215,13 @@ func TestSomeCavesReachSurface(t *testing.T) {
 	if open == 0 {
 		t.Fatal("no cave reaches the surface in 1024x1024")
 	}
-	// The chunk must agree: the terrain's top block is gone there.
+	// The chunk must agree: the terrain's top block is gone there. Decoration may set a plant on the
+	// lowered ground (leaf litter on the grass one below), which holds nothing up.
 	x, z := found[0], found[1]
 	c := generate(g, int32(x>>4), int32(z>>4))
-	if got := c.Block(uint8(x&15), int16(g.highestSolid(x, z)), uint8(z&15), 0); got != ridAir && got != ridWater {
-		t.Errorf("column (%d,%d): noise height says open, chunk has block %d at terrain top", x, z, got)
+	got := c.Block(uint8(x&15), int16(g.highestSolid(x, z)), uint8(z&15), 0)
+	if n := nameOf(got); got != ridAir && got != ridWater && !isPlantName(n) && n != "snow_layer" {
+		t.Errorf("column (%d,%d): noise height says open, chunk has %s at terrain top", x, z, n)
 	}
 }
 
