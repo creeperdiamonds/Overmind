@@ -247,6 +247,7 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"swamp_surface_swamp_foliage", "trees_swamp"},
 	{"mangrove_swamp_", "trees_mangrove"},
 	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
+	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"}, // eyeblossom_feature is code, not read.
 	{"swamp_surface_waterlily", "patch_waterlily"},
 	{"plains_surface_flowers", "flower_plains"},
 	{"flower_forest_surface_flowers", "flower_flower_forest flower_forest_flowers"},

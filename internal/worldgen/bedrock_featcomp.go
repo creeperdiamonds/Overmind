@@ -697,6 +697,11 @@ var (
 	bnGrassFamily  = bnameSetOf("short_grass fern tall_grass poppy dandelion large_fern")
 	bnDoublePlants = bnameSetOf("tall_grass large_fern sunflower lilac rose_bush peony")
 	bnSporeBlossom = internBName("spore_blossom")
+	// Dry plants stand on sand, terracotta or the dirt family (the game's dry-vegetation ground).
+	bnDryPlants = bnameSetOf("short_dry_grass tall_dry_grass deadbush")
+	bnDryGround = bnameSetOf(bedrockTagMembers["dirt"] + " " + bedrockTagMembers["sand"] + " hardened_clay terracotta white_terracotta orange_terracotta " +
+		"magenta_terracotta light_blue_terracotta yellow_terracotta lime_terracotta pink_terracotta gray_terracotta light_gray_terracotta " +
+		"cyan_terracotta purple_terracotta blue_terracotta brown_terracotta green_terracotta red_terracotta black_terracotta")
 )
 
 func bnameSetOf(names string) (b bnameSet) {
@@ -712,6 +717,8 @@ func bedrockSurvives(d *decoration, name uint16, p pos) bool {
 		return bnSoil.has(bname(d.at(p.add(0, -1, 0))))
 	case name == bnSporeBlossom:
 		return bSolid(d.at(p.add(0, 1, 0)))
+	case bnDryPlants.has(name):
+		return bnDryGround.has(bname(d.at(p.add(0, -1, 0))))
 	}
 	return true
 }
