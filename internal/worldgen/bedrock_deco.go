@@ -214,6 +214,7 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 			d.bedrockPass(bd.passes[i])
 		}
 	}
+	d.bedrockFreeze(cx, cz)
 }
 
 // javaReplaced says whether Bedrock's passes take a Java placement's place: the profile's ores and
@@ -229,7 +230,7 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	switch pl.name {
 	case "glow_lichen":
 		return false
-	case "forest_rock", "ore_infested":
+	case "forest_rock", "ore_infested", "freeze_top_layer":
 		return true
 	}
 	return pl.step == vegetationStep
