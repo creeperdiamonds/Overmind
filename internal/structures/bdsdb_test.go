@@ -75,7 +75,14 @@ type bdsRuns struct {
 }
 
 func loadBDSRuns(t testing.TB, world_ string, runs []string, cx0, cx1, cz0, cz1 int) *bdsRuns {
+	return loadBDSRunsIn(t, world_, runs, world.Overworld, false, cx0, cx1, cz0, cz1)
+}
+
+// loadBDSRunsIn is loadBDSRuns for a dimension. With union, a chunk missing from the first run is taken
+// from the first run that has it (runs that each saved part of the area).
+func loadBDSRunsIn(t testing.TB, world_ string, runs []string, dim world.Dimension, union bool, cx0, cx1, cz0, cz1 int) *bdsRuns {
 	dir := bdsWorldDir(t, world_)
+	lo, hi := dim.Range()[0], dim.Range()[1]
 	world.DefaultBlockRegistry.Finalize()
 	w := &bdsRuns{bdsWorld: &bdsWorld{chunks: map[[2]int]*bdsChunk{}}, bes: map[[3]int]map[string]any{}}
 	ids := map[string]uint16{}
@@ -96,12 +103,13 @@ func loadBDSRuns(t testing.TB, world_ string, runs []string, cx0, cx1, cz0, cz1 
 		}
 		for cx := cx0; cx <= cx1; cx++ {
 			for cz := cz0; cz <= cz1; cz++ {
-				col, err := db.LoadColumn(world.ChunkPos{int32(cx), int32(cz)}, world.Overworld)
+				col, err := db.LoadColumn(world.ChunkPos{int32(cx), int32(cz)}, dim)
 				if err != nil || col == nil {
 					continue
 				}
 				c := w.chunks[[2]int{cx, cz}]
-				if ri == 0 {
+				first := ri == 0 || union && c == nil
+				if first {
 					c = &bdsChunk{ids: make([]uint16, chunkCells), unstable: make([]byte, chunkCells/8)}
 					w.chunks[[2]int{cx, cz}] = c
 					for _, b := range col.BlockEntities {
@@ -110,14 +118,14 @@ func loadBDSRuns(t testing.TB, world_ string, runs []string, cx0, cx1, cz0, cz1 
 				} else if c == nil {
 					continue
 				}
-				for y := minY; y <= maxY; y++ {
+				for y := lo; y <= hi; y++ {
 					for z := 0; z < 16; z++ {
 						for x := 0; x < 16; x++ {
 							b, _ := world.BlockByRuntimeID(col.Chunk.Block(uint8(x), int16(y), uint8(z), 0))
 							n, _ := b.EncodeBlock()
 							id := idOf(strings.TrimPrefix(n, "minecraft:"))
 							cell := cellOf(x, y, z)
-							if ri == 0 {
+							if first {
 								c.ids[cell] = id
 							} else if c.ids[cell] != id {
 								c.unstable[cell>>3] |= 1 << (cell & 7)

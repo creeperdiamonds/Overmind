@@ -11,15 +11,16 @@ import (
 
 // BenchmarkPlaceChunk is what structures add to a chunk's generation: PlaceChunk on finished chunks,
 // over seed 100's ancient city (start (1, -13), the costliest case: every chunk rebuilds or finds the
-// city) and over open ground away from any city.
+// city), over open ground away from any city, seed 100's stronghold and seed 32's (-12,6) monument.
 func BenchmarkPlaceChunk(b *testing.B) {
 	for _, area := range []struct {
 		name   string
+		seed   int64
 		cx, cz int
-	}{{"city", -2, -17}, {"open", 200, 200}, {"stronghold", 50, 100}} {
+	}{{"city", 100, -2, -17}, {"open", 100, 200, 200}, {"stronghold", 100, 50, 100}, {"monument", 32, -16, 2}} {
 		b.Run(area.name, func(b *testing.B) {
 			bd, d := installData(b)
-			g := worldgen.NewWithData(100, worldgen.ProfileBedrock, bd)
+			g := worldgen.NewWithData(area.seed, worldgen.ProfileBedrock, bd)
 			var base []*chunk.Chunk
 			var pos [][2]int
 			for i := range 8 {
@@ -73,5 +74,37 @@ func BenchmarkGenerateWithStructures(b *testing.B) {
 				b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(n), "ms/chunk")
 			})
 		}
+	}
+}
+
+// BenchmarkPlaceNetherChunk is PlaceChunk on finished Nether chunks of seed 100: over the (4,19)
+// fortress, the (-13,-20) bastion, and open Nether away from both. Each area takes a fresh Structures,
+// so the first chunk also assembles the structure.
+func BenchmarkPlaceNetherChunk(b *testing.B) {
+	for _, area := range []struct {
+		name   string
+		cx, cz int
+	}{{"fortress", 4, 22}, {"bastion", -16, -23}, {"open", 200, 200}} {
+		b.Run(area.name, func(b *testing.B) {
+			bd, d := installData(b)
+			g := worldgen.NewWithData(100, worldgen.ProfileBedrock, bd).Nether()
+			var base []*chunk.Chunk
+			var pos [][2]int
+			for i := range 8 {
+				for j := range 8 {
+					c := chunk.New(world.DefaultBlockRegistry, world.Nether.Range())
+					g.GenerateChunk(world.ChunkPos{int32(area.cx + i), int32(area.cz + j)}, c)
+					base, pos = append(base, c), append(pos, [2]int{area.cx + i, area.cz + j})
+				}
+			}
+			s := New(g, d)
+			b.ResetTimer()
+			n := 0
+			for b.Loop() {
+				k := n % len(base)
+				s.PlaceChunk(pos[k][0], pos[k][1], base[k].Clone())
+				n++
+			}
+		})
 	}
 }

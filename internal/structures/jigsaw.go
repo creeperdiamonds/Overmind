@@ -37,6 +37,12 @@ type element struct {
 	procs         []brProcessor // A data-driven element's processors (brprocess.go).
 	// abandonedTargets: the element's tag rules point its jigsaws at the abandoned pools (P10.1).
 	abandonedTargets bool
+	// missing is an element whose template file the install lacks: it keeps its weight slots and draws
+	// its rotation shuffle, but has no jigsaws, so it never attaches (P16.3 rule 1).
+	missing bool
+	// mob is a bastion mob element (bastion/mobs/*.mcstructure): a 1 x 3 x 1 piece that places no
+	// blocks; its mob is recorded, not spawned (P16.3 rule 2).
+	mob string
 }
 
 // rotate turns a local point by rot clockwise quarter turns (N2 1.2).
@@ -95,6 +101,9 @@ func (e *element) bbox(p [3]int, rot int) box {
 
 // jigsaws are the element's jigsaws in template order, turned and moved to pos (vt1).
 func (e *element) jigsaws(p [3]int, rot int) []jigsaw {
+	if e.missing {
+		return nil
+	}
 	if e.template == nil { // A feature element's one jigsaw (N2 1.9's model): facing down, top south.
 		return []jigsaw{{pos: p, front: 0, top: 3, name: "minecraft:bottom", target: "minecraft:empty", pool: "minecraft:empty"}}
 	}

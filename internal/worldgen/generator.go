@@ -70,7 +70,7 @@ type lazyNoise struct {
 }
 
 // dimension is this world's generator of another dimension: a copy sharing every noise, the data and
-// the cache (whose keys carry the dimension), with no structures.
+// the cache (whose keys carry the dimension), with no structures until SetStructures gives it its own.
 func (g *Generator) dimension(dim uint8) *Generator {
 	n := *g
 	n.dim, n.structs = dim, nil
@@ -221,6 +221,7 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 	case dimNether:
 		writeRows(c, g.finalCells(s, cx, cz), netherHeight)
 		g.netherN.storeBiomes(c, cx, cz)
+		g.placeStructures(cx, cz, c, col)
 		return
 	case dimEnd:
 		cells := g.finalCells(s, cx, cz)
@@ -791,4 +792,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.t9r9"
+const GeneratorVersion = "2026-11-05.t9r10"

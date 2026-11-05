@@ -28,10 +28,44 @@ type writer struct {
 	carts  []minecartIntent
 	// spawned are the spider corridors that placed their spawner in this chunk.
 	spawned map[spiderKey]bool
+	// spawns are the mobs the structures would spawn here (elder guardians, piglins, hoglins): recorded,
+	// not spawned, until mobs exist (stage 4; docs/stage-2-known-gaps.md).
+	spawns []spawnIntent
+	// lo, hi are the dimension's block range: the Overworld's -64..319 or the Nether's 0..127.
+	lo, hi int
+	// trace, when set (tests), sees every block a structure writes.
+	trace func(x, y, z int, rid uint32)
+}
+
+// spawnIntent is a mob a structure would spawn at a block.
+type spawnIntent struct {
+	Pos    [3]int
+	Entity string
 }
 
 func (w *writer) in(x, y, z int) bool {
-	return x>>4 == w.cx && z>>4 == w.cz && y >= minY && y <= maxY
+	return x>>4 == w.cx && z>>4 == w.cz && y >= w.lo && y <= w.hi
+}
+
+// blockName is a cell's block name without "minecraft:".
+func (w *writer) blockName(x, y, z int) string {
+	return ridName(w.c.Block(uint8(x&15), int16(y), uint8(z&15), 0))
+}
+
+var ridNames sync.Map
+
+// ridName is a runtime ID's block name without "minecraft:".
+func ridName(rid uint32) string {
+	if v, ok := ridNames.Load(rid); ok {
+		return v.(string)
+	}
+	n := ""
+	if b, ok := world.BlockByRuntimeID(rid); ok {
+		n, _ = b.EncodeBlock()
+		n = strings.TrimPrefix(n, "minecraft:")
+	}
+	ridNames.Store(rid, n)
+	return n
 }
 
 func (w *writer) block(x, y, z int) world.Block {
@@ -40,6 +74,9 @@ func (w *writer) block(x, y, z int) world.Block {
 }
 
 func (w *writer) set(x, y, z int, rid uint32, water bool) {
+	if w.trace != nil {
+		w.trace(x, y, z, rid)
+	}
 	lx, lz := uint8(x&15), uint8(z&15)
 	w.c.SetBlock(lx, int16(y), lz, 0, rid)
 	if water {
@@ -93,7 +130,13 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 // place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
 // chest minecarts its mineshafts would spawn.
 func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
-	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{}}
+	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{},
+		lo: minY, hi: maxY, trace: s.trace}
+	if s.nether {
+		w.lo, w.hi = netherMinY, netherMaxY
+		s.placeNether(w)
+		return w
+	}
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 		s.buriedTreasure(w)
 	}
@@ -110,6 +153,7 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 	s.placeShipwrecks(w)
 	s.placeIgloos(w)
 	s.placePyramids(w)
+	s.placeMonuments(w)
 	s.placeDataJigsaws(w)
 	// Strongholds, then mineshafts, after the others: fitted (buried treasure 26/27 vs 23/27 with
 	// mineshafts first; ruling 41), until the order is read. In BDS's seed-100 chunks holding both, the
@@ -136,7 +180,7 @@ func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
 // it at its origin and places nothing inside one (NOTES-bedrock-exact T15). Ancient cities are the only
 // structures with pieces so far, so only their pieces answer.
 func (s *Structures) InsideStructure(x, y, z int) bool {
-	if s.data == nil {
+	if s.data == nil || s.nether {
 		return false
 	}
 	in := false
@@ -168,7 +212,7 @@ func (s *Structures) placeAncientCities(w *writer) {
 // shave with widths 1 and 5, registered in the chunks its box grown by 12 blocks in x and z reaches.
 // Feature elements are rigid pieces too, with their one-block box.
 func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjustment) []worldgen.TerrainAdjustment {
-	if s.data == nil {
+	if s.data == nil || s.nether {
 		return into
 	}
 	into = s.dataAdjustments(cx, cz, into)

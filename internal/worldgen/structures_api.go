@@ -65,8 +65,16 @@ func (g *Generator) BedrockLevelSeed() uint32 { return g.bseeds.level }
 func (g *Generator) DecorationSeed(cx, cz int) uint32 { return g.bseeds.chunk(cx, cz) }
 
 // BiomeID is Bedrock's numeric id of the biome stored at a block (its quart), as the structure biome
-// tests read it (NOTES-bedrock-structures 2.1).
-func (g *Generator) BiomeID(x, y, z int) int { return g.BiomeAt(x, y, z).EncodeBiome() }
+// tests read it (NOTES-bedrock-structures 2.1). The Nether's biomes are 2D: the quart's stored biome.
+func (g *Generator) BiomeID(x, y, z int) int {
+	if g.dim == dimNether {
+		return biomeRowDefs[g.netherN.biomes.quart(x>>2, z>>2)].EncodeBiome()
+	}
+	return g.BiomeAt(x, y, z).EncodeBiome()
+}
+
+// IsNether says whether this is a world's Nether generator.
+func (g *Generator) IsNether() bool { return g.dim == dimNether }
 
 // PreliminarySurface is the generator's preliminary surface level at the quart holding block (x, z), the
 // level its surface builder uses. The stronghold ring's village test reads it (NOTES-structures-phase2

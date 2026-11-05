@@ -37,6 +37,15 @@ type Structures struct {
 	assembled   assemblyCache
 	mineshafts  keyCache
 	strongholds keyCache
+	monuments   keyCache
+	fortresses  keyCache
+	// nether says these are the Nether's structures (fortresses and bastions, nether.go).
+	nether bool
+	// omF1, omF2 are the monument start seed's two floats (monument.go).
+	omOnce     sync.Once
+	omF1, omF2 float32
+	// trace, when set (tests only), sees every block a structure writes.
+	trace func(x, y, z int, rid uint32)
 	// spiderDone caches whether a spider corridor placed its spawner in a chunk (mineshaft.go).
 	spiderMu   sync.Mutex
 	spiderDone map[spiderKey]bool
@@ -44,9 +53,9 @@ type Structures struct {
 
 // New makes the structures of a generator's world. The generator must have Bedrock's feature data (its
 // biome files name the village biomes and the jigsaw filters); data is the install's templates and loot
-// tables, nil to place starts only.
+// tables, nil to place starts only. Given a world's Nether generator, they are the Nether's.
 func New(g *worldgen.Generator, data *Data) *Structures {
-	s := &Structures{g: g, bd: g.Data(), data: data, seed: g.Seed(), seed32: g.BedrockLevelSeed(),
+	s := &Structures{g: g, bd: g.Data(), data: data, seed: g.Seed(), seed32: g.BedrockLevelSeed(), nether: g.IsNether(),
 		villageBiomes: map[int]bool{}, villageTypes: map[int]string{}, jigsawFilters: map[string]json.RawMessage{},
 		biomeNames: map[int]string{}}
 	r := worldgen.NewBedrockRandom(s.seed32)

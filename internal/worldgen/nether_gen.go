@@ -86,7 +86,8 @@ func storeUniformBiome(c *chunk.Chunk, id uint32, height int) {
 // the Nether's terrain, biomes, surface and caves, and its decoration: the code's (springs, fire,
 // glowstone, mushrooms, ores) always, and the install's rules (fungi, roots, vines, deltas, basalt
 // columns, soul sand) only with an install read, so not in Overjava, which reads none. Overjava's own
-// Java Nether is not written (NOTES.md). Nether structures are not placed yet.
+// Java Nether is not written (NOTES.md). Its structures (fortresses, bastions) attach with
+// SetStructures, as the Overworld's do.
 func (g *Generator) Nether() *Generator {
 	n := g.dimension(dimNether)
 	n.netherN = newNetherGen(g.seed, g.bdata)
