@@ -32,6 +32,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 			return legacyFlower(4), true, nil
 		case "forest_rock_feature":
 			return codeFeat(forestRock), true, nil
+		case "ice_feature":
+			return codeFeat(legacyIce), true, nil
 		}
 		return nil, true, unimpl("legacy feature %s", name)
 	}

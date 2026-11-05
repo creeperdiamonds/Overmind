@@ -8,8 +8,7 @@ package worldgen
 // magma (over netherrack and blackstone), gravel and blackstone blobs. Then the data-driven passes run,
 // on a reseeded MT, as everywhere.
 //
-// Not placed: ancient debris (steps 14 and 15, after the passes). Its walk is read, but the state of
-// the MT after the passes and its counts are fitted and match half the blocks (the study's 51%).
+// Ancient debris (steps 14 and 15) runs after the passes: nether_debris.go.
 //
 // Fitted, not read (ruling 41: kept, labelled with their match, until the study reads the code; listed in
 // docs/stage-2-known-gaps.md). The ore sizes are in code-registered feature objects nobody has read:

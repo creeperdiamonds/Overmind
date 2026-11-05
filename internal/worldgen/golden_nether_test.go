@@ -107,6 +107,7 @@ func TestNetherMatchesBDS(t *testing.T) {
 			ng := NewWithProfile(w.seed, ProfileBedrock).Nether()
 			sc := newScratch()
 			var total, same, classSame, floorN, floorOK int
+			var debrisBDS, debrisOurs, debrisBoth int // Ancient debris recall and precision (T28).
 			conf := map[[2]string]int{}
 			classConf := map[[2]byte]int{}
 			for k, c := range w.chunks {
@@ -117,6 +118,15 @@ func TestNetherMatchesBDS(t *testing.T) {
 					}
 					real, mine := w.names[c.ids[i]], bnameString(final[cellIndex(i&15, i>>8, i>>4&15)])
 					total++
+					if real == "ancient_debris" {
+						debrisBDS++
+					}
+					if mine == "ancient_debris" {
+						debrisOurs++
+						if real == mine {
+							debrisBoth++
+						}
+					}
 					if real == mine {
 						same++
 					} else {
@@ -156,8 +166,8 @@ func TestNetherMatchesBDS(t *testing.T) {
 				cc = append(cc, string(k[0])+"<-"+string(k[1])+":"+strconv.Itoa(n))
 			}
 			slices.Sort(cc)
-			t.Logf("seed %d %s: blocks same %.4f%% (%d wrong), terrain class same %.4f%% %v, bedrock rows %d/%d; top (bds<-ours) %v",
-				w.seed, name, 100*float64(same)/float64(total), total-same, 100*float64(classSame)/float64(total), cc, floorOK, floorN, l)
+			t.Logf("seed %d %s: blocks same %.4f%% (%d wrong), terrain class same %.4f%% %v, bedrock rows %d/%d; ancient debris %d of BDS's %d, %d of ours; top (bds<-ours) %v",
+				w.seed, name, 100*float64(same)/float64(total), total-same, 100*float64(classSame)/float64(total), cc, floorOK, floorN, debrisBoth, debrisBDS, debrisOurs, l)
 			if floorOK != floorN {
 				t.Errorf("bedrock rows: %d of %d differ", floorN-floorOK, floorN)
 			}
