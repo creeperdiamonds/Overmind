@@ -239,3 +239,9 @@ func (x *Xoroshiro) NextLong() int64 { return int64(x.r.next()) }
 
 // SetSeed reseeds it as Java's setSeed does (RandomSupport's upgrade to 128 bits).
 func (x *Xoroshiro) SetSeed(seed int64) { x.r = xoroFromSeed(seed) }
+
+// BiomeHasTag says whether a biome (by name, without "minecraft:") carries a tag in its pack file.
+func (bd *BedrockData) BiomeHasTag(biome, tag string) bool {
+	b, ok := bd.biomes[biome]
+	return ok && b.tags[tag]
+}
