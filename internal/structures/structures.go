@@ -42,6 +42,7 @@ type Structures struct {
 	endCities   keyCache
 	mansions    keyCache
 	portals     keyCache
+	oceanRuins  keyCache
 	// nether says these are the Nether's structures (fortresses and bastions, nether.go); end, the
 	// End's (end cities, endcity.go).
 	nether, end bool
