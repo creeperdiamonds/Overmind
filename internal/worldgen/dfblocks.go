@@ -220,6 +220,8 @@ func lushOwnBlocks() {
 			}
 			for _, w := range bools {
 				addOwn("pointed_dripstone[thickness="+th+",vertical_direction="+dn+",waterlogged="+w+"]", "pointed_dripstone", map[string]any{"dripstone_thickness": b, "hanging": uint8(di)}, true)
+				// The sulfur caves' spike has the pointed dripstone's states (T42).
+				addOwn("sulfur_spike[thickness="+th+",vertical_direction="+dn+",waterlogged="+w+"]", "sulfur_spike", map[string]any{"dripstone_thickness": b, "hanging": uint8(di)}, true)
 			}
 		}
 	}

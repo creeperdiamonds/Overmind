@@ -61,6 +61,10 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return codeFeat(twistingVinesCluster), true, nil
 	case "minecraft:dripstone_cluster_feature":
 		return codeFeat(bedrockDripstoneCluster), true, nil
+	case "minecraft:sulfur_spike_feature":
+		return codeFeat(sulfurCfg.pointed), true, nil
+	case "minecraft:sulfur_spike_cluster_feature":
+		return codeFeat(sulfurCfg.cluster), true, nil
 	case "minecraft:large_dripstone_feature":
 		return codeFeat(bedrockLargeDripstone), true, nil
 	case "minecraft:dirt_feature":

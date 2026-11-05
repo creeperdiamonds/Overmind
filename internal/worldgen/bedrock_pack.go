@@ -614,6 +614,14 @@ func (bd *BedrockData) compile() error {
 
 // ruleBiomes is the set of our biomes a rule's filter passes.
 func (bd *BedrockData) ruleBiomes(r *packRule) (set [2]uint64) {
+	if f := strings.TrimSpace(string(r.Conditions.Filter)); f == "" || f == "null" {
+		// A rule with no minecraft:biome_filter is attached to every biome, the Nether's too, and draws
+		// its Math.Random there (NOTES-bedrock-exact T47: underwater magma).
+		for i := range biomeTableNames {
+			set[i>>6] |= 1 << (i & 63)
+		}
+		return set
+	}
 	for i := range biomeTableNames {
 		b := bd.biomes[biomeRowDefs[i].String()]
 		if b == nil {
@@ -705,8 +713,7 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	if err != nil {
 		return skip("scatter ", err)
 	}
-	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat,
-		shareCount: r.Description.PlacesFeature == "minecraft:_basalt_pillar_feature"}
+	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
 	if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
 		bd.ores[id] = o
 	}

@@ -301,19 +301,10 @@ const oreStep = 6
 // biomes are by quart, so a sub-chunk's order is quart y, then z, then x.
 func (d *decoration) chunkBiomeList(cx, cz int) []uint8 {
 	if d.g.dim == dimNether {
-		// The Nether's biomes are 2D: the list is a layer's, z then x, first appearance only.
-		list := d.biomeList[:0]
-		var seen [4]uint64
-		for z := range 16 {
-			for x := range 16 {
-				if b := d.g.netherN.biome(cx*16+x, cz*16+z); seen[b>>6]&(1<<(b&63)) == 0 {
-					seen[b>>6] |= 1 << (b & 63)
-					list = append(list, b)
-				}
-			}
-		}
-		d.biomeList = list
-		return list
+		// The Nether decorates ONE biome per chunk, the biome of the chunk's column (15, 15), always on
+		// the single-biome branch (NOTES-bedrock-exact T46, read: seed 1's basalt and debris 100%).
+		d.biomeList = append(d.biomeList[:0], d.g.netherN.biome(cx*16+15, cz*16+15))
+		return d.biomeList
 	}
 	if d.g.bedrockBiomes {
 		if k := (listKey{d.g, cx, cz}); d.listOf != k {
@@ -421,8 +412,6 @@ type bedrockRule struct {
 	sc     *bScatter
 	biomes [2]uint64
 	feat   bfeat
-	// shareCount marks the basalt pillar rule, which places nothing in a chunk of several biomes (T38).
-	shareCount bool
 }
 
 // iterations is the rule's iteration count when it is a plain number.
@@ -475,13 +464,6 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		return
 	}
 	n := sc.count(e)
-	if multi && rule.shareCount {
-		// Fitted (ruling 41; NOTES-bedrock-exact T38): BDS's pillar count in a chunk of several biomes is
-		// not read; placing none there scores best (seed 100's soul sand box 99.7635%, against 99.7256% for
-		// T29's floor(n * share) and less for skip-and-continue with the full count). Single-biome chunks
-		// are T29's, exact.
-		n = 0
-	}
 	for i := n - 1; i >= 0 && d.spend(); i-- {
 		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16}, i)
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a

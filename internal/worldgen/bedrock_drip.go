@@ -17,6 +17,31 @@ var (
 	sDripBlock     = laterState("dripstone_block")
 )
 
+// speleoCfg is a speleothem's configuration: dripstone's, and the sulfur caves' features that reuse the
+// same code with other blocks and numbers (NOTES-bedrock-exact T42, read from their registration).
+type speleoCfg struct {
+	repl                            bnameSet // Blocks the base block replaces.
+	baseName                        uint16
+	base                            bs
+	spike                           string // The pointed block's name.
+	spikeName                       uint16
+	hLo, hN                         int     // Cluster height lo + nextInt(hN).
+	wetMean, wetDev, wetMin, wetMax float32 // The cluster's clamped normal wetness.
+	rLo, rN                         int     // Cluster radius lo + nextInt(rN) in x and z.
+	densLo, densHi                  float32
+	search                          int
+}
+
+var (
+	dripCfg = &speleoCfg{repl: bnDripRepl, baseName: bnDripBlock, base: sDripBlock, spike: "pointed_dripstone", spikeName: bnPointed,
+		hLo: 3, hN: 3, wetMean: 0.1, wetDev: 0.3, wetMin: 0.1, wetMax: 1, rLo: 2, rN: 6, densLo: 0.3, densHi: 0.7, search: 12}
+	// sulfurCfg is sulfur_spike_feature's and sulfur_spike_cluster_feature's (T42): base sulfur, spike
+	// sulfur_spike, list sulfur and cinnabar, height 1..4, wetness 0 (every draw still made), radius
+	// 2..7, density 0.3..0.7, search 12.
+	sulfurCfg = &speleoCfg{repl: bnameSetOf("sulfur cinnabar"), baseName: internBName("sulfur"), base: laterState("sulfur"),
+		spike: "sulfur_spike", spikeName: internBName("sulfur_spike"), hLo: 1, hN: 4, rLo: 2, rN: 6, densLo: 0.3, densHi: 0.7, search: 12}
+)
+
 // Facing order: down, up, north, south, west, east.
 var facingVec = [6]pos{{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}}
 
@@ -27,7 +52,7 @@ const (
 
 func dripOpen(s bs) bool { return s.isAir() || bWaterMat(s) }
 func dripLava(s bs) bool { return s.has(fLava) }
-func dripBase(s bs) bool { n := bname(s); return bnDripRepl.has(n) || n == bnDripBlock }
+func (c *speleoCfg) isBase(s bs) bool { n := bname(s); return c.repl.has(n) || n == c.baseName }
 
 // dripAt reads a block, nil-safe outside the world (reported as not there).
 func dripAt(d *decoration, p pos) (bs, bool) {
@@ -37,25 +62,25 @@ func dripAt(d *decoration, p pos) (bs, bool) {
 	return d.at(p), true
 }
 
-// replaceDrip makes a listed block dripstone (0x4cc4160).
-func replaceDrip(d *decoration, p pos) bool {
-	if b, ok := dripAt(d, p); ok && bnDripRepl.has(bname(b)) {
-		return d.bput(p, sDripBlock)
+// replaceDrip makes a listed block the base block (0x4cc4160).
+func (c *speleoCfg) replaceDrip(d *decoration, p pos) bool {
+	if b, ok := dripAt(d, p); ok && c.repl.has(bname(b)) {
+		return d.bput(p, c.base)
 	}
 	return false
 }
 
 // pointedState is a pointed dripstone of a thickness, pointing up or down.
-func pointedState(thickness string, up bool) bs {
+func (c *speleoCfg) pointedState(thickness string, up bool) bs {
 	dir := "down"
 	if up {
 		dir = "up"
 	}
-	return stateOf("pointed_dripstone[thickness=" + thickness + ",vertical_direction=" + dir + ",waterlogged=false]")
+	return stateOf(c.spike + "[thickness=" + thickness + ",vertical_direction=" + dir + ",waterlogged=false]")
 }
 
 // growPointed is 0x4cc4280: h pointed dripstones from p along dir; each cell must be open and not lava.
-func growPointed(d *decoration, p pos, dir, h int, merge bool) {
+func (c *speleoCfg) growPointed(d *decoration, p pos, dir, h int, merge bool) {
 	if h <= 0 {
 		return
 	}
@@ -88,16 +113,18 @@ func growPointed(d *decoration, p pos, dir, h int, merge bool) {
 		if !ok || !dripOpen(b) || dripLava(b) {
 			return
 		}
-		d.bput(p, pointedState(th, dir == dirUp))
+		d.bput(p, c.pointedState(th, dir == dirUp))
 		p = p.add(v.x, v.y, v.z)
 	}
 }
 
 // bedrockPointedDripstone is SpeleothemFeature::place (T14).
-func bedrockPointedDripstone(d *decoration, r *bmt, p pos) bool {
+func bedrockPointedDripstone(d *decoration, r *bmt, p pos) bool { return dripCfg.pointed(d, r, p) }
+
+func (c *speleoCfg) pointed(d *decoration, r *bmt, p pos) bool {
 	bl, _ := dripAt(d, p.add(0, -1, 0))
 	ab, _ := dripAt(d, p.add(0, 1, 0))
-	below, above := dripBase(bl), dripBase(ab)
+	below, above := c.isBase(bl), c.isBase(ab)
 	var dir int
 	switch {
 	case below && above:
@@ -116,18 +143,18 @@ func bedrockPointedDripstone(d *decoration, r *bmt, p pos) bool {
 	if dir == dirUp {
 		root = p.add(0, -1, 0)
 	}
-	replaceDrip(d, root)
+	c.replaceDrip(d, root)
 	for k := range 6 {
 		if r.nextFloat() >= 0.3 {
 			a := root.add(facingVec[k].x, facingVec[k].y, facingVec[k].z)
-			replaceDrip(d, a)
+			c.replaceDrip(d, a)
 			if !r.nextBool() {
 				e := facingVec[r.nextIntN(6)]
 				b := a.add(e.x, e.y, e.z)
-				replaceDrip(d, b)
+				c.replaceDrip(d, b)
 				if !r.nextBool() {
 					e := facingVec[r.nextIntN(6)]
-					replaceDrip(d, b.add(e.x, e.y, e.z))
+					c.replaceDrip(d, b.add(e.x, e.y, e.z))
 				}
 			}
 		}
@@ -137,7 +164,7 @@ func bedrockPointedDripstone(d *decoration, r *bmt, p pos) bool {
 	if t, ok := dripAt(d, p.add(facingVec[dir].x, facingVec[dir].y, facingVec[dir].z)); f < 0.2 && ok && dripOpen(t) {
 		h = 2
 	}
-	growPointed(d, p, dir, h, false)
+	c.growPointed(d, p, dir, h, false)
 	return true
 }
 
@@ -200,23 +227,27 @@ func dripHeight(r *bmt, ml, dist int) int {
 }
 
 // bedrockDripstoneCluster is SpeleothemClusterFeature::place with Bedrock's config (T14).
-func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
+func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool { return dripCfg.cluster(d, r, p) }
+
+func (cf *speleoCfg) cluster(d *decoration, r *bmt, p pos) bool {
 	if s, ok := dripAt(d, p); !ok || !dripOpen(s) {
 		return false
 	}
-	hgt := 3 + int(r.nextIntN(3))
-	v := float32(r.nextGaussian()*0.3) + 0.1
+	hgt := cf.hLo + int(r.nextIntN(int32(cf.hN)))
+	v := float32(r.nextGaussian()*cf.wetDev) + cf.wetMean
 	wet := v
 	switch {
-	case 1 < v:
-		wet = 1
-	case v <= 0.1:
-		wet = 0.1
+	case cf.wetMax < v:
+		wet = cf.wetMax
+	case v <= cf.wetMin:
+		wet = cf.wetMin
 	}
-	lo, hi := float32(0.3), float32(0.7)
+	lo, hi := cf.densLo, cf.densHi
 	dens := float32(r.nextFloat()*(hi-lo)) + lo
-	rx, rz := 2+int(r.nextIntN(6)), 2+int(r.nextIntN(6))
-	notOpen := func(s bs) bool { return !dripOpen(s) }
+	rx, rz := cf.rLo+int(r.nextIntN(int32(cf.rN))), cf.rLo+int(r.nextIntN(int32(cf.rN)))
+	// The scan's edge (T42, read from the code's lambda): a listed block, the base block or lava. Any
+	// other block (granite, gravel, an ore ...) is no ceiling or floor.
+	edge := func(s bs) bool { return cf.isBase(s) || dripLava(s) }
 	for dx := -rx; dx <= rx; dx++ {
 		for dz := -rz; dz <= rz; dz++ {
 			k := min(rx-absInt(dx), rz-absInt(dz))
@@ -234,8 +265,8 @@ func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
 			if s, ok := dripAt(d, c); !ok || !dripOpen(s) {
 				continue
 			}
-			ceil, hasCeil := dripScan(d, c, 1, 12, dripOpen, notOpen)
-			floor, hasFloor := dripScan(d, c, -1, 12, dripOpen, notOpen)
+			ceil, hasCeil := dripScan(d, c, 1, cf.search, dripOpen, edge)
+			floor, hasFloor := dripScan(d, c, -1, cf.search, dripOpen, edge)
 			if !hasCeil && !hasFloor {
 				continue
 			}
@@ -243,7 +274,7 @@ func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
 			if r.nextFloat() < wet && hasFloor {
 				fb, _ := dripAt(d, pos{c.x, floor, c.z})
 				up, _ := dripAt(d, pos{c.x, floor + 1, c.z})
-				if !bWaterMat(fb) && bname(fb) != bnDripBlock && bname(fb) != bnPointed && !bWaterMat(up) {
+				if !bWaterMat(fb) && bname(fb) != cf.baseName && bname(fb) != cf.spikeName && !bWaterMat(up) {
 					ok := true
 					for _, o := range [5]pos{{0, 0, -1}, {1, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, -1, 0}} {
 						nb, there := dripAt(d, pos{c.x + o.x, floor + o.y, c.z + o.z})
@@ -263,7 +294,7 @@ func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
 				if cb, _ := dripAt(d, pos{c.x, ceil, c.z}); !dripLava(cb) {
 					t := int(r.nextIntN(2)) + 2
 					for i := range t {
-						if !replaceDrip(d, pos{c.x, ceil + i, c.z}) {
+						if !cf.replaceDrip(d, pos{c.x, ceil + i, c.z}) {
 							break
 						}
 					}
@@ -281,7 +312,7 @@ func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
 				if fb, _ := dripAt(d, pos{c.x, floor2, c.z}); !dripLava(fb) {
 					t := int(r.nextIntN(2)) + 2
 					for i := range t {
-						if !replaceDrip(d, pos{c.x, floor2 - i, c.z}) {
+						if !cf.replaceDrip(d, pos{c.x, floor2 - i, c.z}) {
 							break
 						}
 					}
@@ -328,10 +359,10 @@ func bedrockDripstoneCluster(d *decoration, r *bmt, p pos) bool {
 			bb := r.nextBool()
 			merge := hasCeil && bb && a > 0 && b > 0 && hasFloor2 && a+b == ceil-floor2-1
 			if hasCeil {
-				growPointed(d, pos{c.x, ceil - 1, c.z}, dirDown, a, merge)
+				cf.growPointed(d, pos{c.x, ceil - 1, c.z}, dirDown, a, merge)
 			}
 			if hasFloor2 {
-				growPointed(d, pos{c.x, floor2 + 1, c.z}, dirUp, b, merge)
+				cf.growPointed(d, pos{c.x, floor2 + 1, c.z}, dirUp, b, merge)
 			}
 		}
 	}
@@ -484,7 +515,7 @@ func bedrockLargeDripstone(d *decoration, r *bmt, p pos) bool {
 	if s, ok := dripAt(d, p); !ok || !dripOpen(s) {
 		return false
 	}
-	edge := func(s bs) bool { return dripBase(s) || dripLava(s) }
+	edge := func(s bs) bool { return dripCfg.isBase(s) || dripLava(s) }
 	ceil, okc := dripScan(d, p, 1, 30, dripOpen, edge)
 	floor, okf := dripScan(d, p, -1, 30, dripOpen, edge)
 	if !okc || !okf || floor-ceil > -5 {
