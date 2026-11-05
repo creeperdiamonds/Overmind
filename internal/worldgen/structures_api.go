@@ -32,6 +32,17 @@ func (g *Generator) GenerateColumn(pos world.ChunkPos, col *chunk.Column) {
 	g.generateInto(int(pos[0]), int(pos[1]), col.Chunk, col)
 }
 
+// GenerateBase is an Overworld chunk as GenerateChunk makes it before any structure piece is written.
+// Structures replay a neighbour chunk's post-process on it (a mineshaft corridor's spawner mark).
+func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
+	g.cache.begin()
+	defer g.cache.end()
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	writeCells(c, g.finalCells(s, cx, cz))
+	g.storeBiomes(c, s, cx, cz)
+}
+
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.
 func (g *Generator) placeStructures(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
 	if g.structs == nil {

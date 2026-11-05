@@ -34,7 +34,12 @@ type Structures struct {
 	ringOnce   sync.Once
 	ringChunks [][2]int
 
-	assembled assemblyCache
+	assembled   assemblyCache
+	mineshafts  keyCache
+	strongholds keyCache
+	// spiderDone caches whether a spider corridor placed its spawner in a chunk (mineshaft.go).
+	spiderMu   sync.Mutex
+	spiderDone map[spiderKey]bool
 }
 
 // New makes the structures of a generator's world. The generator must have Bedrock's feature data (its

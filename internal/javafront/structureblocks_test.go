@@ -14,7 +14,8 @@ import (
 // The blocks structures place that are our own types (worldgen) or Dragonfly
 // states with no Go type reach Java as their Java block: suspicious sand and
 // gravel, the flower pot (with its plant, from the block entity), the
-// dispenser and the jungle temple's redstone pieces.
+// dispenser, the mob spawner, the jungle temple's redstone pieces and the stronghold's and mineshaft's
+// blocks Dragonfly has no type for.
 func TestJavaSeesStructureBlocks(t *testing.T) {
 	world.DefaultBlockRegistry.Finalize() // as the server does at start; repeating it is safe
 	javaOf := func(b world.Block) string {
@@ -38,6 +39,10 @@ func TestJavaSeesStructureBlocks(t *testing.T) {
 		{worldgen.FlowerPot{Plant: "minecraft:azalea"}, "minecraft:potted_azalea_bush"},
 		{worldgen.FlowerPot{Plant: "minecraft:no_such_plant"}, "minecraft:flower_pot"},
 		{worldgen.Dispenser{Facing: 2, LootTable: "loot_tables/chests/jungle_temple_dispenser.json"}, "minecraft:dispenser"},
+		{worldgen.MobSpawner{Entity: "minecraft:cave_spider"}, "minecraft:spawner"},
+		{byName("minecraft:end_portal_frame", map[string]any{"minecraft:cardinal_direction": "north", "end_portal_eye_bit": uint8(1)}), "minecraft:end_portal_frame"},
+		{byName("minecraft:infested_stone_bricks", nil), "minecraft:infested_stone_bricks"},
+		{byName("minecraft:iron_chain", map[string]any{"pillar_axis": "y"}), "minecraft:iron_chain"},
 		{byName("minecraft:tripwire_hook", map[string]any{"direction": int32(0), "attached_bit": uint8(1), "powered_bit": uint8(0)}), "minecraft:tripwire_hook"},
 		{byName("minecraft:trip_wire", map[string]any{"attached_bit": uint8(1), "disarmed_bit": uint8(0), "powered_bit": uint8(0), "suspended_bit": uint8(0),
 			"minecraft:connection_east": uint8(0), "minecraft:connection_north": uint8(0), "minecraft:connection_south": uint8(0), "minecraft:connection_west": uint8(0)}), "minecraft:tripwire"},
@@ -53,7 +58,7 @@ func TestJavaSeesStructureBlocks(t *testing.T) {
 	n := 0
 	for _, b := range world.Blocks() {
 		switch b.(type) {
-		case worldgen.OwnBlock, worldgen.Brushable, worldgen.FlowerPot, worldgen.Dispenser:
+		case worldgen.OwnBlock, worldgen.Brushable, worldgen.FlowerPot, worldgen.Dispenser, worldgen.MobSpawner:
 			n++
 			name, _ := b.EncodeBlock()
 			require.NotEqual(t, "minecraft:air", javaOf(b), "%s %#v", name, b)

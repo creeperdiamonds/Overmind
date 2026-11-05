@@ -25,6 +25,9 @@ type writer struct {
 	c      *chunk.Chunk
 	rng    *worldgen.BedrockRandom
 	bes    []chunk.BlockEntity
+	carts  []minecartIntent
+	// spawned are the spider corridors that placed their spawner in this chunk.
+	spawned map[spiderKey]bool
 }
 
 func (w *writer) in(x, y, z int) bool {
@@ -84,7 +87,13 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	if s.data == nil {
 		return nil
 	}
-	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz))}
+	return s.place(cx, cz, c).bes
+}
+
+// place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
+// chest minecarts its mineshafts would spawn.
+func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
+	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{}}
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 		s.buriedTreasure(w)
 	}
@@ -102,7 +111,12 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	s.placeIgloos(w)
 	s.placePyramids(w)
 	s.placeDataJigsaws(w)
-	return w.bes
+	// Strongholds, then mineshafts, after the others: fitted (buried treasure 26/27 vs 23/27 with
+	// mineshafts first; ruling 41), until the order is read. In BDS's seed-100 chunks holding both, the
+	// stronghold's chest seeds sit at the draw index of a stronghold-only stream (P14.3).
+	s.placeStrongholds(w)
+	s.placeMineshafts(w)
+	return w
 }
 
 // citiesNear calls f with the pieces of every ancient city whose start is within reach chunks of (cx, cz).
@@ -259,6 +273,39 @@ func parseJavaState(s string) tState {
 // "minecraft:chests/ancient_city" is "loot_tables/chests/ancient_city.json".
 func bedrockLootPath(java string) string {
 	return "loot_tables/" + strings.TrimPrefix(java, "minecraft:") + ".json"
+}
+
+// keyCache keeps recently assembled code-built structures (mineshafts, strongholds) by start chunk,
+// bounded like assemblyCache.
+type keyCache struct {
+	mu    sync.Mutex
+	items map[[2]int]any
+	order [][2]int
+}
+
+func (c *keyCache) get(k [2]int, build func() any) any {
+	c.mu.Lock()
+	if v, ok := c.items[k]; ok {
+		c.mu.Unlock()
+		return v
+	}
+	c.mu.Unlock()
+	v := build()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.items == nil {
+		c.items = map[[2]int]any{}
+	}
+	if old, ok := c.items[k]; ok {
+		return old
+	}
+	if len(c.order) >= assemblyCacheSize*4 {
+		delete(c.items, c.order[0])
+		c.order = c.order[1:]
+	}
+	c.items[k] = v
+	c.order = append(c.order, k)
+	return v
 }
 
 // assemblyCache keeps recently assembled starts, bounded (plan: a small cache inside the 30 MB cap).
