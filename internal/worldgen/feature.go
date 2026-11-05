@@ -288,7 +288,7 @@ func (d *decoration) chunkAt(cx, cz int) *liveChunk {
 	i := dx*liveSpan + dz
 	l := &d.live[i]
 	if l.b == nil {
-		cb := d.g.cachedBase(d.s, cx, cz)
+		cb := d.g.decoBase(d.s, cx, cz)
 		l.b = d.s.takeBuffer()
 		cb.expand(l.b)
 		l.hasClean = false

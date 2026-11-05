@@ -51,6 +51,18 @@ func (n *netherGen) cells(cx, cz int, out *[netherHeight * 256]bs) {
 	n.carveCaves(out, cx, cz, n.seeds)
 }
 
+// singleBiomeChunk says whether every quart of chunk (cx, cz) holds biome b.
+func (n *netherGen) singleBiomeChunk(cx, cz int, b uint8) bool {
+	for i := range 4 {
+		for k := range 4 {
+			if n.biomes.quart(cx*4+i, cz*4+k) != b {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // storeBiomes writes the chunk's biomes: 2D, each quart's column from the biome source.
 func (n *netherGen) storeBiomes(c *chunk.Chunk, cx, cz int) {
 	var section [4][4][4]uint32
@@ -86,7 +98,8 @@ func storeUniformBiome(c *chunk.Chunk, id uint32, height int) {
 // the Nether's terrain, biomes, surface and caves, and its decoration: the code's (springs, fire,
 // glowstone, mushrooms, ores) always, and the install's rules (fungi, roots, vines, deltas, basalt
 // columns, soul sand) only with an install read, so not in Overjava, which reads none. Overjava's own
-// Java Nether is not written (NOTES.md). Nether structures are not placed yet.
+// Java Nether is not written (NOTES.md). Its structures (fortresses, bastions) attach with
+// SetStructures, as the Overworld's do.
 func (g *Generator) Nether() *Generator {
 	n := g.dimension(dimNether)
 	n.netherN = newNetherGen(g.seed, g.bdata)

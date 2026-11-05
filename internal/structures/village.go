@@ -56,13 +56,15 @@ func (d *Data) villagePools() map[string]*pool {
 						case ve.path == "":
 							el = &element{name: e.name} // A feature element: one jigsaw, placed as nothing.
 						default:
-							t := d.Template(ve.path)
-							if t == nil {
-								d.problem("village element %s: no template %s", e.name, ve.path)
-								continue
+							if t := d.Template(ve.path); t == nil {
+								// BDS keeps an element whose template file is absent (plains_acessory_1's
+								// misspelt path, taiga_lamp): valid, so it keeps its weight slots and draws its
+								// rotation shuffle, but never attaches (P18.7; as the bastion's, P16.3).
+								el = &element{name: e.name, missing: true}
+							} else {
+								el = &element{name: e.name, template: t, terrain: ve.terrain, bedrockLegacy: true,
+									rules: villageRuleLists[ve.rules], abandonedTargets: strings.HasSuffix(ve.tags, "_abandoned_targets")}
 							}
-							el = &element{name: e.name, template: t, terrain: ve.terrain, bedrockLegacy: true,
-								rules: villageRuleLists[ve.rules], abandonedTargets: strings.HasSuffix(ve.tags, "_abandoned_targets")}
 						}
 						els[e.name] = el
 					}

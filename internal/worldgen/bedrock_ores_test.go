@@ -93,7 +93,7 @@ func firstScatter(rule *bedrockRule, r1 *bmt, cx, cz int) (pos, bool) {
 		return pos{}, false
 	}
 	for i := rule.sc.count(e) - 1; i >= 0; i-- {
-		p := rule.sc.position(r1, e, [3]int{cx * 16, 0, cz * 16})
+		p := rule.sc.position(r1, e, [3]int{cx * 16, 0, cz * 16}, i)
 		if p[1] >= minY && p[1] <= maxY {
 			return pos{p[0], p[1], p[2]}, true
 		}

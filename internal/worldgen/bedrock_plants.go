@@ -32,6 +32,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 			return legacyFlower(4), true, nil
 		case "forest_rock_feature":
 			return codeFeat(forestRock), true, nil
+		case "ice_feature":
+			return codeFeat(legacyIce), true, nil
 		}
 		return nil, true, unimpl("legacy feature %s", name)
 	}
@@ -39,6 +41,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return nil, false, nil
 	}
 	switch id {
+	case "minecraft:nether_fossil_feature":
+		return netherFossilFeat{fc.bd}, true, nil
 	case "minecraft:pointed_dripstone_feature":
 		return codeFeat(bedrockPointedDripstone), true, nil
 	case "minecraft:delta_feature":
@@ -51,6 +55,10 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return codeFeat(hugeFungus{sWarpedStem, sWarpedWart, false}.place), true, nil
 	case "minecraft:_weeping_vines_cluster_feature":
 		return codeFeat(weepingVinesCluster), true, nil
+	case "minecraft:_basalt_pillar_feature":
+		return codeFeat(basaltPillar), true, nil
+	case "minecraft:_twisting_vines_cluster_feature":
+		return codeFeat(twistingVinesCluster), true, nil
 	case "minecraft:dripstone_cluster_feature":
 		return codeFeat(bedrockDripstoneCluster), true, nil
 	case "minecraft:large_dripstone_feature":

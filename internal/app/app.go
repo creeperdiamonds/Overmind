@@ -124,7 +124,7 @@ func Start(cfg config.Config) (*Server, error) {
 	}
 	bd := bedrockData(log, cfg.BedrockDataDir, profile)
 	gen := worldgen.NewWithData(seed, profile, bd)
-	structs := attachStructures(log, gen, cfg.BedrockDataDir)
+	structs, sd := attachStructures(log, gen, cfg.BedrockDataDir)
 	ident := provenanceIdent(profile.Name, bd, structs)
 	if old, changed, err := recordProvenance(cfg.WorldFolder, ident); err != nil {
 		log.Warn("Could not record how the world is generated", "file", provenanceFile, "error", err)
@@ -137,13 +137,22 @@ func Start(cfg config.Config) (*Server, error) {
 	guard := &offTick{g: gen}
 	// The Nether is Bedrock's for every profile (Task 10; Overjava's Java Nether is not written). Its
 	// terrain, surfaces, caves and the code's decoration need no data; the install's rules do.
-	netherGuard := &offTick{g: gen.Nether()} // Shares the Overworld generator's cache cap.
+	nether := gen.Nether() // Shares the Overworld generator's cache cap.
+	if sd != nil {
+		// Fortresses and bastions, from the same install data as the Overworld's structures.
+		nether.SetStructures(structures.New(nether, sd))
+	}
+	netherGuard := &offTick{g: nether}
 	if gen.Data() == nil {
 		log.Info("The Nether's data-driven features (fungi, roots, vines, deltas, basalt columns, soul sand blobs) are skipped: they need the Bedrock profile and a readable Bedrock install (BedrockDataDir).")
 	}
 	// The End (Task 11): Bedrock's terrain, spikes, islands, chorus and gateways, and the inactive exit
 	// portal, for every profile (it reads no data); no dragon fight yet.
-	endGuard := &offTick{g: gen.End()}
+	end := gen.End()
+	if sd != nil {
+		end.SetStructures(structures.New(end, sd)) // End cities.
+	}
+	endGuard := &offTick{g: end}
 	if !cfg.FlatWorld {
 		conf.Generator = func(dim world.Dimension) world.Generator {
 			switch dim {
@@ -485,17 +494,18 @@ func tickDistance(set, view int) int {
 // attachStructures gives the world its structures (Task 9) when the Bedrock profile has the install's
 // data: templates and loot tables come from that install. Without it structures are skipped, with one
 // log line. Loot is rolled when a generated chest is first opened.
-// It gives what the provenance record names: the structure data's fingerprint, or "none". Geodes are
+// It gives what the provenance record names: the structure data's fingerprint, or "none", and the data
+// (nil without it), which the Nether's structures use too. Geodes are
 // refused inside ancient-city pieces only when structures attach, so a world records which it had.
-func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) string {
+func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) (string, *structures.Data) {
 	if gen.Data() == nil {
 		log.Warn("Structures are skipped: they need the Bedrock profile and a readable Bedrock install (BedrockDataDir).")
-		return "none"
+		return "none", nil
 	}
 	sd, err := structures.LoadData(dir)
 	if err != nil {
 		log.Warn("Structures are skipped: the Bedrock install's structure data could not be read.", "folder", dir, "error", err)
-		return "none"
+		return "none", nil
 	}
 	st := structures.New(gen, sd)
 	gen.SetStructures(st)
@@ -505,7 +515,7 @@ func attachStructures(log *slog.Logger, gen *worldgen.Generator, dir string) str
 	for _, p := range sd.Problems {
 		log.Warn("A structure data file is skipped", "problem", p)
 	}
-	return "sha256:" + sd.Fingerprint()
+	return "sha256:" + sd.Fingerprint(), sd
 }
 
 // bedrockData reads Bedrock's feature data for the Bedrock profile. It never fails the start: with no

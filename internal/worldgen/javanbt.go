@@ -1,4 +1,4 @@
-package structures
+package worldgen
 
 import (
 	"encoding/binary"
@@ -6,7 +6,8 @@ import (
 	"math"
 )
 
-// A small reader for Java's big-endian NBT, the format of structure templates (N1 1.3). Compounds are
+// A small reader for Java's big-endian NBT, the format of structure templates (the structures
+// package's, and the fossil feature's, NOTES-bedrock-structures 1.3). Compounds are
 // map[string]any, lists []any, numbers their Go types (int8 as byte, int16, int32, int64, float32,
 // float64), arrays []byte, []int32 and []int64.
 
@@ -136,7 +137,8 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 }
 
 // readNBT reads a root compound.
-func readNBT(b []byte) (map[string]any, error) {
+// ReadJavaNBT reads a Java big-endian NBT root compound.
+func ReadJavaNBT(b []byte) (map[string]any, error) {
 	r := &nbtReader{b: b}
 	if r.u8() != 10 {
 		return nil, errNBT

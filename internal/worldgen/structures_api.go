@@ -39,16 +39,29 @@ func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	writeCells(c, g.finalCells(s, cx, cz))
+	if g.structuresFirst() {
+		// The Bedrock order: a chunk's structures see its terrain only (P21.1).
+		g.cachedBase(s, cx, cz).expandCells(&s.final)
+		writeCells(c, &s.final)
+	} else {
+		writeCells(c, g.finalCells(s, cx, cz))
+	}
 	g.storeBiomes(c, s, cx, cz)
 }
 
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.
-func (g *Generator) placeStructures(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
+// In the Bedrock order the blocks are already in the chunk's cells (structures_base.go): only the
+// block entities whose block the decoration left are added.
+func (g *Generator) placeStructures(s *chunkScratch, cx, cz int, final *[chunkCells]bs, c *chunk.Chunk, col *chunk.Column) {
 	if g.structs == nil {
 		return
 	}
-	bes := g.structs.PlaceChunk(cx, cz, c)
+	var bes []chunk.BlockEntity
+	if g.structuresFirst() {
+		bes = g.structureEntities(s, cx, cz, final)
+	} else {
+		bes = g.structs.PlaceChunk(cx, cz, c)
+	}
 	if col != nil {
 		col.BlockEntities = append(col.BlockEntities, bes...)
 	}
@@ -65,8 +78,37 @@ func (g *Generator) BedrockLevelSeed() uint32 { return g.bseeds.level }
 func (g *Generator) DecorationSeed(cx, cz int) uint32 { return g.bseeds.chunk(cx, cz) }
 
 // BiomeID is Bedrock's numeric id of the biome stored at a block (its quart), as the structure biome
-// tests read it (NOTES-bedrock-structures 2.1).
-func (g *Generator) BiomeID(x, y, z int) int { return g.BiomeAt(x, y, z).EncodeBiome() }
+// tests read it (NOTES-bedrock-structures 2.1). The Nether's biomes are 2D: the quart's stored biome.
+func (g *Generator) BiomeID(x, y, z int) int {
+	if g.dim == dimNether {
+		return biomeRowDefs[g.netherN.biomes.quart(x>>2, z>>2)].EncodeBiome()
+	}
+	return g.BiomeAt(x, y, z).EncodeBiome()
+}
+
+// IsEnd says whether this is a world's End generator.
+func (g *Generator) IsEnd() bool { return g.dim == dimEnd }
+
+// EndTerrainHeights are the End's terrain heights (first solid block from the top + 1, 0 for void) at
+// columns (local x, z) of chunk (cx, cz), from the terrain alone, as the end city's start test reads them
+// (NOTES-bedrock-end phase 8).
+func (g *Generator) EndTerrainHeights(cx, cz int, cols [][2]int) []int {
+	var cells [endHeight * 256]bs
+	g.endN.noise.fill(cx, cz, &cells, sEndStone)
+	out := make([]int, len(cols))
+	for i, c := range cols {
+		for y := endHeight - 1; y >= 0; y-- {
+			if cells[y<<8|(c[1]&15)<<4|c[0]&15] != 0 {
+				out[i] = y + 1
+				break
+			}
+		}
+	}
+	return out
+}
+
+// IsNether says whether this is a world's Nether generator.
+func (g *Generator) IsNether() bool { return g.dim == dimNether }
 
 // PreliminarySurface is the generator's preliminary surface level at the quart holding block (x, z), the
 // level its surface builder uses. The stronghold ring's village test reads it (NOTES-structures-phase2
@@ -191,3 +233,15 @@ func (x *Xoroshiro) NextIntN(n int32) int32 { return int32(x.r.nextInt(uint32(n)
 
 // NextInt is Java's nextInt(): the low 32 bits of a draw.
 func (x *Xoroshiro) NextInt() int32 { return int32(uint32(x.r.next())) }
+
+// NextLong is Java's nextLong(): one 64-bit draw.
+func (x *Xoroshiro) NextLong() int64 { return int64(x.r.next()) }
+
+// SetSeed reseeds it as Java's setSeed does (RandomSupport's upgrade to 128 bits).
+func (x *Xoroshiro) SetSeed(seed int64) { x.r = xoroFromSeed(seed) }
+
+// BiomeHasTag says whether a biome (by name, without "minecraft:") carries a tag in its pack file.
+func (bd *BedrockData) BiomeHasTag(biome, tag string) bool {
+	b, ok := bd.biomes[biome]
+	return ok && b.tags[tag]
+}

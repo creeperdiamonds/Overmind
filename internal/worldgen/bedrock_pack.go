@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sync"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,10 @@ type BedrockData struct {
 	sum    hash.Hash // Of every file read, in the order read.
 	// Warnings says what the install lacks for an exact world (a game's packs with no definitions).
 	Warnings []string
+	// fossils are the fossil feature's templates (bedrock_fossil.go), read once at load.
+	fossilOnce sync.Once
+	fossils       [8]*fossilTemplate
+	netherFossils [14]*fossilTemplate
 }
 
 type packRule struct {
@@ -246,6 +251,7 @@ func LoadBedrockData(dir string) (*BedrockData, error) {
 			"tree table chooses), so the world will not match Bedrock's. Point BedrockDataDir at a Bedrock Dedicated Server folder.",
 			packs, strings.Join(rules, ", "), missing))
 	}
+	bd.fossilTemplates()
 	return bd, nil
 }
 
@@ -699,7 +705,8 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	if err != nil {
 		return skip("scatter ", err)
 	}
-	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
+	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat,
+		shareCount: r.Description.PlacesFeature == "minecraft:_basalt_pillar_feature"}
 	if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
 		bd.ores[id] = o
 	}

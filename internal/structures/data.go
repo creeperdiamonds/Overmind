@@ -24,7 +24,10 @@ import (
 type Data struct {
 	Dir       string
 	templates map[string]string // Template path ("ancient_city/city_center/city_center_1") to its file.
-	loot      map[string]*LootTable
+	// mcstructures are the Bedrock-format templates (.mcstructure, the bastion's mobs) the packs hold, by
+	// path; they are not parsed.
+	mcstructures map[string]bool
+	loot         map[string]*LootTable
 	// jigsawFilters are the data-driven structures' biome filters (worldgen/structures/*.json).
 	jigsawFilters map[string]json.RawMessage
 	jigsaws       map[string]*jsonJigsaw // The data-driven jigsaw structures, by identifier.
@@ -49,6 +52,9 @@ type Data struct {
 
 	ancientOnce sync.Once
 	ancient     map[string]*pool
+
+	bastionOnce sync.Once
+	bastion     map[string]*pool
 	// Problems lists files that could not be read; each is skipped.
 	Problems []string
 }
@@ -141,6 +147,14 @@ func templateBytes(t *Template) int64 {
 // indexTemplates notes each .nbt file under a pack's structures folder, unless a newer pack has it.
 func (d *Data) indexTemplates(dir string) {
 	filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
+		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".mcstructure") {
+			rel, _ := filepath.Rel(dir, p)
+			if d.mcstructures == nil {
+				d.mcstructures = map[string]bool{}
+			}
+			d.mcstructures[strings.TrimSuffix(filepath.ToSlash(rel), ".mcstructure")] = true
+			return nil
+		}
 		if err != nil || e.IsDir() || !strings.HasSuffix(p, ".nbt") {
 			return nil
 		}
@@ -235,6 +249,7 @@ func (d *Data) readJigsaw(dir string) {
 				} `json:"start_height"`
 				Projection string          `json:"heightmap_projection"`
 				Adaptation string          `json:"terrain_adaptation"`
+				Step       string          `json:"step"`
 				Padding    json.RawMessage `json:"dimension_padding"`
 			} `json:"minecraft:jigsaw"`
 		}
@@ -252,7 +267,8 @@ func (d *Data) readJigsaw(dir string) {
 		}
 		js := &jsonJigsaw{id: id, startPool: j.J.StartPool, startJigsaw: j.J.StartJigsaw, maxDepth: j.J.MaxDepth,
 			maxH: min(max(j.J.MaxDistance.Horizontal, 1), 128), maxV: min(max(j.J.MaxDistance.Vertical, 1), 384),
-			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters, adaptation: j.J.Adaptation}
+			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters, adaptation: j.J.Adaptation,
+			step: stepIndex(j.J.Step)}
 		if j.J.MaxDistance.Vertical == 0 {
 			js.maxV = 384
 		}

@@ -846,3 +846,20 @@ func (s *Structures) shPost(w *writer, p *shPiece, skipAir bool) {
 		}
 	}
 }
+
+// strongholdAdjustments are the strongholds' terrain adaptation (P17.4): 1.26.60 worlds take the same
+// version branch as the mineshaft's validated height rule, and there every piece of a stronghold gets
+// the legacy bury (FeatureTerrainAdjustments setBury, the box only), registered in the chunks its box
+// grown by 12 in x and z reaches. Not measured on a world: seed 100's stronghold lies deep.
+func (s *Structures) strongholdAdjustments(cx, cz int, into []worldgen.TerrainAdjustment) []worldgen.TerrainAdjustment {
+	for _, st := range s.strongholdsNear(cx, cz, strongholdReach+1) {
+		h := s.strongholds.get(st, func() any { return s.strongholdAtStart(st[0], st[1]) }).(*stronghold)
+		for _, p := range h.pieces {
+			b := p.b
+			if (b[0]-12)>>4 <= cx && cx <= (b[3]+12)>>4 && (b[2]-12)>>4 <= cz && cz <= (b[5]+12)>>4 {
+				into = append(into, worldgen.TerrainAdjustment{Mode: worldgen.AdaptLegacyBury, Box: b})
+			}
+		}
+	}
+	return into
+}

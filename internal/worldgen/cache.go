@@ -42,6 +42,7 @@ type cacheEntry struct {
 	failed     bool // The build panicked; waiters build it again themselves.
 	base       *compactBase
 	src        *sourceResult
+	sb         *structBase // A structured base (structures_base.go).
 	bytes      int64
 	prev, next *cacheEntry
 }

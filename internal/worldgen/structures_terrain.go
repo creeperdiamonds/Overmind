@@ -20,6 +20,9 @@ const (
 	AdaptBury      // Trail ruins.
 	AdaptBeardThin // Abandoned camps.
 	AdaptJunction  // A jigsaw junction of a data-driven structure: Box[0..2] is its position, DeltaY 0.
+	// AdaptLegacyBury is the legacy bury (TA "Contribution", setBury 0xd819250): strongholds in new
+	// worlds (NOTES-structures-phase2 P17.4). Added only where the block would be air.
+	AdaptLegacyBury
 )
 
 // TerrainAdjustment is one piece's adaptation: its box (inclusive, after placement), the base lift
@@ -68,6 +71,12 @@ func newAdaptDesc(a TerrainAdjustment) adaptDesc {
 	}
 	d := adaptDesc{mode: a.Mode, minX: b[0] - 2, minY: b[1], minZ: b[2] - 2, maxX: b[3] + 2, maxY: b[4], maxZ: b[5] + 2,
 		baseY: b[1] + a.DeltaY, minW: a.MinW, maxW: a.MaxW}
+	if a.Mode == AdaptLegacyBury {
+		// The bury is non-zero within 5 blocks of the bounds in x and z and 11 in y (q < 1 below).
+		d.reach0X, d.reach1X, d.reach0Z, d.reach1Z = d.minX-5, d.maxX+5, d.minZ-5, d.maxZ+5
+		d.reach0Y, d.reach1Y = d.minY-11, d.maxY+11
+		return d
+	}
 	d.xCenter = (b[3]-b[0]+5)/2 + b[0] - 2
 	d.zCenter = (b[5]-b[2]+5)/2 + b[2] - 2
 	d.maxRadius = float32(int32(max(float32(b[3]-b[0]+5)*0.5, float32(b[5]-b[2]+5)*0.5)))
@@ -198,8 +207,9 @@ func (t terrainAdapt) touchesCell(x, y, z int) bool {
 	return false
 }
 
-// at is the contribution added to a block's density (TA "Contribution").
-func (t terrainAdapt) at(x, y, z int) float64 {
+// at is the contribution added to a block's density n (TA "Contribution"); the legacy bury only adds
+// where n and the rest of the sum leave the block air.
+func (t terrainAdapt) at(n float64, x, y, z int) float64 {
 	if t == nil {
 		return 0
 	}
@@ -214,8 +224,8 @@ func (t terrainAdapt) at(x, y, z int) float64 {
 		dx := max(x-d.maxX, d.minX-x, 0)
 		dz := max(z-d.maxZ, d.minZ-z, 0)
 		switch d.mode {
-		case AdaptBury, AdaptBeardThin, AdaptJunction:
-			continue // brAt.
+		case AdaptBury, AdaptBeardThin, AdaptJunction, AdaptLegacyBury:
+			continue // brAt, or the bury below.
 		case AdaptBeardAndShave:
 			yc := max(d.baseY, y)
 			yc = min(yc, d.maxY)
@@ -231,6 +241,22 @@ func (t terrainAdapt) at(x, y, z int) float64 {
 			}
 		case AdaptBeard:
 			sum += kernelAt(k, dx, y-d.baseY, dz) * 0.8
+		}
+	}
+	if n+br+float64(sum) <= 0 {
+		for i := range t {
+			d := &t[i]
+			if d.mode != AdaptLegacyBury || x < d.reach0X || x > d.reach1X || z < d.reach0Z || z > d.reach1Z || y < d.reach0Y || y > d.reach1Y {
+				continue
+			}
+			yb := min(max(y, d.minY), d.maxY)
+			dx := max(x-d.maxX, d.minX-x, 0)
+			dz := max(z-d.maxZ, d.minZ-z, 0)
+			dy := int(float32(y-yb) * 0.5)
+			q := float32(int(math.Sqrt(float64(dx*dx+dz*dz+dy*dy)))) / 6
+			if q <= 1 {
+				sum += 1 - max(q, 0)
+			}
 		}
 	}
 	return br + float64(sum)

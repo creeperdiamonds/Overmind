@@ -110,7 +110,7 @@ var blockTags = func() map[string]uint32 {
 }()
 
 const (
-	maxStates = 8192
+	maxStates = 16384
 	maxBlocks = 1024
 )
 

@@ -21,17 +21,25 @@ func TestBuriedTreasureMatchesBDS(t *testing.T) {
 			}
 			n++
 			col := generate(g, floorDiv(l.x, 16), floorDiv(l.z, 16))
-			got := "none"
+			// The chunk's chests with a buried treasure table (other block entities, such as a mineshaft's
+			// spawner in the same chunk, are not candidates).
+			var got []string
+			found := false
 			for _, be := range col.BlockEntities {
-				got = fmt.Sprintf("%v seed %v", be.Pos, be.Data["LootTableSeed"])
-				if be.Pos == [3]int{l.x, l.y, l.z} && be.Data["LootTableSeed"] == l.seed && be.Data["LootTable"] == l.table {
-					exact++
-					got = ""
+				if be.Data["LootTable"] != l.table {
+					continue
 				}
+				if be.Pos == [3]int{l.x, l.y, l.z} && be.Data["LootTableSeed"] == l.seed {
+					found = true
+					break
+				}
+				got = append(got, fmt.Sprintf("%v seed %v", be.Pos, be.Data["LootTableSeed"]))
 			}
-			if got != "" {
-				wrong = append(wrong, fmt.Sprintf("seed %d BDS (%d,%d,%d) seed %d, ours %s", seed, l.x, l.y, l.z, l.seed, got))
+			if found {
+				exact++
+				continue
 			}
+			wrong = append(wrong, fmt.Sprintf("seed %d BDS (%d,%d,%d) seed %d, ours %v", seed, l.x, l.y, l.z, l.seed, got))
 		}
 	}
 	t.Logf("buried treasure: %d of %d chests exact (position, table and loot seed)", exact, n)

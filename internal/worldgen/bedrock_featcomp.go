@@ -78,6 +78,8 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.geode(v)
 	case "minecraft:tree_feature":
 		f, err = fc.tree(v)
+	case "minecraft:fossil_feature":
+		f, err = fc.fossil(v)
 	default:
 		return nil, unimpl("%s", pf.kind)
 	}
@@ -288,6 +290,8 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 type bCoord struct {
 	kind     bAxisKind
 	lo, hi   int
+	step     int // fixed_grid and jittered_grid: step_size (default 1) and grid_offset.
+	offset   int
 	loE, hiE mexpr
 	expr     mexpr
 }
@@ -339,12 +343,24 @@ func (sc *bScatter) count(e *molangEnv) int {
 
 // position draws one position from the base, coordinate by coordinate in the evaluation order; an
 // expression gives the coordinate itself, a number or distribution is added to the base.
-func (sc *bScatter) position(r *bmt, e *molangEnv, base [3]int) [3]int {
+// idx is the iteration index (counting down): the grid distributions' state starts from it and is
+// carried from axis to axis in the evaluation order (T31).
+func (sc *bScatter) position(r *bmt, e *molangEnv, base [3]int, idx int) [3]int {
 	p := base
+	grid := uint32(idx)
 	for _, a := range sc.order {
 		c := &sc.axes[a]
 		if c.expr != nil {
 			p[a] = molangRound(c.expr(e))
+		} else if c.kind == bFixedGrid || c.kind == bJitteredGrid {
+			lo, hi := c.lo, c.hi
+			if c.loE != nil {
+				lo = molangRound(c.loE(e))
+			}
+			if c.hiE != nil {
+				hi = molangRound(c.hiE(e))
+			}
+			p[a] += c.gridEval(r, lo, hi, &grid)
 		} else {
 			ax := bAxis{c.kind, c.lo, c.hi}
 			if c.loE != nil {
@@ -365,6 +381,25 @@ func (sc *bScatter) position(r *bmt, e *molangEnv, base [3]int) [3]int {
 		}
 	}
 	return p
+}
+
+// gridEval is CoordRange_eval's fixed_grid (case 4) and jittered_grid (case 5), NOTES-bedrock-exact T31:
+// value = (min + offset + k*step) % range with C's signed remainder, not shifted by min again; the state
+// carried to the next axis is (k*step + offset) / range, unsigned. The jittered grid adds nextInt(step)
+// when the step is above 1.
+func (c *bCoord) gridEval(r *bmt, lo, hi int, state *uint32) int {
+	rng := int32(hi - lo + 1)
+	if rng <= 0 {
+		return lo
+	}
+	k := int32(*state)
+	step := int32(c.step)
+	v := (int32(lo) + int32(c.offset) + k*step) % rng
+	*state = uint32(k*step+int32(c.offset)) / uint32(rng)
+	if c.kind == bJitteredGrid && step > 1 {
+		v += r.nextIntN(step)
+	}
+	return int(v)
 }
 
 // parseScatterParams reads a distribution (section 3): iterations, scatter chance, coordinate order
@@ -463,16 +498,25 @@ func parseScatterParams(d map[string]json.RawMessage, bd *BedrockData) (*bScatte
 		var dist struct {
 			Distribution string             `json:"distribution"`
 			Extent       [2]json.RawMessage `json:"extent"`
+			Step         *int               `json:"step_size"`
+			Offset       int                `json:"grid_offset"`
 		}
 		if err := json.Unmarshal(raw, &dist); err != nil {
 			return nil, fmt.Errorf("coordinate %s", raw)
 		}
 		kind, ok := map[string]bAxisKind{"": bUniform, "uniform": bUniform, "gaussian": bGaussian,
-			"inverse_gaussian": bInverseGaussian, "triangle": bTriangle}[dist.Distribution]
+			"inverse_gaussian": bInverseGaussian, "triangle": bTriangle, "fixed_grid": bFixedGrid,
+			"jittered_grid": bJitteredGrid}[dist.Distribution]
 		if !ok {
 			return nil, unimpl("distribution %s", dist.Distribution)
 		}
-		c := bCoord{kind: kind}
+		c := bCoord{kind: kind, step: 1, offset: dist.Offset}
+		if dist.Step != nil {
+			if *dist.Step < 1 || *dist.Step > 1<<16 {
+				return nil, fmt.Errorf("step_size %d out of range", *dist.Step)
+			}
+			c.step = *dist.Step
+		}
 		for j, raw := range dist.Extent {
 			f, n, isNum, err := value(raw)
 			if err != nil {
@@ -517,7 +561,7 @@ func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	n := f.sc.count(e)
 	ok, last := false, p
 	for i := n - 1; i >= 0 && d.spend(); i-- {
-		q := f.sc.position(r, e, [3]int{p.x, p.y, p.z})
+		q := f.sc.position(r, e, [3]int{p.x, p.y, p.z}, i)
 		if at, k := f.f.place(d, r, pos{q[0], q[1], q[2]}); k {
 			ok, last = true, at
 		}
@@ -589,7 +633,30 @@ func (f *singleBlockFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	if f.placement && !bedrockMayPlace(d, name, p) {
 		return p, false
 	}
-	return p, d.bput(p, f.blocks[k])
+	b := f.blocks[k]
+	if bname(b) == bnCocoa {
+		// Cocoa faces the log it hangs on (T31: Bedrock's direction state, the side of the log).
+		for _, a := range [4]dir{dNorth, dSouth, dWest, dEast} {
+			if d.at(p.step(a)).tagged(tagLogs) {
+				b = cocoaFacing(b, a)
+				break
+			}
+		}
+	}
+	return p, d.bput(p, b)
+}
+
+var bnCocoa = internBName("cocoa")
+
+// cocoaFacing is a cocoa state of the same age facing a.
+func cocoaFacing(b bs, a dir) bs {
+	for age := range 3 {
+		if b == stateOf(fmt.Sprintf("cocoa[age=%d,facing=north]", age)) || b == stateOf(fmt.Sprintf("cocoa[age=%d,facing=south]", age)) ||
+			b == stateOf(fmt.Sprintf("cocoa[age=%d,facing=west]", age)) || b == stateOf(fmt.Sprintf("cocoa[age=%d,facing=east]", age)) {
+			return stateOf(fmt.Sprintf("cocoa[age=%d,facing=%s]", age, dirName(a)))
+		}
+	}
+	return b
 }
 
 func (fc *featCompiler) singleBlock(v map[string]json.RawMessage) (bfeat, error) {

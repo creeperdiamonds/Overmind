@@ -29,11 +29,15 @@ const (
 	AbandonedCamp
 	Mineshaft
 	Stronghold
+	Fortress // The Nether's: fortress and bastion share one placement (nether.go).
+	Bastion
+	EndCity // The End's (endcity.go).
 	numKinds
 )
 
 var kindNames = [numKinds]string{"village", "scattered", "monument", "mansion", "pillager_outpost", "buried_treasure", "shipwreck",
-	"ocean_ruin", "ruined_portal", "ancient_city", "trail_ruins", "trial_chambers", "abandoned_camp", "mineshaft", "stronghold"}
+	"ocean_ruin", "ruined_portal", "ancient_city", "trail_ruins", "trial_chambers", "abandoned_camp", "mineshaft", "stronghold",
+	"fortress", "bastion_remnant", "end_city"}
 
 func (k Kind) String() string { return kindNames[k] }
 
@@ -61,6 +65,9 @@ var spreads = [numKinds]spread{
 	TrailRuins:     {34, 8, 83469867, false, true},
 	TrialChambers:  {34, 12, 94251327, false, true},
 	AbandonedCamp:  {37, 8, 91231127, false, true},
+	Fortress:       {30, 4, 30084232, false, false}, // N1 2.2 (NetherStructureFeatureHelper).
+	Bastion:        {30, 4, 30084232, false, false},
+	EndCity:        {20, 11, 10387313, true, false}, // NOTES-bedrock-end phase 8.
 }
 
 // Region seed multipliers: Java's -0x66c60af8 and -0xea9a42b truncated to 32 bits (N1 2.1).
@@ -127,6 +134,8 @@ func (st Start) random() *worldgen.BedrockRandom {
 	r := worldgen.NewBedrockRandom(st.rseed)
 	if spreads[st.Kind].triangular {
 		r.Consume(4)
+	} else if st.Kind == Fortress || st.Kind == Bastion {
+		r.Consume(3) // The two placement draws and the fortress-or-bastion draw (P15.2).
 	} else {
 		r.Consume(2)
 	}
@@ -207,6 +216,10 @@ func (s *Structures) StartIn(k Kind, cx, cz int) (Start, bool) {
 		return Start{Kind: k, CX: cx, CZ: cz}, s.mineshaftAt(cx, cz)
 	case Stronghold:
 		return Start{Kind: k, CX: cx, CZ: cz}, s.strongholdAt(cx, cz)
+	case Fortress, Bastion:
+		sp := spreads[k]
+		st, ok := s.netherStart(floorDiv(cx, sp.spacing), floorDiv(cz, sp.spacing))
+		return st, ok && st.Kind == k && st.CX == cx && st.CZ == cz
 	}
 	sp := spreads[k]
 	r := worldgen.NewBedrockRandom(0)

@@ -116,7 +116,7 @@ func (c *ctx) get(x, y, z int) uint32 {
 	if !c.w.in(wx, wy, wz) {
 		return airRID()
 	}
-	return c.w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0)
+	return c.w.chunk().Block(uint8(wx&15), int16(wy), uint8(wz&15), 0)
 }
 
 func (c *ctx) set(x, y, z int, rid uint32) {
@@ -205,7 +205,7 @@ func (w *writer) liquidAt(x, y, z int) bool {
 	if _, ok := w.block(x, y, z).(world.Liquid); ok {
 		return true
 	}
-	return w.c.Block(uint8(x&15), int16(y), uint8(z&15), 1) != airRID()
+	return w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 1) != airRID()
 }
 
 // chunkBox is the chunk's box.

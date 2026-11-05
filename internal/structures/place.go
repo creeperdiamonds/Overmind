@@ -22,36 +22,87 @@ import (
 // writer is one chunk being written.
 type writer struct {
 	cx, cz int
-	c      *chunk.Chunk
+	c      *chunk.Chunk         // Use chunk(): made on first use when mk is set.
+	mk     func() *chunk.Chunk // Makes the chunk (PlaceLogged), so a chunk no piece reaches is never built.
 	rng    *worldgen.BedrockRandom
+	seed   uint32 // The chunk's post-process seed, which rng starts from for each structure type.
 	bes    []chunk.BlockEntity
 	carts  []minecartIntent
 	// spawned are the spider corridors that placed their spawner in this chunk.
 	spawned map[spiderKey]bool
+	// spawns are the mobs the structures would spawn here (elder guardians, piglins, hoglins): recorded,
+	// not spawned, until mobs exist (stage 4; docs/stage-2-known-gaps.md).
+	spawns []spawnIntent
+	// lo, hi are the dimension's block range: the Overworld's -64..319 or the Nether's 0..127.
+	lo, hi int
+	// trace, when set (tests), sees every block a structure writes.
+	trace func(x, y, z int, rid uint32)
+	// log, when set, hears every block written, with its second-layer water (PlaceLogged).
+	log func(x, y, z int, rid uint32, water bool)
+}
+
+// spawnIntent is a mob a structure would spawn at a block.
+type spawnIntent struct {
+	Pos    [3]int
+	Entity string
+}
+
+func (w *writer) chunk() *chunk.Chunk {
+	if w.c == nil {
+		w.c = w.mk()
+	}
+	return w.c
 }
 
 func (w *writer) in(x, y, z int) bool {
-	return x>>4 == w.cx && z>>4 == w.cz && y >= minY && y <= maxY
+	return x>>4 == w.cx && z>>4 == w.cz && y >= w.lo && y <= w.hi
+}
+
+// blockName is a cell's block name without "minecraft:".
+func (w *writer) blockName(x, y, z int) string {
+	return ridName(w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0))
+}
+
+var ridNames sync.Map
+
+// ridName is a runtime ID's block name without "minecraft:".
+func ridName(rid uint32) string {
+	if v, ok := ridNames.Load(rid); ok {
+		return v.(string)
+	}
+	n := ""
+	if b, ok := world.BlockByRuntimeID(rid); ok {
+		n, _ = b.EncodeBlock()
+		n = strings.TrimPrefix(n, "minecraft:")
+	}
+	ridNames.Store(rid, n)
+	return n
 }
 
 func (w *writer) block(x, y, z int) world.Block {
-	b, _ := world.BlockByRuntimeID(w.c.Block(uint8(x&15), int16(y), uint8(z&15), 0))
+	b, _ := world.BlockByRuntimeID(w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0))
 	return b
 }
 
 func (w *writer) set(x, y, z int, rid uint32, water bool) {
+	if w.trace != nil {
+		w.trace(x, y, z, rid)
+	}
+	if w.log != nil {
+		w.log(x, y, z, rid, water)
+	}
 	lx, lz := uint8(x&15), uint8(z&15)
-	w.c.SetBlock(lx, int16(y), lz, 0, rid)
+	w.chunk().SetBlock(lx, int16(y), lz, 0, rid)
 	if water {
-		w.c.SetBlock(lx, int16(y), lz, 1, waterRID())
-	} else if w.c.Block(lx, int16(y), lz, 1) != airRID() {
-		w.c.SetBlock(lx, int16(y), lz, 1, airRID())
+		w.chunk().SetBlock(lx, int16(y), lz, 1, waterRID())
+	} else if w.chunk().Block(lx, int16(y), lz, 1) != airRID() {
+		w.chunk().SetBlock(lx, int16(y), lz, 1, airRID())
 	}
 }
 
 // height is the chunk's heightmap at a column: one above the highest block that is not air.
 func (w *writer) height(x, z int) int {
-	return int(w.c.HighestBlock(uint8(x&15), uint8(z&15))) + 1
+	return int(w.chunk().HighestBlock(uint8(x&15), uint8(z&15))) + 1
 }
 
 // chestEntity is a chest's block entity with a loot table and seed.
@@ -87,37 +138,71 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	if s.data == nil {
 		return nil
 	}
-	return s.place(cx, cz, c).bes
+	return s.place(cx, cz, c, nil).bes
+}
+
+// PlaceLogged is PlaceChunk reporting every block it writes: the generator places structures into a
+// chunk's terrain before decorating it (NOTES-structures-phase2 P21.1, worldgen/structures_base.go).
+// The chunk is made only when a piece first reads or writes it.
+func (s *Structures) PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write func(x, y, z int, rid uint32, water bool)) []chunk.BlockEntity {
+	if s.data == nil {
+		return nil
+	}
+	return s.placeWith(cx, cz, nil, chunkOf, write).bes
 }
 
 // place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
 // chest minecarts its mineshafts would spawn.
-func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
-	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{}}
-	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
-		s.buriedTreasure(w)
+func (s *Structures) place(cx, cz int, c *chunk.Chunk, log func(x, y, z int, rid uint32, water bool)) *writer {
+	return s.placeWith(cx, cz, c, nil, log)
+}
+
+func (s *Structures) placeWith(cx, cz int, c *chunk.Chunk, mk func() *chunk.Chunk, log func(x, y, z int, rid uint32, water bool)) *writer {
+	w := &writer{cx: cx, cz: cz, c: c, mk: mk, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), seed: s.g.DecorationSeed(cx, cz), spawned: map[spiderKey]bool{},
+		lo: minY, hi: maxY, trace: s.trace, log: log}
+	if s.nether {
+		w.lo, w.hi = netherMinY, netherMaxY
+		s.placeNether(w)
+		return w
 	}
-	if st, ok := s.StartIn(Scattered, cx, cz); ok {
-		switch st.Piece {
-		case "witch_hut":
-			s.witchHut(w)
-		case "jungle_temple":
-			s.jungleTemple(w)
+	if s.end {
+		w.lo, w.hi = endMinY, endMaxY
+		s.placeEndCities(w)
+		return w
+	}
+	// Each structure type post-processes with the chunk's random seeded afresh (P17.2), in the
+	// registry's order (P18.4: village, stronghold, the scattered feature, mineshaft, mansion, buried
+	// treasure, outpost, monument, ocean ruin, shipwreck, ruined portal, ancient city), which decides
+	// only which blocks win where two types overlap. The data-driven jigsaws are not in that list (their
+	// pass was not read): last.
+	scattered := func(w *writer) {
+		if st, ok := s.StartIn(Scattered, cx, cz); ok {
+			switch st.Piece {
+			case "witch_hut":
+				s.witchHut(w)
+			case "jungle_temple":
+				s.jungleTemple(w)
+			}
+		}
+		s.placeIgloos(w)
+		s.placePyramids(w)
+	}
+	treasure := func(w *writer) {
+		if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
+			s.buriedTreasure(w)
 		}
 	}
-	s.placeAncientCities(w)
-	s.placeVillages(w)
-	s.placeShipwrecks(w)
-	s.placeIgloos(w)
-	s.placePyramids(w)
-	s.placeDataJigsaws(w)
-	// Strongholds, then mineshafts, after the others: fitted (buried treasure 26/27 vs 23/27 with
-	// mineshafts first; ruling 41), until the order is read. In BDS's seed-100 chunks holding both, the
-	// stronghold's chest seeds sit at the draw index of a stronghold-only stream (P14.3).
-	s.placeStrongholds(w)
-	s.placeMineshafts(w)
+	for _, place := range []func(*writer){s.placeVillages, s.placeStrongholds, scattered, s.placeMineshafts, s.placeMansions, treasure,
+		s.placeMonuments, s.placeOceanRuins, s.placeShipwrecks, s.placeRuinedPortals, s.placeAncientCities} {
+		w.reseed()
+		place(w)
+	}
+	s.placeDataDriven(w)
 	return w
 }
+
+// reseed starts the chunk's post-process random again, as BDS does before each structure type (P17.2).
+func (w *writer) reseed() { w.rng.SetSeed(w.seed) }
 
 // citiesNear calls f with the pieces of every ancient city whose start is within reach chunks of (cx, cz).
 func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
@@ -136,7 +221,7 @@ func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
 // it at its origin and places nothing inside one (NOTES-bedrock-exact T15). Ancient cities are the only
 // structures with pieces so far, so only their pieces answer.
 func (s *Structures) InsideStructure(x, y, z int) bool {
-	if s.data == nil {
+	if s.data == nil || s.nether || s.end {
 		return false
 	}
 	in := false
@@ -156,8 +241,11 @@ func (s *Structures) placeAncientCities(w *writer) {
 	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
 	s.citiesNear(w.cx, w.cz, ancientReach, func(pieces []*piece) {
 		for _, p := range pieces {
-			if p.elem.template != nil && p.box.intersects(chunkBox) {
+			switch {
+			case p.elem.template != nil && p.box.intersects(chunkBox):
 				s.placeTemplate(w, p)
+			case p.elem.template == nil && p.elem.name == sculkCityFeature && w.in(p.pos[0], p.pos[1], p.pos[2]):
+				s.sculkElement(w, p.pos)
 			}
 		}
 	})
@@ -168,11 +256,12 @@ func (s *Structures) placeAncientCities(w *writer) {
 // shave with widths 1 and 5, registered in the chunks its box grown by 12 blocks in x and z reaches.
 // Feature elements are rigid pieces too, with their one-block box.
 func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjustment) []worldgen.TerrainAdjustment {
-	if s.data == nil {
+	if s.data == nil || s.nether || s.end {
 		return into
 	}
 	into = s.dataAdjustments(cx, cz, into)
 	into = s.villageAdjustments(cx, cz, into)
+	into = s.strongholdAdjustments(cx, cz, into)
 	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
 		for _, p := range pieces {
 			b := p.box
@@ -188,7 +277,11 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 // placeTemplate writes a rigid template piece's blocks inside the chunk, in template order. Jigsaw
 // blocks become their final state; structure voids leave the world alone. The ancient city's
 // degradation processors are not applied (their random was not read, N2 1.8).
-func (s *Structures) placeTemplate(w *writer, p *piece) {
+func (s *Structures) placeTemplate(w *writer, p *piece) { s.placeTemplateWith(w, p, nil) }
+
+// placeTemplateWith is placeTemplate; with xr (a data-driven piece, P20.5) every loot container it
+// places takes its seed from xr instead of the chunk's MT.
+func (s *Structures) placeTemplateWith(w *writer, p *piece, xr *worldgen.Xoroshiro) {
 	t := p.elem.template
 	var rr *worldgen.BedrockRandom
 	if len(p.elem.rules) > 0 {
@@ -246,7 +339,22 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 		if p.elem.legacy && res.name == "air" {
 			continue // A legacy element places no air (Java's LegacySinglePoolElement).
 		}
-		if lt, ok := b.nbt["LootTable"].(string); ok && lt != "" && (res.name == "chest" || res.name == "trapped_chest") {
+		lt, _ := b.nbt["LootTable"].(string)
+		if id, ok := containerIDs[res.name]; ok && xr != nil && b.nbt != nil {
+			// Every container block with NBT draws a word, as Java's template placement gives any
+			// randomizable container a seed (nextLong()), and one with a table keeps its low word: every
+			// container of the four measured worlds' trial chambers and camps (1,519) has its seed in its
+			// chunk's stream (TestDataJigsawContainersMatchBDS).
+			seed := int32(xr.NextLong())
+			w.set(x, y, z, res.rid, res.waterlog)
+			d := map[string]any{"id": id}
+			if lt != "" {
+				d["LootTable"], d["LootTableSeed"] = bedrockLootPath(lt), seed
+			}
+			w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: d})
+			continue
+		}
+		if lt != "" && xr == nil && (res.name == "chest" || res.name == "trapped_chest") {
 			w.chest(x, y, z, res.rid, bedrockLootPath(lt))
 			continue
 		}

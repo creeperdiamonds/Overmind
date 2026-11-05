@@ -107,6 +107,10 @@ func TestNetherMatchesBDS(t *testing.T) {
 			ng := NewWithProfile(w.seed, ProfileBedrock).Nether()
 			sc := newScratch()
 			var total, same, classSame, floorN, floorOK int
+			// Recall and precision of single features: ancient debris (T28), basalt (T29's pillars),
+			// twisting vines (T30).
+			tracked := []string{"ancient_debris", "basalt", "twisting_vines"}
+			var tBDS, tOurs, tBoth [3]int
 			conf := map[[2]string]int{}
 			classConf := map[[2]byte]int{}
 			for k, c := range w.chunks {
@@ -117,6 +121,17 @@ func TestNetherMatchesBDS(t *testing.T) {
 					}
 					real, mine := w.names[c.ids[i]], bnameString(final[cellIndex(i&15, i>>8, i>>4&15)])
 					total++
+					for j, n := range tracked {
+						if real == n {
+							tBDS[j]++
+						}
+						if mine == n {
+							tOurs[j]++
+							if real == mine {
+								tBoth[j]++
+							}
+						}
+					}
 					if real == mine {
 						same++
 					} else {
@@ -156,8 +171,8 @@ func TestNetherMatchesBDS(t *testing.T) {
 				cc = append(cc, string(k[0])+"<-"+string(k[1])+":"+strconv.Itoa(n))
 			}
 			slices.Sort(cc)
-			t.Logf("seed %d %s: blocks same %.4f%% (%d wrong), terrain class same %.4f%% %v, bedrock rows %d/%d; top (bds<-ours) %v",
-				w.seed, name, 100*float64(same)/float64(total), total-same, 100*float64(classSame)/float64(total), cc, floorOK, floorN, l)
+			t.Logf("seed %d %s: blocks same %.4f%% (%d wrong), terrain class same %.4f%% %v, bedrock rows %d/%d; ancient debris %d of BDS's %d, %d of ours; basalt %d of BDS's %d, %d of ours; twisting vines %d of BDS's %d, %d of ours; top (bds<-ours) %v",
+				w.seed, name, 100*float64(same)/float64(total), total-same, 100*float64(classSame)/float64(total), cc, floorOK, floorN, tBoth[0], tBDS[0], tOurs[0], tBoth[1], tBDS[1], tOurs[1], tBoth[2], tBDS[2], tOurs[2], l)
 			if floorOK != floorN {
 				t.Errorf("bedrock rows: %d of %d differ", floorN-floorOK, floorN)
 			}

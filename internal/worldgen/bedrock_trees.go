@@ -311,9 +311,21 @@ type bTreeFeat struct {
 	canopy bCanopy
 }
 
+// place grows the tree; its output position is above the trunk's top log (trunk x and z, top log y + 1),
+// which a sequence hands on (NOTES-bedrock-exact T31: the jungle tree's cocoa sits 4 and 5 under it).
 func (f *bTreeFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	h := f.trunk.height(r)
-	return p, f.trunk.place(d, &f.t, r, p, h, f.canopy)
+	if !f.trunk.place(d, &f.t, r, p, h, f.canopy) {
+		return p, false
+	}
+	top := p
+	if !d.at(p).tagged(tagLogs) {
+		return pos{p.x, p.y + h, p.z}, true
+	}
+	for top.y < maxY && d.at(top.step(dUp)).tagged(tagLogs) {
+		top.y++
+	}
+	return pos{p.x, top.y + 1, p.z}, true
 }
 
 func (fc *featCompiler) tree(v map[string]json.RawMessage) (bfeat, error) {
