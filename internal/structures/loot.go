@@ -52,8 +52,13 @@ type lootFunc struct {
 	data   floatRange // set_data
 	dmg    [2]float64 // set_damage
 	levels floatRange // enchant_with_levels
-	set    bool       // The function's value was read.
-	conds  []lootCond
+	values floatRange // random_aux_value, set_ominous_bottle's amplifier, random_block_state's values
+	// enchants are specific_enchants' level ranges (one draw for each listed enchantment whose range is
+	// wider than one level, NOTES-loot-trial-bastion T2a).
+	enchants []floatRange
+	stew     int  // set_stew_effect's number of effects.
+	set      bool // The function's value was read.
+	conds    []lootCond
 }
 
 type lootCond struct {
@@ -201,6 +206,10 @@ func parseFunc(raw json.RawMessage) lootFunc {
 		Data       json.RawMessage `json:"data"`
 		Levels     json.RawMessage `json:"levels"`
 		Damage     struct{ Min, Max float64 }
+		Values     json.RawMessage   `json:"values"`
+		Amplifier  json.RawMessage   `json:"amplifier"`
+		Enchants   []json.RawMessage `json:"enchants"`
+		Effects    []json.RawMessage `json:"effects"`
 		Conditions []json.RawMessage `json:"conditions"`
 	}
 	json.Unmarshal(raw, &f)
@@ -214,14 +223,36 @@ func parseFunc(raw json.RawMessage) lootFunc {
 		lf.dmg, lf.set = [2]float64{f.Damage.Min, f.Damage.Max}, true
 	case "enchant_with_levels":
 		lf.set = json.Unmarshal(f.Levels, &lf.levels) == nil
-	case "enchant_randomly":
+	case "enchant_randomly", "random_dye":
+		lf.set = true
+	case "random_aux_value", "random_block_state":
+		lf.set = json.Unmarshal(f.Values, &lf.values) == nil
+	case "set_ominous_bottle":
+		lf.set = json.Unmarshal(f.Amplifier, &lf.values) == nil
+	case "set_stew_effect":
+		lf.stew, lf.set = len(f.Effects), true
+	case "specific_enchants":
+		for _, e := range f.Enchants {
+			var en struct {
+				Level json.RawMessage `json:"level"`
+			}
+			var r floatRange
+			if json.Unmarshal(e, &en) == nil && en.Level != nil && json.Unmarshal(en.Level, &r) == nil {
+				lf.enchants = append(lf.enchants, r)
+			} else {
+				lf.enchants = append(lf.enchants, floatRange{min: 1, max: 1})
+			}
+		}
 		lf.set = true
 	}
 	return lf
 }
 
 // condsPass runs the conditions a chest can test: random_chance draws nextFloat() < chance (N2 1.1
-// chance(p)); any other condition (killed by player, ...) fails, as nothing kills a chest.
+// chance(p)). The kill conditions fail, as nothing kills a chest. The others need the context (the
+// chest's biome: biome_has_tag, ...), draw nothing, and BDS evaluates them (NOTES-loot-trial-bastion T2b
+// rule 3); the fill has no context here, so they pass (not evaluated; the camp maps' "biome_has_tag !="
+// conditions all passed in BDS's chests).
 func condsPass(cs []lootCond, rng *worldgen.BedrockRandom) bool {
 	for _, c := range cs {
 		switch c.kind {
@@ -232,7 +263,7 @@ func condsPass(cs []lootCond, rng *worldgen.BedrockRandom) bool {
 			if c.chance < 1 && !(rng.NextFloat() < float32(c.chance)) {
 				return false
 			}
-		default:
+		case "killed_by_player", "killed_by_player_or_pets", "killed_by_entity", "entity_properties", "has_mark_variant":
 			return false
 		}
 	}
@@ -241,8 +272,8 @@ func condsPass(cs []lootCond, rng *worldgen.BedrockRandom) bool {
 
 // items is getRandomItems (LR): every pool in order.
 // picks is what is left of a fill's entry picks (lootPicksPer).
-func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int, picks *int) []item.Stack {
-	var out []item.Stack
+func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int, picks *int) []lootStack {
+	var out []lootStack
 	for i := range t.Pools {
 		out = d.addRandomItems(&t.Pools[i], rng, depth, picks, out)
 	}
@@ -251,7 +282,7 @@ func (d *Data) items(t *LootTable, rng *worldgen.BedrockRandom, depth int, picks
 
 // addRandomItems is LootPool::addRandomItems (LR). Luck is 0 when a chest is opened, so bonus rolls and
 // qualities add nothing, but the bonus float is still drawn.
-func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth int, picks *int, out []item.Stack) []item.Stack {
+func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth int, picks *int, out []lootStack) []lootStack {
 	if !condsPass(p.conds, rng) {
 		return out
 	}
@@ -302,12 +333,10 @@ func (d *Data) addRandomItems(p *lootPool, rng *worldgen.BedrockRandom, depth in
 }
 
 // createItem makes an entry's items (LR): an item, a referenced table with the same random, or nothing.
-func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, picks *int, out []item.Stack) []item.Stack {
+func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, picks *int, out []lootStack) []lootStack {
 	switch e.kind {
 	case "item":
-		if s, ok := d.makeItem(e, rng); ok {
-			out = append(out, s)
-		}
+		out = append(out, d.makeItem(e, rng)...)
 	case "loot_table":
 		if sub := d.loot[e.name]; sub != nil && depth < 8 {
 			out = append(out, d.items(sub, rng, depth+1, picks)...)
@@ -316,17 +345,37 @@ func (d *Data) createItem(e *lootEntry, rng *worldgen.BedrockRandom, depth int, 
 	return out
 }
 
+// lootStack is a stack the fill places: an item, or (it == nil) an item Dragonfly has no type for, which
+// still takes its place in the fill's shuffles and leaves its slot empty (T2b rule 4).
+type lootStack struct {
+	s item.Stack
+	n int
+}
+
+func (l lootStack) grow(by int) lootStack {
+	l.n += by
+	if l.s.Empty() {
+		return l
+	}
+	l.s = l.s.Grow(by)
+	return l
+}
+
+// lootItemNames are loot names BDS stores as another item (T2b rule 4).
+var lootItemNames = map[string]string{"minecraft:fireball": "minecraft:fire_charge"}
+
 // makeItem is LootItem::createItem (LR): a stack of one, then each function whose conditions pass, in
-// order, with the loot random.
-func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, bool) {
+// order, with the loot random. An item the server does not know still runs its functions (T2b rule
+// 4). A count above the item's stack size is cut into full stacks with no draws (T2b rule 2).
+func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) []lootStack {
 	name := e.name
 	if !strings.Contains(name, ":") {
 		name = "minecraft:" + name
 	}
-	it, ok := world.ItemByName(name, 0)
-	if !ok {
-		return item.Stack{}, false
+	if to, ok := lootItemNames[name]; ok {
+		name = to
 	}
+	it, known := world.ItemByName(name, 0)
 	count, meta, damage := 1, 0, 0
 	var enchants []item.Enchantment
 	for _, f := range e.functions {
@@ -342,19 +391,58 @@ func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, 
 			} else {
 				meta = int(math.Floor(f.data.min))
 			}
+		case "random_aux_value": // Always drawn (T2b rule 1).
+			meta = f.values.draw(rng)
+		case "set_ominous_bottle":
+			meta = f.values.draw(rng)
+		case "random_block_state":
+			if _, isBlock := it.(world.Block); known && isBlock {
+				f.values.draw(rng) // The state value itself is not applied.
+			}
+		case "set_stew_effect":
+			if name == "minecraft:suspicious_stew" && f.stew > 0 {
+				rng.NextIntN(int32(f.stew)) // The effect (aux value) is not applied: Dragonfly's stew types differ.
+			}
+		case "specific_enchants":
+			for _, r := range f.enchants {
+				if lo, hi := int(math.Floor(r.min)), int(math.Floor(r.max)); hi > lo {
+					rng.NextIntN(int32(hi - lo + 1))
+				}
+			}
+		case "random_dye":
+			if strings.HasPrefix(name, "minecraft:leather_") || name == "minecraft:wolf_armor" { // Dyeable items.
+				rng.NextIntN(16)
+				f1 := rng.NextFloat()
+				if f1 < 0.3 {
+					rng.NextIntN(16)
+				}
+				if rng.NextFloat() < 0.2 {
+					rng.NextIntN(16)
+				} // The colour itself is not applied.
+			}
 		case "set_damage":
-			if dr, ok := it.(item.Durable); ok { // Only damageable items draw (LR).
+			if dr, ok := it.(item.Durable); known && ok { // Only damageable items draw (LR).
 				fr := float64(rng.NextFloat())
 				mx := float64(dr.DurabilityInfo().MaxDurability)
 				damage = int(math.Floor(mx * (1 - (f.dmg[0] + (f.dmg[1]-f.dmg[0])*fr))))
 			}
 		case "enchant_randomly":
 			rng.NextIntN(30) // LR: always drawn from the loot random first.
-			enchants = append(enchants, randomEnchant(it))
+			if known {
+				enchants = append(enchants, randomEnchant(it))
+			}
 		case "enchant_with_levels":
 			f.levels.draw(rng)
-			enchants = append(enchants, randomEnchant(it))
+			if known {
+				enchants = append(enchants, randomEnchant(it))
+			}
 		}
+	}
+	if count <= 0 {
+		return nil
+	}
+	if !known {
+		return cutStacks(lootStack{n: 1}, count, 64)
 	}
 	if meta > 0 {
 		if m, ok := world.ItemByName(name, int16(meta)); ok {
@@ -362,11 +450,6 @@ func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, 
 		}
 	}
 	s := item.NewStack(it, 1)
-	count = min(max(count, 0), s.MaxCount()) // Clamped to [0, max stack] (LR set_count).
-	if count <= 0 {
-		return item.Stack{}, false
-	}
-	s = s.Grow(count - 1)
 	if damage > 0 {
 		s = s.Damage(damage)
 	}
@@ -378,11 +461,22 @@ func (d *Data) makeItem(e *lootEntry, rng *worldgen.BedrockRandom) (item.Stack, 
 	}
 	if len(keep) > 0 {
 		if _, isBook := it.(item.Book); isBook {
-			s = item.NewStack(item.EnchantedBook{}, count)
+			s = item.NewStack(item.EnchantedBook{}, 1)
 		}
 		s = s.WithEnchantments(keep...)
 	}
-	return s, true
+	return cutStacks(lootStack{s: s, n: 1}, count, s.MaxCount())
+}
+
+// cutStacks is a stack of count, in stacks of at most max.
+func cutStacks(one lootStack, count, max int) []lootStack {
+	var out []lootStack
+	for count > 0 {
+		n := min(count, max)
+		out = append(out, one.grow(n-1))
+		count -= n
+	}
+	return out
 }
 
 // randomEnchant picks the enchantment of enchant_randomly and enchant_with_levels. BDS chooses it with a
@@ -424,12 +518,12 @@ func (d *Data) Fill(table string, seed int32, inv *inventory.Inventory) bool {
 		}
 	}
 	shuffleInts(rng, slots)
-	var keep, split []item.Stack
+	var keep, split []lootStack
 	for _, s := range stacks {
 		switch {
-		case s.Count() == 1:
+		case s.n == 1:
 			keep = append(keep, s)
-		case s.Count() > 1:
+		case s.n > 1:
 			split = append(split, s)
 		}
 	}
@@ -441,17 +535,17 @@ func (d *Data) Fill(table string, seed int32, inv *inventory.Inventory) bool {
 			s := split[i]
 			split = append(split[:i], split[i+1:]...)
 			half := 1
-			if s.Count()/2 != 0 {
-				half = int(rng.NextIntN(int32(s.Count()/2))) + 1
+			if s.n/2 != 0 {
+				half = int(rng.NextIntN(int32(s.n/2))) + 1
 			}
-			t := s.Grow(half - s.Count())
-			s = s.Grow(-half)
-			if s.Count() >= 2 && rng.NextBool() {
+			t := s.grow(half - s.n)
+			s = s.grow(-half)
+			if s.n >= 2 && rng.NextBool() {
 				split = append(split, s)
 			} else {
 				keep = append(keep, s)
 			}
-			if t.Count() >= 2 && rng.NextBool() {
+			if t.n >= 2 && rng.NextBool() {
 				split = append(split, t)
 			} else {
 				keep = append(keep, t)
@@ -465,7 +559,9 @@ func (d *Data) Fill(table string, seed int32, inv *inventory.Inventory) bool {
 		}
 		slot := slots[len(slots)-1]
 		slots = slots[:len(slots)-1]
-		_ = inv.SetItem(slot, s)
+		if !s.s.Empty() {
+			_ = inv.SetItem(slot, s.s)
+		}
 	}
 	return true
 }
@@ -479,7 +575,7 @@ func shuffleInts(r *worldgen.BedrockRandom, a []int) {
 	}
 }
 
-func shuffleStacks(r *worldgen.BedrockRandom, a []item.Stack) {
+func shuffleStacks(r *worldgen.BedrockRandom, a []lootStack) {
 	for i := 1; i < len(a); i++ {
 		if j := int(r.U32() % uint32(i+1)); j != i {
 			a[i], a[j] = a[j], a[i]
