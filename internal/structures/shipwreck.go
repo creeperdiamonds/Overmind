@@ -151,7 +151,7 @@ func (s *Structures) placeShipwrecks(w *writer) {
 				if !res.ok {
 					continue
 				}
-				water := res.waterlog || w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == waterRID()
+				water := res.waterlog || w.chunk().Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == waterRID()
 				if wk.removed[i] {
 					if wy < seaLevelField {
 						w.set(wx, wy, wz, waterRID(), false)

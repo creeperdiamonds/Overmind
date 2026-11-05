@@ -622,7 +622,7 @@ func (c *ctx) sturdyNeighbours(x, y, z int) int {
 
 // replaceable is Java's isReplaceableByStructures: air, a liquid, glow lichen, seagrass.
 func (w *writer) replaceable(x, y, z int) bool {
-	rid := w.c.Block(uint8(x&15), int16(y), uint8(z&15), 0)
+	rid := w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0)
 	if rid == airRID() || w.liquidAt(x, y, z) {
 		return true
 	}
@@ -747,7 +747,7 @@ func (s *Structures) spiderPlacedIn(m *mineshaft, p *msPiece, a [2]int) bool {
 	}
 	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
 	s.g.GenerateBase(a[0], a[1], c)
-	w := s.place(a[0], a[1], c)
+	w := s.place(a[0], a[1], c, nil)
 	v = w.spawned[k]
 	s.spiderMu.Lock()
 	if s.spiderDone == nil || len(s.spiderDone) > 4096 {

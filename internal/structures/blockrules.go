@@ -155,7 +155,7 @@ func (w *writer) applyRules(rules []blockRule, r *worldgen.BedrockRandom, name s
 		}
 		if ru.tgt.kind != predAlways {
 			if !worldRead {
-				worldRID = w.c.Block(uint8(x&15), int16(y), uint8(z&15), 0)
+				worldRID = w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0)
 				if b, ok := world.BlockByRuntimeID(worldRID); ok {
 					n, _ := b.EncodeBlock()
 					worldName = strings.TrimPrefix(n, "minecraft:")

@@ -1,9 +1,11 @@
 package structures
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
 // TestMonumentStart checks P151's start on seed 32 (-12,6): start seed 0xFFFFFFD6, direction west.
@@ -30,20 +32,33 @@ func TestMonumentMatchesBDS(t *testing.T) {
 	m := s.monumentAtStart(-12, 6)
 	b := m.building.b
 	w := loadBDSRunsIn(t, "st_ocean_monument_32", []string{"big", "strips", "rstrips", "xrev"}, world.Overworld, true, b[0]>>4-1, b[3]>>4+1, b[2]>>4-1, b[5]>>4+1)
-	var written map[[3]int]uint32
-	s.trace = func(x, y, z int, rid uint32) { written[[3]int{x, y, z}] = rid }
+	// Structures are written into a chunk's terrain when a neighbour's decoration first needs it (P21.1),
+	// so the writes are gathered over the whole run.
+	var mu sync.Mutex
+	written := map[[3]int]uint32{}
+	s.trace = func(x, y, z int, rid uint32) { mu.Lock(); written[[3]int{x, y, z}] = rid; mu.Unlock() }
 	defer func() { s.trace = nil }()
 	same, total, spongeOurs, spongeBoth := 0, 0, 0, 0
 	conf := map[[2]string]int{}
+	cols := map[[2]int]*chunk.Column{}
+	for cx := (b[0] - 5) >> 4; cx <= (b[3]+5)>>4; cx++ {
+		for cz := (b[2] - 5) >> 4; cz <= (b[5]+5)>>4; cz++ {
+			if w.chunks[[2]int{cx, cz}] != nil {
+				cols[[2]int{cx, cz}] = generate(g, cx, cz)
+			}
+		}
+	}
 	for cx := (b[0] - 5) >> 4; cx <= (b[3]+5)>>4; cx++ {
 		for cz := (b[2] - 5) >> 4; cz <= (b[5]+5)>>4; cz++ {
 			bc := w.chunks[[2]int{cx, cz}]
 			if bc == nil {
 				continue
 			}
-			written = map[[3]int]uint32{}
-			col := generate(g, cx, cz)
+			col := cols[[2]int{cx, cz}]
 			for p, rid := range written {
+				if p[0]>>4 != cx || p[2]>>4 != cz {
+					continue
+				}
 				n := ridName(rid)
 				if n == "water" || n == "air" {
 					continue

@@ -249,6 +249,7 @@ func (d *Data) readJigsaw(dir string) {
 				} `json:"start_height"`
 				Projection string          `json:"heightmap_projection"`
 				Adaptation string          `json:"terrain_adaptation"`
+				Step       string          `json:"step"`
 				Padding    json.RawMessage `json:"dimension_padding"`
 			} `json:"minecraft:jigsaw"`
 		}
@@ -266,7 +267,8 @@ func (d *Data) readJigsaw(dir string) {
 		}
 		js := &jsonJigsaw{id: id, startPool: j.J.StartPool, startJigsaw: j.J.StartJigsaw, maxDepth: j.J.MaxDepth,
 			maxH: min(max(j.J.MaxDistance.Horizontal, 1), 128), maxV: min(max(j.J.MaxDistance.Vertical, 1), 384),
-			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters, adaptation: j.J.Adaptation}
+			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters, adaptation: j.J.Adaptation,
+			step: stepIndex(j.J.Step)}
 		if j.J.MaxDistance.Vertical == 0 {
 			js.maxV = 384
 		}

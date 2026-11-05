@@ -39,16 +39,29 @@ func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
 	defer g.cache.end()
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	writeCells(c, g.finalCells(s, cx, cz))
+	if g.structuresFirst() {
+		// The Bedrock order: a chunk's structures see its terrain only (P21.1).
+		g.cachedBase(s, cx, cz).expandCells(&s.final)
+		writeCells(c, &s.final)
+	} else {
+		writeCells(c, g.finalCells(s, cx, cz))
+	}
 	g.storeBiomes(c, s, cx, cz)
 }
 
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.
-func (g *Generator) placeStructures(cx, cz int, c *chunk.Chunk, col *chunk.Column) {
+// In the Bedrock order the blocks are already in the chunk's cells (structures_base.go): only the
+// block entities whose block the decoration left are added.
+func (g *Generator) placeStructures(s *chunkScratch, cx, cz int, final *[chunkCells]bs, c *chunk.Chunk, col *chunk.Column) {
 	if g.structs == nil {
 		return
 	}
-	bes := g.structs.PlaceChunk(cx, cz, c)
+	var bes []chunk.BlockEntity
+	if g.structuresFirst() {
+		bes = g.structureEntities(s, cx, cz, final)
+	} else {
+		bes = g.structs.PlaceChunk(cx, cz, c)
+	}
 	if col != nil {
 		col.BlockEntities = append(col.BlockEntities, bes...)
 	}
@@ -220,3 +233,9 @@ func (x *Xoroshiro) NextIntN(n int32) int32 { return int32(x.r.nextInt(uint32(n)
 
 // NextInt is Java's nextInt(): the low 32 bits of a draw.
 func (x *Xoroshiro) NextInt() int32 { return int32(uint32(x.r.next())) }
+
+// NextLong is Java's nextLong(): one 64-bit draw.
+func (x *Xoroshiro) NextLong() int64 { return int64(x.r.next()) }
+
+// SetSeed reseeds it as Java's setSeed does (RandomSupport's upgrade to 128 bits).
+func (x *Xoroshiro) SetSeed(seed int64) { x.r = xoroFromSeed(seed) }

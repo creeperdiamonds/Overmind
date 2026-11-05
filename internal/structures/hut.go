@@ -40,7 +40,7 @@ func (c *codeBuilt) box(x0, y0, z0, x1, y1, z1 int, rid uint32, skipAir bool) {
 				if !c.w.in(wx, wy, wz) {
 					continue
 				}
-				if skipAir && c.w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == airRID() {
+				if skipAir && c.w.chunk().Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == airRID() {
 					continue
 				}
 				c.w.set(wx, wy, wz, rid, false)
@@ -59,7 +59,7 @@ func (c *codeBuilt) columnDown(x, y, z int, rid uint32) {
 			return
 		}
 		b := c.w.block(wx, wy, wz)
-		if _, liquid := b.(world.Liquid); b != nil && c.w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) != airRID() && !liquid {
+		if _, liquid := b.(world.Liquid); b != nil && c.w.chunk().Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) != airRID() && !liquid {
 			if n, _ := b.EncodeBlock(); n == "minecraft:grass_block" {
 				if dirt, ok := stateRID("dirt", nil); ok {
 					c.w.set(wx, wy, wz, dirt, false)

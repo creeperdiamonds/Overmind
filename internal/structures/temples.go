@@ -45,7 +45,7 @@ func (c *codeBuilt) boxEF(x0, y0, z0, x1, y1, z1 int, edge, fill uint32, skipAir
 				if !c.w.in(wx, wy, wz) || b == noBlock {
 					continue
 				}
-				if skipAir && c.w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == airRID() {
+				if skipAir && c.w.chunk().Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == airRID() {
 					continue
 				}
 				c.w.set(wx, wy, wz, b, false)

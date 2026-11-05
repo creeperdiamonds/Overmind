@@ -1,6 +1,10 @@
 package structures
 
-import "github.com/creeperdiamonds/overmind/internal/worldgen"
+import (
+	"slices"
+
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
+)
 
 // Trail ruins and abandoned camps: data-driven jigsaw structures (N1 2.4 placement, BR assembly), from
 // the install's structure, pool and template files. Trial chambers place their starts but are not
@@ -66,28 +70,6 @@ func (s *Structures) columnHasBiome(x, z int, filter []byte) bool {
 	return false
 }
 
-// placeDataJigsaws writes the pieces of every trail ruin and abandoned camp that reaches the chunk. No
-// processor is applied (their per-block random was not read), and their terrain adaptation (bury,
-// beard_thin) is br::worldgen's own beardifier, which was not read either.
-func (s *Structures) placeDataJigsaws(w *writer) {
-	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
-	for _, k := range []Kind{TrailRuins, AbandonedCamp} {
-		sp := spreads[k]
-		for rx := floorDiv(w.cx-dataReach, sp.spacing); rx <= floorDiv(w.cx+dataReach, sp.spacing); rx++ {
-			for rz := floorDiv(w.cz-dataReach, sp.spacing); rz <= floorDiv(w.cz+dataReach, sp.spacing); rz++ {
-				st, ok := s.regionStart(k, rx, rz)
-				if !ok || abs(st.CX-w.cx) > dataReach || abs(st.CZ-w.cz) > dataReach {
-					continue
-				}
-				for _, p := range s.dataJigsaw(st) {
-					if p.elem.template != nil && p.box.intersects(chunkBox) {
-						s.placeTemplate(w, p)
-					}
-				}
-			}
-		}
-	}
-}
 
 // dataAdjustments are the br beardifier's records near chunk (cx, cz) (P9.3, Java 1.21's Beardifier):
 // every rigid piece of a trail ruin (bury) or abandoned camp (beard_thin) within 12 blocks of the chunk,
@@ -130,4 +112,77 @@ func (s *Structures) dataAdjustments(cx, cz int, into []worldgen.TerrainAdjustme
 		}
 	}
 	return into
+}
+
+// containerIDs are the block entity ids of the loot containers a data-driven template holds.
+var containerIDs = map[string]string{"chest": "Chest", "trapped_chest": "Chest", "barrel": "Barrel", "decorated_pot": "DecoratedPot",
+	"dispenser": "Dispenser", "dropper": "Dropper", "hopper": "Hopper", "shulker_box": "ShulkerBox"}
+
+// decorationSteps are Java's GenerationStep.Decoration names, in order (11 steps, P20.5).
+var decorationSteps = []string{"raw_generation", "lakes", "local_modifications", "underground_structures", "surface_structures",
+	"strongholds", "underground_ores", "underground_decoration", "fluid_springs", "vegetal_decoration", "top_layer_modification"}
+
+// stepIndex is a step name's index; an unknown or missing step is surface_structures, Java's default.
+func stepIndex(name string) int {
+	for i, n := range decorationSteps {
+		if n == name {
+			return i
+		}
+	}
+	return 4
+}
+
+// trialStep is the trial chambers' step: registered in code, underground_structures as in Java (not read).
+const trialStep = 3
+
+// placeDataDriven is BDS's pass for the data-driven jigsaw structures (NOTES-structures-phase2 P20.5),
+// after every legacy type: one Xoroshiro128++ per chunk, seeded with Java's decoration seed formula on
+// the chunk coordinates (setSeed(level seed); a = nextLong() | 1, b = nextLong() | 1; setSeed((cx*a +
+// cz*b) ^ level seed)), shared by every piece of every start, the starts taken step by step. Inside a step
+// BDS takes them in its start cache's hash order (not emulated): here trail ruins, then camps, then trial
+// chambers; no measured chunk holds two.
+func (s *Structures) placeDataDriven(w *writer) {
+	type start struct {
+		step   int
+		pieces []*piece
+	}
+	var starts []start
+	for _, k := range []Kind{TrailRuins, AbandonedCamp} {
+		sp := spreads[k]
+		for rx := floorDiv(w.cx-dataReach, sp.spacing); rx <= floorDiv(w.cx+dataReach, sp.spacing); rx++ {
+			for rz := floorDiv(w.cz-dataReach, sp.spacing); rz <= floorDiv(w.cz+dataReach, sp.spacing); rz++ {
+				st, ok := s.regionStart(k, rx, rz)
+				if !ok || abs(st.CX-w.cx) > dataReach || abs(st.CZ-w.cz) > dataReach {
+					continue
+				}
+				if j := s.data.jigsaws[st.Piece]; j != nil {
+					starts = append(starts, start{j.step, s.dataJigsaw(st)})
+				}
+			}
+		}
+	}
+	sp := spreads[TrialChambers]
+	for rx := floorDiv(w.cx-trialReach, sp.spacing); rx <= floorDiv(w.cx+trialReach, sp.spacing); rx++ {
+		for rz := floorDiv(w.cz-trialReach, sp.spacing); rz <= floorDiv(w.cz+trialReach, sp.spacing); rz++ {
+			st, ok := s.regionStart(TrialChambers, rx, rz)
+			if ok && abs(st.CX-w.cx) <= trialReach && abs(st.CZ-w.cz) <= trialReach {
+				starts = append(starts, start{trialStep, s.trialChambers(st)})
+			}
+		}
+	}
+	if len(starts) == 0 {
+		return
+	}
+	slices.SortStableFunc(starts, func(a, b start) int { return a.step - b.step })
+	xr := worldgen.NewXoroshiro(s.seed)
+	a, b := xr.NextLong()|1, xr.NextLong()|1
+	xr.SetSeed((int64(w.cx)*a + int64(w.cz)*b) ^ s.seed)
+	cb := w.chunkBox()
+	for _, st := range starts {
+		for _, p := range st.pieces {
+			if p.elem.template != nil && p.box.intersects(cb) {
+				s.placeTemplateWith(w, p, xr)
+			}
+		}
+	}
 }

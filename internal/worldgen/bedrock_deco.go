@@ -134,7 +134,7 @@ func (g *Generator) parityPre(s *chunkScratch, sx, sz int) []sourceWrite {
 				continue
 			}
 			buf := s.takeBuffer()
-			g.cachedBase(s, kx, kz).expand(buf)
+			g.decoBase(s, kx, kz).expand(buf)
 			base := buf.b // A copy, to tell a real change from a write taken back.
 			seen := map[int32]bool{}
 			var cells []int32
@@ -160,7 +160,7 @@ func (g *Generator) parityPre(s *chunkScratch, sx, sz int) []sourceWrite {
 func (g *Generator) finalCellsParity(s *chunkScratch, cx, cz int) *[chunkCells]bs {
 	sources := g.paritySources(s, cx, cz, 4, cx, cz)
 	final := &s.final
-	g.cachedBase(s, cx, cz).expandCells(final)
+	g.decoBase(s, cx, cz).expandCells(final)
 	applyParity(final, cx, cz, sources, nil)
 	return final
 }

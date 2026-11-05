@@ -106,22 +106,3 @@ func (s *Structures) trialChambers(st Start) []*piece {
 		return pieces
 	})
 }
-
-// placeTrialChambers writes the trial chamber pieces that reach the chunk.
-func (s *Structures) placeTrialChambers(w *writer) {
-	cb := w.chunkBox()
-	sp := spreads[TrialChambers]
-	for rx := floorDiv(w.cx-trialReach, sp.spacing); rx <= floorDiv(w.cx+trialReach, sp.spacing); rx++ {
-		for rz := floorDiv(w.cz-trialReach, sp.spacing); rz <= floorDiv(w.cz+trialReach, sp.spacing); rz++ {
-			st, ok := s.regionStart(TrialChambers, rx, rz)
-			if !ok || abs(st.CX-w.cx) > trialReach || abs(st.CZ-w.cz) > trialReach {
-				continue
-			}
-			for _, p := range s.trialChambers(st) {
-				if p.elem.template != nil && p.box.intersects(cb) {
-					s.placeTemplate(w, p)
-				}
-			}
-		}
-	}
-}

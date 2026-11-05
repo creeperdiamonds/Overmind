@@ -219,9 +219,10 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 	defer scratchPool.Put(s)
 	switch g.dim {
 	case dimNether:
-		writeRows(c, g.finalCells(s, cx, cz), netherHeight)
+		cells := g.finalCells(s, cx, cz)
+		writeRows(c, cells, netherHeight)
 		g.netherN.storeBiomes(c, cx, cz)
-		g.placeStructures(cx, cz, c, col)
+		g.placeStructures(s, cx, cz, cells, c, col)
 		return
 	case dimEnd:
 		cells := g.finalCells(s, cx, cz)
@@ -233,12 +234,13 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 		}
 		writeRows(c, cells, 256)
 		storeUniformBiome(c, uint32(biome.End{}.EncodeBiome()), 256)
-		g.placeStructures(cx, cz, c, col)
+		g.placeStructures(s, cx, cz, cells, c, col)
 		return
 	}
-	writeCells(c, g.finalCells(s, cx, cz))
+	cells := g.finalCells(s, cx, cz)
+	writeCells(c, cells)
 	g.storeBiomes(c, s, cx, cz)
-	g.placeStructures(cx, cz, c, col)
+	g.placeStructures(s, cx, cz, cells, c, col)
 }
 
 // finalCells makes a chunk's finished blocks, in the scratch.
@@ -794,4 +796,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.t9r11a"
+const GeneratorVersion = "2026-11-05.t9r11b"

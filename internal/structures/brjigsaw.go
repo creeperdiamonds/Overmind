@@ -51,6 +51,7 @@ type jsonJigsaw struct {
 	padTop       int
 	biomeFilters []byte
 	adaptation   string // terrain_adaptation: none, bury, beard_thin, beard_box, encapsulate.
+	step         int    // The decoration step its pieces are placed in (Java's GenerationStep.Decoration index).
 	// aliases maps a jigsaw's pool name to the pool it resolves to for this start (Java's
 	// PoolAliasLookup; trial chambers, NOTES-loot-trial-bastion T1).
 	aliases map[string]string
