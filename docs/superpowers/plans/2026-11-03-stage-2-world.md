@@ -243,7 +243,7 @@ Rules shared by Tasks 9-11:
 - Mojang files (structure templates, loot tables, feature data) are read at startup from `BedrockDataDir`. None go in the repo or the test fixtures. Without the install, structures are skipped with one log line, and the Nether and End still generate.
 - Placement, piece choice, loot rolls and terrain are our own Go code, written from the study notes outside the repo. Every constant cites the note it came from. Fitted values stay only under ruling 39 (N/N measured matches, labelled "measured").
 - Acceptance is block for block against the BDS worlds in the study's `golden-bedrock` folders, outside BDS's unstable mask, on every seed that has a world (ruling 37). A comparison tool reads those worlds from outside the repo.
-- Overjava keeps Java behaviour where it differs, and says so in the code.
+- Overjava is delayed (owner, 2026-11-05: "Overjava will be delayed a lot"). No new Overjava work in Tasks 9-11; existing Overjava code keeps compiling and its existing tests keep passing, and anything Bedrock-only is simply skipped there.
 - Generation stays off the tick goroutine and inside the shared 30 MB cache cap. Each chunk is still built from the seed and its position alone; a structure piece that crosses chunks is rebuilt from its start, not kept.
 
 ## Task 9: Structures and loot
