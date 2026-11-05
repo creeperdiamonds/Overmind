@@ -6,10 +6,9 @@ import "strings"
 //
 // Where from: BDS 1.26.60.6's pool registration code (0x53ac3e0), as the study read it (structures
 // notes N2 1.7 and phase 3; the study's table out/anc_pools_v2.txt, kept outside the repo). Every pool
-// name, element name, weight and fallback below is transcribed from that reading. It is Mojang's
-// content restated as Go, kept here, in one file per structure, as an interim measure while the owner
-// decides whether code-registered tables may be transcribed (review r6 I6). Nothing else in the
-// package holds such a table; later structures (villages, bastions) get their own pools_*.go file.
+// name, element name, weight and fallback below is transcribed from that reading. Transcribed piece and
+// pool tables are allowed in the repo by the owner's ruling 43, one pools_<name>.go per structure with
+// its source; templates, Mojang files and code never go in.
 
 // ancientPools are the ancient city's pools as registered in the server (N2 1.7 and phase 3; the study's
 // table out/anc_pools_v2.txt, read from the registration code at 0x53ac3e0). Fallback "": the pool's
