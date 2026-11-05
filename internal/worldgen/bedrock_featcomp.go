@@ -783,7 +783,6 @@ func (d *decoration) bput(p pos, s bs) bool {
 // family need soil below; double plants also air above; a spore blossom hangs from a sturdy block.
 var (
 	bnSoil         = bnameSetOf(bedrockTagMembers["dirt"])
-	bnGrassFamily  = bnameSetOf("short_grass fern tall_grass poppy dandelion large_fern")
 	bnDoublePlants = bnameSetOf("tall_grass large_fern sunflower lilac rose_bush peony")
 	bnSporeBlossom = internBName("spore_blossom")
 	// Dry plants stand on sand, terracotta or the dirt family (the game's dry-vegetation ground).
@@ -800,16 +799,34 @@ func bnameSetOf(names string) (b bnameSet) {
 	return b
 }
 
+// The game's survival rules for the plants features place (enforce_survivability_rules), by the block's
+// family: the bush family (grasses, ferns, bushes, flowers, saplings, berries) stands on the dirt family;
+// dry plants on dry ground; the Nether's plants on nylium, soul soil or dirt; mushrooms on a solid block;
+// a spore blossom hangs from one. Any other block a rule enforces survival for needs a solid block under
+// it: never water, air or a plant (a bush on a river, the owner's seed -4323653748954477428).
+var (
+	bnBushFamily = bnameSetOf("short_grass fern tall_grass large_fern bush firefly_bush poppy dandelion blue_orchid allium azure_bluet " +
+		"red_tulip orange_tulip white_tulip pink_tulip oxeye_daisy cornflower lily_of_the_valley torchflower sunflower lilac rose_bush peony " +
+		"pink_petals wildflowers open_eyeblossom closed_eyeblossom sweet_berry_bush oak_sapling spruce_sapling birch_sapling jungle_sapling " +
+		"acacia_sapling dark_oak_sapling cherry_sapling pale_oak_sapling")
+	bnSmallMushrooms = bnameSetOf("brown_mushroom red_mushroom")
+)
+
 func bedrockSurvives(d *decoration, name uint16, p pos) bool {
+	below := d.at(p.add(0, -1, 0))
 	switch {
-	case bnGrassFamily.has(name):
-		return bnSoil.has(bname(d.at(p.add(0, -1, 0))))
+	case bnBushFamily.has(name):
+		return bnSoil.has(bname(below))
 	case name == bnSporeBlossom:
 		return bSolid(d.at(p.add(0, 1, 0)))
 	case bnDryPlants.has(name):
-		return bnDryGround.has(bname(d.at(p.add(0, -1, 0))))
+		return bnDryGround.has(bname(below))
+	case bnNetherPlants.has(name):
+		return bnNetherGround.has(bname(below))
+	case bnSmallMushrooms.has(name):
+		return bSolid(below)
 	}
-	return true
+	return bSolid(below)
 }
 
 func bedrockMayPlace(d *decoration, name uint16, p pos) bool {

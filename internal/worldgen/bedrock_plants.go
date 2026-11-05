@@ -139,6 +139,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return f, true, nil
 	case "minecraft:vines_single_face_feature":
 		return codeFeat(vinesSingleFace), true, nil
+	case "minecraft:vines_feature":
+		return codeFeat(bedrockVines), true, nil
 	case "minecraft:azalea_root_system_feature":
 		c, err := fc.feature("minecraft:azalea_tree_feature")
 		if err != nil {
@@ -1247,6 +1249,53 @@ func vinesSingleFace(d *decoration, r *bmt, p pos) bool {
 		}
 	}
 	return false
+}
+
+// bedrockVines is VinesFeature (0x4bef640, FEATS-pseudocode; its top read in NOTES-bedrock-exact T50):
+// from y 64 up to the highest decoration heightmap entry (leaves ignored) of the chunks covering the
+// position's x-3..x+3, z-3..z+3, an air cell takes a vine on the first of its north, south, west, east
+// sides whose neighbour on the other side has a full face (a solid block or leaves); at any other cell the walk moves to a new column,
+// pos + (u32&3 - u32&3) in x, then z, on four raw words.
+func bedrockVines(d *decoration, r *bmt, p pos) bool {
+	top := 0
+	seen := map[[2]int]bool{}
+	for dx := -3; dx <= 3; dx++ {
+		for dz := -3; dz <= 3; dz++ {
+			k := [2]int{(p.x + dx) >> 4, (p.z + dz) >> 4}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			if d.chunkAt(k[0], k[1]) == nil {
+				continue
+			}
+			for i := range 256 {
+				top = max(top, d.height(hmMotionNoLeaves, k[0]*16+i&15, k[1]*16+i>>4))
+			}
+		}
+	}
+	if top == 0 {
+		top = maxY + 1
+	}
+	q := pos{p.x, 64, p.z}
+	for ; q.y < top; q.y++ {
+		if d.at(q).isAir() {
+			// Faces N, S, W, E; the support is the block on the far side (north: +z).
+			for _, f := range [4]struct {
+				support pos
+				side    string
+			}{{pos{0, 0, 1}, "south"}, {pos{0, 0, -1}, "north"}, {pos{1, 0, 0}, "east"}, {pos{-1, 0, 0}, "west"}} {
+				if n := d.at(q.add(f.support.x, 0, f.support.z)); bSolid(n) || n.tagged(tagLeaves) {
+					d.bput(q, vineState(f.side))
+					break
+				}
+			}
+		} else {
+			q.x = p.x + int(r.u32()&3) - int(r.u32()&3)
+			q.z = p.z + int(r.u32()&3) - int(r.u32()&3)
+		}
+	}
+	return true
 }
 
 // trailToSurface is TrailToSurfaceFeature (0x4bc84d0), azalea_root_system_feature.
