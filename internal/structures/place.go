@@ -83,6 +83,9 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 		s.buriedTreasure(w)
 	}
+	if st, ok := s.StartIn(Scattered, cx, cz); ok && st.Piece == "witch_hut" {
+		s.witchHut(w)
+	}
 	s.placeAncientCities(w)
 	s.placeVillages(w)
 	s.placeDataJigsaws(w)
