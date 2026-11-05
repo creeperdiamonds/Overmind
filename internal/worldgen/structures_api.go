@@ -57,15 +57,14 @@ func (g *Generator) DecorationSeed(cx, cz int) uint32 { return g.bseeds.chunk(cx
 // tests read it (NOTES-bedrock-structures 2.1).
 func (g *Generator) BiomeID(x, y, z int) int { return g.BiomeAt(x, y, z).EncodeBiome() }
 
-// BedrockBiomeID is the biome BDS computes for a block (its 8-block grid model, NOTES-bedrock-exact T11)
-// when this generator follows it, else BiomeID.
-func (g *Generator) BedrockBiomeID(x, y, z int) int {
-	if !g.bedrockBiomes {
-		return g.BiomeID(x, y, z)
-	}
+// PreliminarySurface is the generator's preliminary surface level at the quart holding block (x, z), the
+// level its surface builder uses. The stronghold ring's village test reads it (NOTES-structures-phase2
+// P9.5).
+func (g *Generator) PreliminarySurface(x, z int) int {
 	s := scratchPool.Get().(*chunkScratch)
 	defer scratchPool.Put(s)
-	return biomeRowDefs[s.bedrockBiome(g, x, y, z)].EncodeBiome()
+	s.prelims.use(g)
+	return g.preliminarySurface(&s.prelims, x, z)
 }
 
 // SurfaceWG is Java's getFirstFreeHeight on the WORLD_SURFACE_WG heightmap at a block column: one above
