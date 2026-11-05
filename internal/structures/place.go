@@ -138,24 +138,30 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 		s.placeNether(w)
 		return w
 	}
-	// Each structure type post-processes with the chunk's random seeded afresh (P17.2): the order of
-	// the types changes no draw, only which blocks win where two types overlap. That write order (the
-	// registry's) is not read; strongholds and mineshafts go last.
-	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
-		w.reseed()
-		s.buriedTreasure(w)
+	// Each structure type post-processes with the chunk's random seeded afresh (P17.2), in the
+	// registry's order (P18.4: village, stronghold, the scattered feature, mineshaft, mansion, buried
+	// treasure, outpost, monument, ocean ruin, shipwreck, ruined portal, ancient city), which decides
+	// only which blocks win where two types overlap. The data-driven jigsaws are not in that list (their
+	// pass was not read): last.
+	scattered := func(w *writer) {
+		if st, ok := s.StartIn(Scattered, cx, cz); ok {
+			switch st.Piece {
+			case "witch_hut":
+				s.witchHut(w)
+			case "jungle_temple":
+				s.jungleTemple(w)
+			}
+		}
+		s.placeIgloos(w)
+		s.placePyramids(w)
 	}
-	if st, ok := s.StartIn(Scattered, cx, cz); ok {
-		w.reseed()
-		switch st.Piece {
-		case "witch_hut":
-			s.witchHut(w)
-		case "jungle_temple":
-			s.jungleTemple(w)
+	treasure := func(w *writer) {
+		if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
+			s.buriedTreasure(w)
 		}
 	}
-	for _, place := range []func(*writer){s.placeAncientCities, s.placeVillages, s.placeShipwrecks, s.placeIgloos,
-		s.placePyramids, s.placeMonuments, s.placeDataJigsaws, s.placeStrongholds, s.placeMineshafts} {
+	for _, place := range []func(*writer){s.placeVillages, s.placeStrongholds, scattered, s.placeMineshafts, treasure,
+		s.placeMonuments, s.placeShipwrecks, s.placeAncientCities, s.placeDataJigsaws} {
 		w.reseed()
 		place(w)
 	}
