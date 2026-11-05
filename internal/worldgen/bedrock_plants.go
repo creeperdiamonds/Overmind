@@ -53,6 +53,10 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return codeFeat(hugeFungus{sWarpedStem, sWarpedWart, false}.place), true, nil
 	case "minecraft:_weeping_vines_cluster_feature":
 		return codeFeat(weepingVinesCluster), true, nil
+	case "minecraft:_basalt_pillar_feature":
+		return codeFeat(basaltPillar), true, nil
+	case "minecraft:_twisting_vines_cluster_feature":
+		return codeFeat(twistingVinesCluster), true, nil
 	case "minecraft:dripstone_cluster_feature":
 		return codeFeat(bedrockDripstoneCluster), true, nil
 	case "minecraft:large_dripstone_feature":

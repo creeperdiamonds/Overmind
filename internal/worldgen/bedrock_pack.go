@@ -699,7 +699,8 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	if err != nil {
 		return skip("scatter ", err)
 	}
-	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
+	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat,
+		shareCount: r.Description.PlacesFeature == "minecraft:_basalt_pillar_feature"}
 	if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
 		bd.ores[id] = o
 	}

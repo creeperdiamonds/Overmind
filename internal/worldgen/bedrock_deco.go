@@ -411,7 +411,7 @@ func (a bAxis) eval(r *bmt) int {
 		rg := hi - lo
 		return lo + int(r.nextIntN(int32(rg/2+1))) + int(r.nextIntN(int32(rg-rg/2+1)))
 	}
-	panic("worldgen: grid distributions are not written yet")
+	panic("worldgen: grid distributions are evaluated by bCoord.gridEval")
 }
 
 // bedrockRule is one feature rule (section 3): its identifier's hash, scatter and feature.
@@ -421,6 +421,8 @@ type bedrockRule struct {
 	sc     *bScatter
 	biomes [2]uint64
 	feat   bfeat
+	// shareCount marks the basalt pillar rule, which places nothing in a chunk of several biomes (T38).
+	shareCount bool
 }
 
 // iterations is the rule's iteration count when it is a plain number.
@@ -473,8 +475,15 @@ func (d *decoration) scatter(rule *bedrockRule, b uint8, multi bool) {
 		return
 	}
 	n := sc.count(e)
+	if multi && rule.shareCount {
+		// Fitted (ruling 41; NOTES-bedrock-exact T38): BDS's pillar count in a chunk of several biomes is
+		// not read; placing none there scores best (seed 100's soul sand box 99.7635%, against 99.7256% for
+		// T29's floor(n * share) and less for skip-and-continue with the full count). Single-biome chunks
+		// are T29's, exact.
+		n = 0
+	}
 	for i := n - 1; i >= 0 && d.spend(); i-- {
-		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16})
+		p := sc.position(r1, e, [3]int{d.cx * 16, 0, d.cz * 16}, i)
 		// Only a chunk of several biomes tests the height, with the biome (T2): in a one-biome chunk a
 		// position outside the world still places, and its feature still draws.
 		if multi && (p[1] < minY || p[1] > maxY || d.storedBiome(p[0], p[1], p[2]) != b) {

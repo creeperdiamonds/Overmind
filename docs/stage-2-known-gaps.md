@@ -24,6 +24,7 @@ Values the study fitted to BDS worlds instead of reading them from the code. Eac
 - The Nether's ore sizes (`nether_deco.go`): gold 10 and quartz 14 (99.2% to 99.8% recall and precision on seed 100's 1024 chunks), magma 28 (99.5%), gravel and blackstone 33 (99.8% to 100%).
 - The Nether's soul fire block: soul soil only (253 of 253 BDS soul fires, one extra), where the study's round-2 text says both soul blocks.
 - The Nether mushrooms' ground list (95% / 96%) and the solid test of the deltas, basalt columns and huge fungi (the study's delta box 99.82%).
+- The Nether's basalt pillars in chunks of several biomes: none placed (NOTES-bedrock-exact T38: best measured, seed 100's soul sand box 99.7635% against 99.7256% for T29's share rule), until the count there is read.
 - Earlier rounds' measured values (the dirt rule, the iron-bar and chorus states) match N of N and stay under ruling 39.
 
 ## Seeds
