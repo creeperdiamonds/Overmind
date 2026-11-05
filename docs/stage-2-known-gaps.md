@@ -10,6 +10,10 @@ Found while testing play in the generated world (`internal/app/world_test.go`). 
 - **Snow does not melt; there are no items for snow layers and seagrass** (see worldgen NOTES).
 - **The Nether and End are generated (Tasks 10 and 11); the Nether can be reached, the End not yet.** Dragonfly lights an obsidian frame with flint and steel (or fire) into a Nether portal, and its travel takes a player to the generated Nether. The End is generated (terrain, outer islands, spikes, chorus, natural gateways, the inactive exit portal) but needs an End portal to reach, and nothing generates one yet (no strongholds). There is no dragon fight: no dragon, no end crystals on the spikes, no gateways from kills. The exit portal (inactive) and the arrival platform under the End's spawn are placed with their chunks, where Bedrock builds them when a player arrives; the platform is Java's 5 x 5 (Bedrock's not read). `TestDayCycleAdvances` lights a frame and checks the Overworld's portal destinations.
 
+- **Villages generate but do not yet match BDS (ruling 42: kept on).** Built with their own depth-first placer as the study read it (P11.3, `internal/structures/village.go`). Measured: seed 22's village window, blocks in our piece boxes 96.2% same against 78.7% without villages (`TestVillageWindowMatchesBDS`); 0 of 5 BDS village chests at BDS's positions (`TestVillageChestsMatchBDS`), so the assembly still differs further out. Trees and piles of the decor pools and the villagers and golems are not placed.
+
+- **Some structure blocks are static (Task 9).** Placed with their states and block entities, without behaviour yet: dispensers (no firing, contents not openable; their loot table and seed are kept), tripwire and tripwire hooks, sticky pistons, repeaters (Dragonfly states with no Go type), suspicious sand and gravel (no brushing; loot table and seed kept), flower pots (their plant is kept; not placeable by players).
+
 ## Fitted values (ruling 41)
 
 Values the study fitted to BDS worlds instead of reading them from the code. Each stays, labelled in the code with its match, until the code is read; removing one would cost accuracy.

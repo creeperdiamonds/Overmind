@@ -114,6 +114,14 @@ func buildStateTable() *[]uint16 {
 	return &table
 }
 
+// mappingFixes are Bedrock states the mapping gives the wrong Java block, by
+// the Java block they are. minecraft-data maps the empty flower pot to
+// potted_closed_eyeblossom (Bedrock keeps a pot's plant in its block entity, so
+// its one state is the empty pot; the Java front end puts the plant in).
+var mappingFixes = map[string]string{
+	"minecraft:flower_pot[update_bit=0]": "minecraft:flower_pot",
+}
+
 // stoneKey is the mapping key of the fallback block.
 const stoneKey = "minecraft:stone[]"
 
@@ -172,6 +180,9 @@ func buildStates(n int, state func(uint32) (string, map[string]any, bool), logf 
 		f := fields(l)
 		ranges = append(ranges, blockRange{uint16(atoi(f[1])), uint16(atoi(f[2])), uint16(atoi(f[3]))})
 		defaults[f[0]] = uint16(atoi(f[3]))
+	}
+	for key, java := range mappingFixes {
+		m[key] = defaults[java]
 	}
 	sort.Slice(ranges, func(i, j int) bool { return ranges[i].min < ranges[j].min })
 	blockOf := func(id uint16) blockRange {

@@ -47,7 +47,7 @@ func (d *Data) ancientPools() map[string]*pool {
 							d.problem("ancient city element %s: no template", e.name)
 							continue
 						}
-						el = &element{name: "minecraft:ancient_city_" + e.name, template: t}
+						el = &element{name: "minecraft:ancient_city_" + e.name, template: t, bedrockLegacy: true, rules: ancientListOf(e.name)}
 						els[e.name] = el
 					}
 				}

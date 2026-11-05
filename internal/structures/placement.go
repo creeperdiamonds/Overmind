@@ -116,6 +116,7 @@ type Start struct {
 	CX, CZ int
 	// Piece names the variant: the scattered piece, the village type, the abandoned camp's structure.
 	Piece string
+	ring  bool // Tested for the stronghold ring walk (P9.5).
 	// rseed is the region random's seed; the pieces continue it after the placement draws (N1 3.1).
 	rseed uint32
 }
@@ -223,8 +224,14 @@ func (s *Structures) passes(st *Start) bool {
 	bx, bz := cx*16+8, cz*16+8
 	switch st.Kind {
 	case Village:
-		t, ok := s.villageType(bx, s.surface(cx, cz), bz)
-		if !ok || !s.containsOnly(bx, s.surface(cx, cz), bz, 2, s.villageBiomes) {
+		y := s.surface(cx, cz)
+		if st.ring {
+			// The stronghold ring's village test reads the generator's preliminary surface (P9.5: 11 of 11
+			// located ring strongholds; with the noise height seed 1's second ring stronghold moves).
+			y = s.g.PreliminarySurface(cx*16, cz*16)
+		}
+		t, ok := s.villageType(bx, y, bz)
+		if !ok || !s.containsOnly(bx, y, bz, 2, s.villageBiomes) {
 			return false
 		}
 		st.Piece = t
@@ -262,7 +269,7 @@ func (s *Structures) passes(st *Start) bool {
 	case AncientCity:
 		return s.containsOnly(cx*16, -27, cz*16, 0, deepDark)
 	case TrailRuins:
-		return s.jigsawBiome(st, []string{"minecraft:trail_ruins"})
+		return s.trailRuinsBiome(st)
 	case AbandonedCamp:
 		return s.jigsawBiome(st, s.campStructures)
 	case TrialChambers:

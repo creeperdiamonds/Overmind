@@ -51,6 +51,11 @@ func (w *writer) height(x, z int) int {
 	return int(w.c.HighestBlock(uint8(x&15), uint8(z&15))) + 1
 }
 
+// chestEntity is a chest's block entity with a loot table and seed.
+func chestEntity(x, y, z int, table string, seed int32) chunk.BlockEntity {
+	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "Chest", "LootTable": table, "LootTableSeed": seed}}
+}
+
 // chest puts a chest that will roll table with the next loot seed (N2 2.1).
 func (w *writer) chest(x, y, z int, rid uint32, table string) {
 	w.set(x, y, z, rid, false)
@@ -83,7 +88,20 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 		s.buriedTreasure(w)
 	}
+	if st, ok := s.StartIn(Scattered, cx, cz); ok {
+		switch st.Piece {
+		case "witch_hut":
+			s.witchHut(w)
+		case "jungle_temple":
+			s.jungleTemple(w)
+		}
+	}
 	s.placeAncientCities(w)
+	s.placeVillages(w)
+	s.placeShipwrecks(w)
+	s.placeIgloos(w)
+	s.placePyramids(w)
+	s.placeDataJigsaws(w)
 	return w.bes
 }
 
@@ -139,6 +157,8 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 	if s.data == nil {
 		return into
 	}
+	into = s.dataAdjustments(cx, cz, into)
+	into = s.villageAdjustments(cx, cz, into)
 	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
 		for _, p := range pieces {
 			b := p.box
@@ -156,14 +176,38 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 // degradation processors are not applied (their random was not read, N2 1.8).
 func (s *Structures) placeTemplate(w *writer, p *piece) {
 	t := p.elem.template
-	for _, b := range t.blocks {
+	var rr *worldgen.BedrockRandom
+	if len(p.elem.rules) > 0 {
+		rr = worldgen.NewBedrockRandom(s.g.DecorationSeed(w.cx, w.cz)) // P9.1: fresh per element and chunk.
+	}
+	processed, procLoot := s.processedNames(p)
+	var heights map[[2]int]int
+	for bi, b := range t.blocks {
 		q := rotate(b.pos, p.rot)
 		x, y, z := p.pos[0]+q[0], p.pos[1]+q[1], p.pos[2]+q[2]
+		if p.elem.terrain && p.elem.bedrockLegacy {
+			// Terrain matching: each column follows the ground (P9.1: y = height - 1 + local y).
+			if x>>4 != w.cx || z>>4 != w.cz {
+				continue
+			}
+			if heights == nil {
+				heights = map[[2]int]int{}
+			}
+			h, ok := heights[[2]int{x, z}]
+			if !ok {
+				h = s.g.SurfaceWG(x, z)
+				heights[[2]int{x, z}] = h
+			}
+			y = h - 1 + b.pos[1]
+		}
 		if !w.in(x, y, z) {
 			continue
 		}
 		st := t.palette[b.state]
 		if st.name == "jigsaw" {
+			if p.elem.bedrockLegacy {
+				continue // LegacyStructureTemplate::place skips jigsaw blocks (P9.1 flag +0xc).
+			}
 			fs, _ := b.nbt["final_state"].(string)
 			st = parseJavaState(fs)
 		}
@@ -171,7 +215,24 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 		if !res.ok {
 			continue
 		}
-		if lt, ok := b.nbt["LootTable"].(string); ok && lt != "" {
+		if rr != nil {
+			res.name, res.rid = w.applyRules(p.elem.rules, rr, res.name, res.rid, x, y, z)
+		}
+		if processed != nil && processed[bi] != res.name {
+			if nr, ok := ridOfName(processed[bi]); ok {
+				res.name, res.rid = processed[bi], nr
+			}
+		}
+		if procLoot != nil && procLoot[bi] != nil && (res.name == "suspicious_gravel" || res.name == "suspicious_sand") {
+			w.set(x, y, z, res.rid, false)
+			w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "BrushableBlock",
+				"LootTable": procLoot[bi].table, "LootTableSeed": int32(procLoot[bi].seed)}})
+			continue
+		}
+		if p.elem.legacy && res.name == "air" {
+			continue // A legacy element places no air (Java's LegacySinglePoolElement).
+		}
+		if lt, ok := b.nbt["LootTable"].(string); ok && lt != "" && (res.name == "chest" || res.name == "trapped_chest") {
 			w.chest(x, y, z, res.rid, bedrockLootPath(lt))
 			continue
 		}

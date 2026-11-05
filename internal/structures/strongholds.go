@@ -41,7 +41,7 @@ func (s *Structures) rings() [][2]int {
 		search:
 			for cx := x - 8; cx <= x+7; cx++ {
 				for cz := z - 8; cz <= z+7; cz++ {
-					if _, ok := s.StartIn(Village, cx, cz); ok {
+					if s.ringVillage(cx, cz) {
 						s.ringChunks = append(s.ringChunks, [2]int{cx, cz})
 						found = true
 						break search
@@ -126,4 +126,16 @@ func (s *Structures) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
 		return cube.Pos{}, false
 	}
 	return cube.Pos{best[0]*16 + 2, 0, best[1]*16 + 2}, true
+}
+
+// ringVillage is VillageFeature::isFeatureChunk as the ring walk calls it (N1 2.5, P9.5).
+func (s *Structures) ringVillage(cx, cz int) bool {
+	sp := spreads[Village]
+	r := worldgen.NewBedrockRandom(0)
+	x, z := sp.candidate(s, floorDiv(cx, sp.spacing), floorDiv(cz, sp.spacing), r)
+	if x != cx || z != cz {
+		return false
+	}
+	st := Start{Kind: Village, CX: cx, CZ: cz, rseed: r.Seeded(), ring: true}
+	return s.passes(&st)
 }

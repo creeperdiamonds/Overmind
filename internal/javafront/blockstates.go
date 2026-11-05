@@ -70,6 +70,10 @@ func stateOf(pos cube.Pos, rid, liquid uint32, be world.Block) (state int32, flu
 		s = coloured(s, b.Colour)
 	case block.Banner:
 		s = coloured(s, b.Colour)
+	default:
+		if p, ok := potted(b); ok {
+			s = p
+		}
 	}
 	return int32(s), fluid
 }
@@ -87,8 +91,42 @@ func coloured(s uint16, c item.Colour) uint16 {
 	return out
 }
 
+// potted is a flower pot's Java state with its plant. Bedrock keeps the plant
+// in the pot's block entity (FlowerPot, PlantBlock: a block's name and
+// states), and Java has a block per plant (potted_red_mushroom), so the tables
+// alone give the empty pot. The plant's Java name comes from its Bedrock state
+// through the tables, so a block named differently on the two (Bedrock
+// deadbush) still finds its pot; Java's azalea pots are azalea_bush. A plant
+// Java has no pot for leaves the pot empty. The pot is any block entity whose
+// NBT says FlowerPot (worldgen's structure flower pot).
+func potted(b world.Block) (uint16, bool) {
+	n, ok := b.(world.NBTer)
+	if !ok {
+		return 0, false
+	}
+	m := n.EncodeNBT()
+	if id, _ := m["id"].(string); id != "FlowerPot" {
+		return 0, false
+	}
+	plant, _ := m["PlantBlock"].(map[string]any)
+	name, _ := plant["name"].(string)
+	if name == "" {
+		return 0, false
+	}
+	states, _ := plant["states"].(map[string]any)
+	javaName := name
+	if pb, ok := world.BlockByName(name, states); ok {
+		javaName = java261.BlockName(java261.JavaState(world.BlockRuntimeID(pb)))
+	}
+	rest := strings.TrimPrefix(javaName, "minecraft:")
+	if rest == "azalea" || rest == "flowering_azalea" {
+		rest += "_bush"
+	}
+	return java261.DefaultState("minecraft:potted_" + rest)
+}
+
 // needsEntity says whether a block's Java state needs its block entity
-// (stateOf): a paired chest, a bed or a banner.
+// (stateOf): a paired chest, a bed, a banner or a flower pot with a plant.
 func needsEntity(b world.Block) bool {
 	switch v := b.(type) {
 	case block.Chest:
@@ -96,7 +134,8 @@ func needsEntity(b world.Block) bool {
 	case block.Bed, block.Banner:
 		return true
 	}
-	return false
+	_, ok := potted(b)
+	return ok
 }
 
 // chestHalf sets a paired chest's Java type. Java names the half by the side

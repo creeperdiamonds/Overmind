@@ -129,14 +129,27 @@ func AsBlock(state uint16, name string) (uint16, bool) {
 	return out, true
 }
 
-// BlockName is the Java block name of a state with properties ("minecraft:
-// oak_fence"), or "" for a block without.
+// BlockName is the Java block name of a state ("minecraft:oak_fence"). A
+// block without properties has one state, its default; "" for a state that is
+// neither.
 func BlockName(state uint16) string {
 	if b := blockOfState(state); b != nil {
 		return b.name
 	}
-	return ""
+	DefaultState("") // loads the defaults
+	defaultNamesOnce.Do(func() {
+		defaultNames = make(map[uint16]string, len(defaultStates))
+		for name, s := range defaultStates {
+			defaultNames[s] = name
+		}
+	})
+	return defaultNames[state]
 }
+
+var (
+	defaultNamesOnce sync.Once
+	defaultNames     map[uint16]string // by default state
+)
 
 var (
 	defaultsOnce  sync.Once
