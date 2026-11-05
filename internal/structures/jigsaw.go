@@ -30,6 +30,11 @@ type element struct {
 	template *Template // nil for a feature element.
 	terrain  bool      // Terrain-matching projection (vt5); the ancient city's are rigid.
 	legacy   bool      // A legacy single element: its air blocks are not placed.
+	// bedrockLegacy marks an element of a code-registered pool, placed by LegacyStructureTemplate::place
+	// (P9.1): jigsaw blocks are skipped, and its rules run with the chunk's rule random.
+	bedrockLegacy bool
+	rules         []blockRule
+	procs         []brProcessor // A data-driven element's processors (brprocess.go).
 }
 
 // rotate turns a local point by rot clockwise quarter turns (N2 1.2).
@@ -130,6 +135,8 @@ type piece struct {
 	deltaY int
 	// ground is a data-driven piece's ground level delta (Java's PoolElementStructurePiece).
 	ground int
+	// junctions are a data-driven piece's jigsaw junctions: x, ground y, z (Java's JigsawJunction).
+	junctions [][3]int
 }
 
 type region struct{ outer, excl []box }

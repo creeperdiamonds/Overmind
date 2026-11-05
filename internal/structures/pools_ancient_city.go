@@ -1,5 +1,7 @@
 package structures
 
+import "strings"
+
 // TRANSCRIBED TABLE: the ancient city's jigsaw pools.
 //
 // Where from: BDS 1.26.60.6's pool registration code (0x53ac3e0), as the study read it (structures
@@ -53,4 +55,50 @@ var ancientPools = []struct {
 		{1, "city_entrance_entrance_connector"}, {1, "city_entrance_entrance_path_1"}, {1, "city_entrance_entrance_path_2"},
 		{1, "city_entrance_entrance_path_3"}, {1, "city_entrance_entrance_path_4"}, {1, "city_entrance_entrance_path_5"},
 	}},
+}
+
+// TRANSCRIBED TABLE: the ancient city's block-rule lists (degradation), from the list builder 0x53b6c70 as
+// the study emulated it (NOTES-structures-phase2 P9.1; the study's p9/rules_ancient.txt). Every rule's
+// target is AlwaysTrueExcept(ancientProtected, 1) and its position AlwaysTrue. Bff18c08 in the dump is
+// deepslate_bricks (P9.1's reading), Bff130e0 an unnamed block left out here.
+var (
+	ancientProtected = []string{"mob_spawner", "sculk_sensor", "redstone_lamp", "lit_redstone_lamp", "reinforced_deepslate",
+		"redstone_wire", "powered_repeater", "unpowered_repeater", "powered_comparator", "unpowered_comparator"}
+	ancientReplaceable = []string{"deepslate", "deepslate_bricks", "deepslate_tiles", "cobbled_deepslate", "cracked_deepslate_bricks",
+		"cracked_deepslate_tiles", "deepslate_tile_slab", "deepslate_brick_slab", "deepslate_brick_stairs", "gray_wool"}
+)
+
+func ancientRule(src rulePred, result string) blockRule {
+	return blockRule{src: src, tgt: rulePred{kind: predExcept, names: ancientProtected, p: 1}, result: result}
+}
+
+func bmr(name string, p float32) rulePred {
+	return rulePred{kind: predMatchRandom, names: []string{name}, p: p}
+}
+
+var (
+	ancientCrackBricks = ancientRule(bmr("deepslate_bricks", 0.3), "cracked_deepslate_bricks")
+	ancientCrackTiles  = ancientRule(bmr("deepslate_tiles", 0.3), "cracked_deepslate_tiles")
+	ancientLantern     = ancientRule(bmr("soul_lantern", 0.05), "air")
+	ancientRemove      = ancientRule(rulePred{kind: predFound, names: ancientReplaceable, p: 0.05}, "air")
+	ancientRuleLists   = map[string][]blockRule{
+		"start":   {ancientCrackBricks, ancientCrackTiles, ancientLantern},
+		"generic": {ancientCrackBricks, ancientCrackTiles, ancientLantern, ancientRemove},
+		"walls": {ancientCrackBricks, ancientCrackTiles, ancientRule(bmr("deepslate_tile_slab", 0.3), "air"), ancientLantern,
+			ancientRemove},
+	}
+)
+
+// ancientListOf is an element's rule list (P8, from out/anc_elem.ev): city centres the start list,
+// structures the generic one, walls the walls one.
+func ancientListOf(name string) []blockRule {
+	switch {
+	case strings.HasPrefix(name, "city_center_"):
+		return ancientRuleLists["start"]
+	case strings.HasPrefix(name, "structures_"):
+		return ancientRuleLists["generic"]
+	case strings.HasPrefix(name, "walls_"):
+		return ancientRuleLists["walls"]
+	}
+	return nil
 }

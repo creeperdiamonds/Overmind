@@ -13,21 +13,20 @@ Overworld structures (plan Task 9), our own Go from the study of BDS 1.26.60.6: 
 | Structure | Start (placement) | Pieces |
 |---|---|---|
 | Buried treasure | N1 2.2, checked | built (N2 2.1); y rule's "solid" flag and heightmap measured on 27 chests |
-| Ancient city | N1 2.2, checked; BDS locate 28/28 | legacy jigsaw (N2 1.3-1.6, sculk pool with its empty element, N2 phase 3): 78 pieces, 15/15 chests with BDS's loot seed on seed 100. Terrain adaptation (beard and shave) in the generator's density (`worldgen/structures_terrain.go`, N2 phase 3 round 2). Block-rot processors and the sculk feature elements are not applied (their random is not read) |
+| Ancient city | N1 2.2, checked; BDS locate 28/28 | legacy jigsaw (N2 1.3-1.6, sculk pool with its empty element, N2 phase 3): 78 pieces, 15/15 chests with BDS's loot seed on seed 100. Terrain adaptation (beard and shave) in the generator's density (`worldgen/structures_terrain.go`, N2 phase 3 round 2). Block rot (the degradation lists) with P9.1's random: MT(the chunk's post-process seed) per element and chunk, NBT order, chained rules (`blockrules.go`). The sculk feature elements are not applied (their random is not read) |
 | Village | N1 2.2 + village_type biomes, checked; BDS locate 12/12 | not built: element table (template, projection, processors) and terrain adaptation not decoded |
 | Desert pyramid, jungle temple, witch hut, igloo | N1 2.2 (one scattered feature), sea-level field 63 assumed; windows agree | not built: pieces not decoded (N2 3) |
 | Ocean monument, mansion | N1 2.2; BDS locate 28/28 each | not built: not decoded |
 | Pillager outpost | N1 2.2, checked | not built: N2 3 has only its first draws |
 | Shipwreck, ocean ruin, ruined portal | N1 2.2, checked | not built: not decoded (N2 3) |
 | Mineshaft | N1 2.3, checked against cave spider spawners | not built: not decoded |
-| Stronghold | N1 2.5 and N2 phase 3 round 2; `NearestStronghold` equals BDS locate from 24 of 28 origins | not built: not decoded |
-| Trail ruins, abandoned camps | Java LCG sets (N1 2.4), checked; trail ruins: BDS locate 12/12 at our stubs, with the column biome test (fitted, see below) | built: br::worldgen jigsaw = Java's JigsawPlacement (N2 phase 8, `brjigsaw.go`), pools, structures and templates from the install; piece volumes equal BDS's for all 4 measured (3 camps, 1 trail ruin). Processors (archaeology, block rot) and terrain adaptation (bury, beard_thin: br::worldgen's beardifier) are not read, so not applied |
+| Stronghold | N1 2.5 and N2 phase 3 round 2; the ring's village test at the preliminary surface (P9.5); 19 of 19 located strongholds are ours | not built: not decoded |
+| Trail ruins, abandoned camps | Java LCG sets (N1 2.4), checked; trail ruins: BDS locate 12/12 at our stubs; biome test: any quart biome of the start piece centre's whole column (P9.3, read) | built: br::worldgen jigsaw = Java's JigsawPlacement (`brjigsaw.go`), pools, structures, processor lists and templates from the install; piece volumes equal BDS's for all 4 measured. br beardifier (bury, beard_thin, junctions; P9.3, Java 1.21's) in the generator's density; br Rule and Capped processors with Java's randoms (`brprocess.go`). Archaeology outputs Dragonfly lacks (suspicious gravel) stay the input block |
 | Trial chambers | Java LCG set, every candidate kept; BDS locate 28/28 within 8 chunks | not built: pools are code, the study's table of them is not trusted yet (N2 phase 8) |
 | Fossils | feature, not a structure start | not built |
 
 Biome tests sample at "surf" (N1 2.2), the preliminary-surface cache, whose filling was not read. We use the noise stage's top solid block (`worldgen.NoiseHeight`), measured: it explains all the evidence and the eight structure windows; the generator's own preliminary level missed four windows. It places 3 buried treasure starts on seed 12345 that BDS lacks.
 
-Trail ruins' biome test is fitted (ruling 41: 12 of 12 BDS locate answers on 4 worlds; the stub-only test misses 2): some biome of the stub's column, from the stub up to the WG surface, in BDS's own per-block model (`worldgen.BedrockBiomeID`), passes the JSON filter. The other structures keep the quart model: switched to the per-block model, they lose 6 scanned treasure chests and 14 locate answers.
 
 "Checked" means every scanned BDS chest, spawner or structure volume in the four measured worlds lies within the study's distance of a start we place, with our biome tests (`TestStartsMatchBDS`).
 

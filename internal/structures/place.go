@@ -140,6 +140,7 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 	if s.data == nil {
 		return into
 	}
+	into = s.dataAdjustments(cx, cz, into)
 	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
 		for _, p := range pieces {
 			b := p.box
@@ -157,7 +158,12 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 // degradation processors are not applied (their random was not read, N2 1.8).
 func (s *Structures) placeTemplate(w *writer, p *piece) {
 	t := p.elem.template
-	for _, b := range t.blocks {
+	var rr *worldgen.BedrockRandom
+	if len(p.elem.rules) > 0 {
+		rr = worldgen.NewBedrockRandom(s.g.DecorationSeed(w.cx, w.cz)) // P9.1: fresh per element and chunk.
+	}
+	processed := s.processedNames(p)
+	for bi, b := range t.blocks {
 		q := rotate(b.pos, p.rot)
 		x, y, z := p.pos[0]+q[0], p.pos[1]+q[1], p.pos[2]+q[2]
 		if !w.in(x, y, z) {
@@ -165,12 +171,23 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 		}
 		st := t.palette[b.state]
 		if st.name == "jigsaw" {
+			if p.elem.bedrockLegacy {
+				continue // LegacyStructureTemplate::place skips jigsaw blocks (P9.1 flag +0xc).
+			}
 			fs, _ := b.nbt["final_state"].(string)
 			st = parseJavaState(fs)
 		}
 		res := convert.state(st, p.rot)
 		if !res.ok {
 			continue
+		}
+		if rr != nil {
+			res.name, res.rid = w.applyRules(p.elem.rules, rr, res.name, res.rid, x, y, z)
+		}
+		if processed != nil && processed[bi] != res.name {
+			if nr, ok := ridOfName(processed[bi]); ok {
+				res.name, res.rid = processed[bi], nr
+			}
 		}
 		if p.elem.legacy && res.name == "air" {
 			continue // A legacy element places no air (Java's LegacySinglePoolElement).

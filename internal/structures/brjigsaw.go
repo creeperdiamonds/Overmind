@@ -50,6 +50,7 @@ type jsonJigsaw struct {
 	padBottom    int
 	padTop       int
 	biomeFilters []byte
+	adaptation   string // terrain_adaptation: none, bury, beard_thin, beard_box, encapsulate.
 }
 
 // javaJigsaws are an element's jigsaws in Java's template order (blocks with NBT sorted by y, x, z),
@@ -284,6 +285,21 @@ func (a *javaAssembly) children(p *piece, ctxFree *region, depth int) {
 						ground = p.ground - deltaY
 					}
 					child := &piece{elem: e, pos: raw, rot: rot, depth: depth + 1, box: tb, ground: ground, deltaY: tLocalY}
+					// Junctions (Java's Placer): the y both pieces meet at, as each records it.
+					var jy int
+					switch {
+					case sourceRigid:
+						jy = sbox[1] + localY
+					case targetRigid:
+						jy = boxY + tLocalY
+					default:
+						if !haveBase {
+							baseHeight, haveBase = a.height(sj.pos[0], sj.pos[2]), true
+						}
+						jy = baseHeight + deltaY/2
+					}
+					p.junctions = append(p.junctions, [3]int{target[0], jy - localY + p.ground, target[2]})
+					child.junctions = append(child.junctions, [3]int{sj.pos[0], jy - tLocalY + ground, sj.pos[2]})
 					a.pieces = append(a.pieces, child)
 					if depth+1 <= a.maxDepth {
 						a.seq++

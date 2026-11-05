@@ -29,6 +29,7 @@ type Data struct {
 	jigsawFilters map[string]json.RawMessage
 	jigsaws       map[string]*jsonJigsaw // The data-driven jigsaw structures, by identifier.
 	rawPools      map[string]json.RawMessage
+	procLists     map[string][]brProcessor // br::worldgen processor lists, by identifier.
 	jpoolsOnce    sync.Once
 	jpools        map[string]*pool
 	campOrder     []string // The abandoned_camp set's structures, in the set's order.
@@ -64,7 +65,7 @@ func LoadData(dir string) (*Data, error) {
 	}
 	slices.SortFunc(names, func(a, b string) int { return slices.Compare(worldgen.PackVersion(b), worldgen.PackVersion(a)) })
 	d := &Data{Dir: dir, templates: map[string]string{}, loot: map[string]*LootTable{}, jigsawFilters: map[string]json.RawMessage{},
-		jigsaws: map[string]*jsonJigsaw{}, rawPools: map[string]json.RawMessage{}}
+		jigsaws: map[string]*jsonJigsaw{}, rawPools: map[string]json.RawMessage{}, procLists: map[string][]brProcessor{}}
 	for _, pack := range names {
 		root := filepath.Join(packs, pack)
 		d.indexTemplates(filepath.Join(root, "structures"))
@@ -227,6 +228,7 @@ func (d *Data) readJigsaw(dir string) {
 					} `json:"value"`
 				} `json:"start_height"`
 				Projection string          `json:"heightmap_projection"`
+				Adaptation string          `json:"terrain_adaptation"`
 				Padding    json.RawMessage `json:"dimension_padding"`
 			} `json:"minecraft:jigsaw"`
 		}
@@ -244,7 +246,7 @@ func (d *Data) readJigsaw(dir string) {
 		}
 		js := &jsonJigsaw{id: id, startPool: j.J.StartPool, startJigsaw: j.J.StartJigsaw, maxDepth: j.J.MaxDepth,
 			maxH: min(max(j.J.MaxDistance.Horizontal, 1), 128), maxV: min(max(j.J.MaxDistance.Vertical, 1), 384),
-			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters}
+			startY: *j.J.StartHeight.Value.Absolute, biomeFilters: j.J.BiomeFilters, adaptation: j.J.Adaptation}
 		if j.J.MaxDistance.Vertical == 0 {
 			js.maxV = 384
 		}
@@ -263,6 +265,31 @@ func (d *Data) readJigsaw(dir string) {
 		d.jigsaws[id] = js
 	}
 	d.readPools(dir)
+	procs, err := worldgen.ReadBrarchive(filepath.Join(dir, "processors.brarchive"))
+	if err != nil {
+		d.problem("%v", err)
+	}
+	for _, f := range procs {
+		var pl struct {
+			L struct {
+				Description struct {
+					Identifier string `json:"identifier"`
+				} `json:"description"`
+			} `json:"minecraft:processor_list"`
+		}
+		body := worldgen.JSONText(f[1])
+		if json.Unmarshal(body, &pl) != nil || pl.L.Description.Identifier == "" {
+			continue
+		}
+		if _, ok := d.procLists[pl.L.Description.Identifier]; ok {
+			continue
+		}
+		if ps, ok := parseProcessors(body); ok {
+			d.procLists[pl.L.Description.Identifier] = ps
+		} else {
+			d.problem("processor list %s: a processor or predicate type not read", pl.L.Description.Identifier)
+		}
+	}
 	sets, err := worldgen.ReadBrarchive(filepath.Join(dir, "structure_sets.brarchive"))
 	if err != nil {
 		d.problem("%v", err)
@@ -339,10 +366,11 @@ func (d *Data) dataPools() map[string]*pool {
 					Fallback string `json:"fallback"`
 					Elements []struct {
 						Element struct {
-							Type       string `json:"element_type"`
-							Location   string `json:"location"`
-							Projection string `json:"projection"`
-							Feature    string `json:"feature"`
+							Type       string          `json:"element_type"`
+							Location   string          `json:"location"`
+							Projection string          `json:"projection"`
+							Feature    string          `json:"feature"`
+							Processors json.RawMessage `json:"processors"`
 						} `json:"element"`
 						Weight int `json:"weight"`
 					} `json:"elements"`
@@ -369,6 +397,7 @@ func (d *Data) dataPools() map[string]*pool {
 						continue
 					}
 					el = &element{name: e.Element.Location, template: t, terrain: e.Element.Projection == "terrain_matching",
+						procs:  d.procLists[stringOf(e.Element.Processors)],
 						legacy: strings.HasPrefix(e.Element.Type, "minecraft:legacy") || strings.HasPrefix(e.Element.Type, "legacy")}
 				default:
 					d.problem("template pool %s: element type %s not read", id, e.Element.Type)
@@ -384,4 +413,11 @@ func (d *Data) dataPools() map[string]*pool {
 		}
 	})
 	return d.jpools
+}
+
+// stringOf is a JSON string's value, "" for anything else (an inline processor list is not read).
+func stringOf(raw json.RawMessage) string {
+	var v string
+	json.Unmarshal(raw, &v)
+	return v
 }
