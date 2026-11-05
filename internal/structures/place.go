@@ -51,6 +51,11 @@ func (w *writer) height(x, z int) int {
 	return int(w.c.HighestBlock(uint8(x&15), uint8(z&15))) + 1
 }
 
+// chestEntity is a chest's block entity with a loot table and seed.
+func chestEntity(x, y, z int, table string, seed int32) chunk.BlockEntity {
+	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "Chest", "LootTable": table, "LootTableSeed": seed}}
+}
+
 // chest puts a chest that will roll table with the next loot seed (N2 2.1).
 func (w *writer) chest(x, y, z int, rid uint32, table string) {
 	w.set(x, y, z, rid, false)
@@ -88,6 +93,7 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 	}
 	s.placeAncientCities(w)
 	s.placeVillages(w)
+	s.placeShipwrecks(w)
 	s.placeDataJigsaws(w)
 	return w.bes
 }
