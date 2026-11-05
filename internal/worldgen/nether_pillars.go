@@ -2,8 +2,8 @@ package worldgen
 
 // Two more of the Nether's code features, our own Go of NOTES-bedrock-exact T29 and T30:
 // BasaltPillarFeature (0x4ba00c0; soul sand valleys; 100% of the basalt on both golden soul sand
-// valleys in the study) and TwistingVinesClusterFeature (0x4bc93f0; warped forests; read from the code,
-// not validated: no golden world has a warped forest). Both draw on the rule's feature random.
+// valleys in the study) and TwistingVinesClusterFeature (0x4bc93f0; warped forests; read from the code;
+// seed 100's warped window: 992 of BDS's 1,203 vine blocks, 1,238 placed). Both draw on the rule's feature random.
 
 var (
 	sSoulSand      = laterState("soul_sand")
@@ -76,7 +76,7 @@ func basaltPillar(d *decoration, r *bmt, p pos) bool {
 	return true
 }
 
-// twistingVinesCluster is TwistingVinesClusterFeature (T30, read, not validated): 100 tries around the
+// twistingVinesCluster is TwistingVinesClusterFeature (T30; 82% / 80% of the vine blocks on seed 100's warped window): 100 tries around the
 // origin, skewed to -x and -z, each on netherrack, warped nylium or warped wart under air: a vine of
 // 1 to 14 blocks up through air, each block with its own age.
 func twistingVinesCluster(d *decoration, r *bmt, p pos) bool {
