@@ -135,12 +135,29 @@ func readTemplate(path, file string) (*Template, error) {
 }
 
 func newJigsaw(b tBlock, st tState) jigsaw {
-	fr, top, _ := strings.Cut(st.props["orientation"], "_")
+	o := st.props["orientation"]
+	if o == "" {
+		// The 1.14 jigsaw format (the village templates): a facing, which Java's data fixer turns into an
+		// orientation with the top up, or south / north for a jigsaw facing down / up.
+		switch f := st.props["facing"]; f {
+		case "down":
+			o = "down_south"
+		case "up":
+			o = "up_north"
+		default:
+			o = f + "_up"
+		}
+	}
+	fr, top, _ := strings.Cut(o, "_")
 	j := jigsaw{pos: b.pos, front: faceIndex[fr], top: faceIndex[top]}
 	str := func(k string) string { v, _ := b.nbt[k].(string); return v }
-	j.name, j.pool, j.finalState = str("name"), str("pool"), str("final_state")
-	if j.target = str("target"); j.target == "" {
-		j.target = str("target_pool")
+	j.name, j.pool, j.target, j.finalState = str("name"), str("pool"), str("target"), str("final_state")
+	if at := str("attachement_type"); at != "" && j.name == "" && j.target == "" {
+		// 1.14 format: one attachment type is both the name and the target; target_pool is the pool.
+		j.name, j.target = at, at
+	}
+	if j.pool == "" {
+		j.pool = str("target_pool")
 	}
 	j.aligned = str("joint") == "aligned"
 	j.jointSet = str("joint") != ""

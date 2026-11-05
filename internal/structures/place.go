@@ -84,6 +84,7 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 		s.buriedTreasure(w)
 	}
 	s.placeAncientCities(w)
+	s.placeVillages(w)
 	s.placeDataJigsaws(w)
 	return w.bes
 }
@@ -141,6 +142,7 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 		return into
 	}
 	into = s.dataAdjustments(cx, cz, into)
+	into = s.villageAdjustments(cx, cz, into)
 	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
 		for _, p := range pieces {
 			b := p.box
@@ -163,9 +165,25 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 		rr = worldgen.NewBedrockRandom(s.g.DecorationSeed(w.cx, w.cz)) // P9.1: fresh per element and chunk.
 	}
 	processed := s.processedNames(p)
+	var heights map[[2]int]int
 	for bi, b := range t.blocks {
 		q := rotate(b.pos, p.rot)
 		x, y, z := p.pos[0]+q[0], p.pos[1]+q[1], p.pos[2]+q[2]
+		if p.elem.terrain && p.elem.bedrockLegacy {
+			// Terrain matching: each column follows the ground (P9.1: y = height - 1 + local y).
+			if x>>4 != w.cx || z>>4 != w.cz {
+				continue
+			}
+			if heights == nil {
+				heights = map[[2]int]int{}
+			}
+			h, ok := heights[[2]int{x, z}]
+			if !ok {
+				h = s.g.SurfaceWG(x, z)
+				heights[[2]int{x, z}] = h
+			}
+			y = h - 1 + b.pos[1]
+		}
 		if !w.in(x, y, z) {
 			continue
 		}

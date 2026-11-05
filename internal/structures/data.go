@@ -41,6 +41,9 @@ type Data struct {
 	problemsMu  sync.Mutex
 	loaded      bool // LoadData has returned: later problems are logged as they happen.
 
+	villageOnce sync.Once
+	village     map[string]*pool
+
 	ancientOnce sync.Once
 	ancient     map[string]*pool
 	// Problems lists files that could not be read; each is skipped.
