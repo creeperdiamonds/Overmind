@@ -7,6 +7,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
 // The witch hut (SwamplandHut postProcess 0x5381aa0), read block for block: NOTES-structures-phase2
@@ -170,7 +171,11 @@ func (s *Structures) witchHut(w *writer) {
 	c.set(5, 3, 4, air)
 	c.set(5, 3, 5, air)
 	if pot, ok := stateRID("flower_pot", nil); ok {
-		c.set(1, 3, 5, pot) // Its red mushroom is block entity data, not placed.
+		c.set(1, 3, 5, pot)
+		if wx, wy, wz := c.x0+1, c.y0+3, c.z0+5; w.in(wx, wy, wz) { // P11: PlantBlock = red_mushroom.
+			w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{wx, wy, wz}, Data: map[string]any{"id": "FlowerPot",
+				"PlantBlock": map[string]any{"name": "minecraft:red_mushroom", "states": map[string]any{}}}})
+		}
 	}
 	c.set(4, 4, 2, spruce)
 	// The cauldron's two draws (P11: fill level, potion) are made whether or not Dragonfly has the block.

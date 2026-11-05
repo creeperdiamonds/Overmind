@@ -240,7 +240,6 @@ func lushOwnBlocks() {
 			}
 		}
 	}
-	addOwn("suspicious_sand[dusted=0]", "suspicious_sand", map[string]any{"brushed_progress": int32(0), "hanging": uint8(0)}, true)
 	plain("pale_moss_block", "pale_moss_block", true)
 	plain("closed_eyeblossom", "closed_eyeblossom", false)
 	for i, tip := range bools {
@@ -286,6 +285,7 @@ func lushOwnBlocks() {
 }
 
 var registerOwnBlocks = sync.OnceFunc(func() {
+	registerStructureBlocks() // structure_blocks.go: suspicious sand and gravel, flower pots.
 	ownBlocksList()
 	seen := map[string]bool{}
 	for i := range ownStates {
@@ -348,6 +348,10 @@ func dragonflyBlock(name string) world.Block {
 	base := stateBase(name)
 	if id, ok := ownByJava[base]; ok {
 		return ownBlockOf(id)
+	}
+	switch base {
+	case "suspicious_sand", "suspicious_gravel":
+		return Brushable{Gravel: base == "suspicious_gravel"}
 	}
 	if w, ok := strings.CutSuffix(base, "_log"); ok {
 		if t, ok := woods[w]; ok {

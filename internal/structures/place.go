@@ -177,7 +177,7 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 	if len(p.elem.rules) > 0 {
 		rr = worldgen.NewBedrockRandom(s.g.DecorationSeed(w.cx, w.cz)) // P9.1: fresh per element and chunk.
 	}
-	processed := s.processedNames(p)
+	processed, procLoot := s.processedNames(p)
 	var heights map[[2]int]int
 	for bi, b := range t.blocks {
 		q := rotate(b.pos, p.rot)
@@ -219,6 +219,12 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 			if nr, ok := ridOfName(processed[bi]); ok {
 				res.name, res.rid = processed[bi], nr
 			}
+		}
+		if procLoot != nil && procLoot[bi] != nil && (res.name == "suspicious_gravel" || res.name == "suspicious_sand") {
+			w.set(x, y, z, res.rid, false)
+			w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "BrushableBlock",
+				"LootTable": procLoot[bi].table, "LootTableSeed": int32(procLoot[bi].seed)}})
+			continue
 		}
 		if p.elem.legacy && res.name == "air" {
 			continue // A legacy element places no air (Java's LegacySinglePoolElement).

@@ -25,6 +25,14 @@ type brRule struct {
 	match  string  // Input block, Bedrock name.
 	p      float32 // random_block_match probability; < 0 for block_match.
 	output string  // Bedrock name.
+	loot   string  // append_loot's table ("" for none): the output's block entity gets it and a seed.
+}
+
+// brLoot is a processed block's loot table and seed (append_loot: Java's random.nextLong() after the
+// rule's tests, on the rule's per-position random).
+type brLoot struct {
+	table string
+	seed  int64
 }
 
 type brProcessor struct {
@@ -40,7 +48,7 @@ func getSeed(x, y, z int) int64 {
 }
 
 // runRules is RuleProcessor.processBlock for one block at a world position.
-func runRules(rules []brRule, name string, x, y, z int) string {
+func runRules(rules []brRule, name string, x, y, z int) (string, *brLoot) {
 	r := worldgen.NewJavaRandom(getSeed(x, y, z))
 	for _, ru := range rules {
 		if name != ru.match {
@@ -49,18 +57,25 @@ func runRules(rules []brRule, name string, x, y, z int) string {
 		if ru.p >= 0 && !(r.NextFloat() < ru.p) {
 			continue
 		}
-		return ru.output
+		if ru.loot != "" {
+			return ru.output, &brLoot{ru.loot, r.NextLong()}
+		}
+		return ru.output, nil
 	}
-	return name
+	return name, nil
 }
 
 // processPiece runs an element's processors over a piece's blocks (Bedrock names, in Java's template
 // order, which for these rules is the order given), turning names in place.
-func (s *Structures) processPiece(p *piece, names []string, world [][3]int) {
+func (s *Structures) processPiece(p *piece, names []string, world [][3]int, loot []*brLoot) {
 	for _, pr := range p.elem.procs {
 		if pr.capped == 0 {
 			for i := range names {
-				names[i] = runRules(pr.rules, names[i], world[i][0], world[i][1], world[i][2])
+				var l *brLoot
+				names[i], l = runRules(pr.rules, names[i], world[i][0], world[i][1], world[i][2])
+				if l != nil {
+					loot[i] = l
+				}
 			}
 		}
 	}
@@ -80,8 +95,11 @@ func (s *Structures) processPiece(p *piece, names []string, world [][3]int) {
 			if changed >= min(pr.capped, len(names)) {
 				break
 			}
-			if n := runRules(pr.rules, names[i], world[i][0], world[i][1], world[i][2]); n != names[i] {
+			if n, l := runRules(pr.rules, names[i], world[i][0], world[i][1], world[i][2]); n != names[i] {
 				names[i] = n
+				if l != nil {
+					loot[i] = l
+				}
 				changed++
 			}
 		}
@@ -146,6 +164,10 @@ func parseBrRules(raw json.RawMessage) ([]brRule, bool) {
 			Name   string            `json:"name"`
 			States map[string]string `json:"states"`
 		} `json:"output_state"`
+		Mod *struct {
+			Type      string `json:"type"`
+			LootTable string `json:"loot_table"`
+		} `json:"block_entity_modifier"`
 	}
 	if json.Unmarshal(raw, &rs) != nil {
 		return nil, false
@@ -156,6 +178,12 @@ func parseBrRules(raw json.RawMessage) ([]brRule, bool) {
 			return nil, false // Not in the packs' lists; not written.
 		}
 		ru := brRule{match: strings.TrimPrefix(r.In.Block, "minecraft:"), p: -1, output: strings.TrimPrefix(r.Out.Name, "minecraft:")}
+		if r.Mod != nil {
+			if strings.TrimPrefix(r.Mod.Type, "minecraft:") != "append_loot" {
+				return nil, false
+			}
+			ru.loot = r.Mod.LootTable
+		}
 		switch strings.TrimPrefix(r.In.Type, "minecraft:") {
 		case "random_block_match":
 			ru.p = r.In.P
@@ -176,9 +204,9 @@ func parseBrRules(raw json.RawMessage) ([]brRule, bool) {
 // is a full cube, then the other blocks without NBT, then those with NBT, each sorted by y, x, z), with
 // structure blocks left out. It gives each template block's Bedrock name (by file index), nil without
 // processors.
-func (s *Structures) processedNames(p *piece) []string {
+func (s *Structures) processedNames(p *piece) ([]string, []*brLoot) {
 	if len(p.elem.procs) == 0 {
-		return nil
+		return nil, nil
 	}
 	t := p.elem.template
 	type ent struct {
@@ -226,11 +254,14 @@ func (s *Structures) processedNames(p *piece) []string {
 		list[k] = names[e.i]
 		world[k] = [3]int{p.pos[0] + q[0], p.pos[1] + q[1], p.pos[2] + q[2]}
 	}
-	s.processPiece(p, list, world)
+	lootList := make([]*brLoot, len(ents))
+	s.processPiece(p, list, world, lootList)
+	loot := make([]*brLoot, len(t.blocks))
 	for k, e := range ents {
 		names[e.i] = list[k]
+		loot[e.i] = lootList[k]
 	}
-	return names
+	return names, loot
 }
 
 // fullCube approximates Java's "collision shape is a full block" with Dragonfly's solid model.
