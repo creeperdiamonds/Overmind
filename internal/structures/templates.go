@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
 // Structure templates are Java-format structure NBT, gzip and big-endian, in the install's behaviour
@@ -79,7 +81,7 @@ func readTemplate(path, file string) (*Template, error) {
 			return nil, fmt.Errorf("%s: unpacks to more than %d bytes", file, maxTemplateBytes)
 		}
 	}
-	root, err := readNBT(raw)
+	root, err := worldgen.ReadJavaNBT(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", file, err)
 	}

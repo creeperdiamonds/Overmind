@@ -78,6 +78,8 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.geode(v)
 	case "minecraft:tree_feature":
 		f, err = fc.tree(v)
+	case "minecraft:fossil_feature":
+		f, err = fc.fossil(v)
 	default:
 		return nil, unimpl("%s", pf.kind)
 	}

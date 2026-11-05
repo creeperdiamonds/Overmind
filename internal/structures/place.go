@@ -241,8 +241,11 @@ func (s *Structures) placeAncientCities(w *writer) {
 	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
 	s.citiesNear(w.cx, w.cz, ancientReach, func(pieces []*piece) {
 		for _, p := range pieces {
-			if p.elem.template != nil && p.box.intersects(chunkBox) {
+			switch {
+			case p.elem.template != nil && p.box.intersects(chunkBox):
 				s.placeTemplate(w, p)
+			case p.elem.template == nil && p.elem.name == sculkCityFeature && w.in(p.pos[0], p.pos[1], p.pos[2]):
+				s.sculkElement(w, p.pos)
 			}
 		}
 	})
