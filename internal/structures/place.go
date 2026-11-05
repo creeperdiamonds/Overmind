@@ -84,6 +84,7 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 		s.buriedTreasure(w)
 	}
 	s.placeAncientCities(w)
+	s.placeDataJigsaws(w)
 	return w.bes
 }
 
@@ -171,7 +172,10 @@ func (s *Structures) placeTemplate(w *writer, p *piece) {
 		if !res.ok {
 			continue
 		}
-		if lt, ok := b.nbt["LootTable"].(string); ok && lt != "" {
+		if p.elem.legacy && res.name == "air" {
+			continue // A legacy element places no air (Java's LegacySinglePoolElement).
+		}
+		if lt, ok := b.nbt["LootTable"].(string); ok && lt != "" && (res.name == "chest" || res.name == "trapped_chest") {
 			w.chest(x, y, z, res.rid, bedrockLootPath(lt))
 			continue
 		}

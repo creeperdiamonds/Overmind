@@ -21,10 +21,13 @@ Overworld structures (plan Task 9), our own Go from the study of BDS 1.26.60.6: 
 | Shipwreck, ocean ruin, ruined portal | N1 2.2, checked | not built: not decoded (N2 3) |
 | Mineshaft | N1 2.3, checked against cave spider spawners | not built: not decoded |
 | Stronghold | N1 2.5 and N2 phase 3 round 2; `NearestStronghold` equals BDS locate from 24 of 28 origins | not built: not decoded |
-| Trail ruins, trial chambers, abandoned camps | Java LCG sets (N1 2.4), checked | not built: the br::worldgen placer was not read (N2 1). Trial chambers keep every candidate (biome filter not read); camps and trail ruins test their JSON biome filter at the chunk centre, at surf (position not read) |
+| Trail ruins, abandoned camps | Java LCG sets (N1 2.4), checked; trail ruins: BDS locate 12/12 at our stubs, with the column biome test (fitted, see below) | built: br::worldgen jigsaw = Java's JigsawPlacement (N2 phase 8, `brjigsaw.go`), pools, structures and templates from the install; piece volumes equal BDS's for all 4 measured (3 camps, 1 trail ruin). Processors (archaeology, block rot) and terrain adaptation (bury, beard_thin: br::worldgen's beardifier) are not read, so not applied |
+| Trial chambers | Java LCG set, every candidate kept; BDS locate 28/28 within 8 chunks | not built: pools are code, the study's table of them is not trusted yet (N2 phase 8) |
 | Fossils | feature, not a structure start | not built |
 
 Biome tests sample at "surf" (N1 2.2), the preliminary-surface cache, whose filling was not read. We use the noise stage's top solid block (`worldgen.NoiseHeight`), measured: it explains all the evidence and the eight structure windows; the generator's own preliminary level missed four windows. It places 3 buried treasure starts on seed 12345 that BDS lacks.
+
+Trail ruins' biome test is fitted (ruling 41: 12 of 12 BDS locate answers on 4 worlds; the stub-only test misses 2): some biome of the stub's column, from the stub up to the WG surface, in BDS's own per-block model (`worldgen.BedrockBiomeID`), passes the JSON filter. The other structures keep the quart model: switched to the per-block model, they lose 6 scanned treasure chests and 14 locate answers.
 
 "Checked" means every scanned BDS chest, spawner or structure volume in the four measured worlds lies within the study's distance of a start we place, with our biome tests (`TestStartsMatchBDS`).
 

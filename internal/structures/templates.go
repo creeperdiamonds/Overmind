@@ -42,6 +42,7 @@ type jigsaw struct {
 	name, target, pool   string
 	finalState           string
 	aligned              bool
+	jointSet             bool // The joint was given (Java defaults it by the front).
 	placePrio, selectPri int
 }
 
@@ -142,6 +143,7 @@ func newJigsaw(b tBlock, st tState) jigsaw {
 		j.target = str("target_pool")
 	}
 	j.aligned = str("joint") == "aligned"
+	j.jointSet = str("joint") != ""
 	num := func(k string) int {
 		switch v := b.nbt[k].(type) {
 		case int32:

@@ -262,7 +262,7 @@ func (s *Structures) passes(st *Start) bool {
 	case AncientCity:
 		return s.containsOnly(cx*16, -27, cz*16, 0, deepDark)
 	case TrailRuins:
-		return s.jigsawBiome(st, []string{"minecraft:trail_ruins"})
+		return s.trailRuinsBiome(st)
 	case AbandonedCamp:
 		return s.jigsawBiome(st, s.campStructures)
 	case TrialChambers:

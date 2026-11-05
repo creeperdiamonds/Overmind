@@ -29,6 +29,7 @@ type element struct {
 	name     string
 	template *Template // nil for a feature element.
 	terrain  bool      // Terrain-matching projection (vt5); the ancient city's are rigid.
+	legacy   bool      // A legacy single element: its air blocks are not placed.
 }
 
 // rotate turns a local point by rot clockwise quarter turns (N2 1.2).
@@ -127,6 +128,8 @@ type piece struct {
 	// deltaY lifts the terrain adaptation's base above the box bottom: 1 for the start piece, the target
 	// jigsaw's local y for a child (N2 phase 3 round 2, terrain adaptation).
 	deltaY int
+	// ground is a data-driven piece's ground level delta (Java's PoolElementStructurePiece).
+	ground int
 }
 
 type region struct{ outer, excl []box }
