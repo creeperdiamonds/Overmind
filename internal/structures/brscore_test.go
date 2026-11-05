@@ -17,8 +17,8 @@ import (
 
 // TestDataJigsawBlocksMatchBDS scores the trail ruin and the camps against the study's block exports
 // (golden-bedrock/structures/br_jigsaw, P9.6): every block of every exported chunk, y0..y1, with and
-// without structures, and inside BDS's structure volumes. There is no unstable mask for these chunks,
-// so the figures are raw.
+// without structures, and inside BDS's structure volumes. Exports with a stable mask (seed 12345's trail
+// ruins, P11.9) leave out the cells BDS does not reproduce; the camps' are raw.
 func TestDataJigsawBlocksMatchBDS(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(goldenDir(t), "structures", "br_jigsaw", "*.json"))
 	if len(files) == 0 {
@@ -31,6 +31,7 @@ func TestDataJigsawBlocksMatchBDS(t *testing.T) {
 		Boxes          [][]int  `json:"boxes"`
 		Palette        []string `json:"palette"`
 		Blocks         []int    `json:"blocks"`
+		Stable         []int    `json:"stable"` // 1 = the same in all BDS runs (the newer exports, P11.9).
 	}
 	type tally struct{ same, bare, total, inSame, inBare, inTotal int }
 	per := map[string]*tally{}
@@ -73,6 +74,9 @@ func TestDataJigsawBlocksMatchBDS(t *testing.T) {
 				per[key] = tl
 			}
 			for i, id := range r.Blocks {
+				if len(r.Stable) == len(r.Blocks) && r.Stable[i] == 0 {
+					continue
+				}
 				y := r.Y0 + i/256
 				lz, lx := i/16%16, i%16
 				x, z := r.CX*16+lx, r.CZ*16+lz
