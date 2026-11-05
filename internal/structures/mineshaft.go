@@ -3,6 +3,7 @@ package structures
 import (
 	"sync"
 
+	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
@@ -24,6 +25,7 @@ type msPiece struct {
 	opiece
 	kind  int
 	depth int
+	idx   int // Its place in the list.
 	// Corridor.
 	rails, spider bool
 	sections      int
@@ -37,6 +39,7 @@ type msPiece struct {
 type mineshaft struct {
 	pieces []*msPiece
 	mesa   bool
+	start  [2]int
 }
 
 // msMesaBiomes are the badlands biomes (Bedrock ids), the mesa mineshaft's test at (cx*16, cz*16)
@@ -84,7 +87,11 @@ func (s *Structures) mineshaftAtStart(cx, cz int) *mineshaft {
 			pc.entrances[i] = pc.entrances[i].shift(dy)
 		}
 	}
+	for i, pc := range as.pieces {
+		pc.idx = i
+	}
 	m.pieces = as.pieces
+	m.start = [2]int{cx, cz}
 	return m
 }
 
@@ -466,7 +473,7 @@ func (s *Structures) msPost(w *writer, m *mineshaft, p *msPiece) {
 			c.box(0, lo, 2+i, 2, 7-i, 2+i, air, air, false)
 		}
 	case msCorridor:
-		s.msCorridor(c, p, bl, t)
+		s.msCorridor(c, m, p, bl, t)
 	}
 }
 
@@ -477,8 +484,11 @@ func (c *ctx) planksAt(x, y, z int, planks uint32) {
 	}
 }
 
-func (s *Structures) msCorridor(c *ctx, p *msPiece, bl *msBlocks, t int) {
+func (s *Structures) msCorridor(c *ctx, m *mineshaft, p *msPiece, bl *msBlocks, t int) {
 	air, r := bl.air, c.r
+	// The spawner's "placed" mark: BDS keeps it on the piece, across the chunks it post-processes in
+	// whatever order they come. Ours replays the corridor's earlier chunks in a fixed order.
+	placed := p.spider && s.spiderPlacedBefore(m, p, c.w.cx, c.w.cz)
 	L := p.sections*5 - 1
 	// 1.
 	c.box(0, 0, 0, 2, 1, L, air, air, false)
@@ -509,12 +519,14 @@ func (s *Structures) msCorridor(c *ctx, p *msPiece, bl *msBlocks, t int) {
 				c.set(q.x, 2, q.z, bl.web)
 			}
 		}
-		if p.spider {
+		if p.spider && !placed {
 			zz := z - 1 + int(r.NextIntN(3))
 			wx, wy, wz := c.p.world(1, 0, zz)
 			if c.w.in(wx, wy, wz) && wy < maxY && c.interior(1, 0, zz) {
+				placed = true
 				c.w.set(wx, wy, wz, bl.spawner, false)
 				c.w.bes = append(c.w.bes, spawnerEntity(wx, wy, wz, "minecraft:cave_spider"))
+				c.w.spawned[spiderKey{m.start, p.idx, [2]int{c.w.cx, c.w.cz}}] = true
 			}
 		}
 	}
@@ -655,4 +667,78 @@ func (w *writer) falling(x, y, z int) bool {
 // spawnerEntity is a mob spawner's block entity.
 func spawnerEntity(x, y, z int, entity string) chunk.BlockEntity {
 	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "MobSpawner", "EntityIdentifier": entity}}
+}
+
+// spiderKey names a spider corridor in a chunk.
+type spiderKey struct {
+	start [2]int
+	idx   int
+	chunk [2]int
+}
+
+// spiderOrder is the fixed order in which a corridor's chunks are taken for its spawner mark: 0 x then
+// z ascending, 1 z then x ascending, 2 and 3 the same descending. Fitted (ruling 41): every order gives
+// BDS's spawner count (4 on seed 5's mineshaft, 7 on seed 100's); 2 and 3 put 1 of 4 and 4 of 7 at
+// BDS's position, 0 and 1 put 1 of 4 and 2 of 7 (TestMineshaftsMatchBDS).
+var spiderOrder = 2
+
+// corridorChunks are the chunks a piece box reaches, in spiderOrder.
+func corridorChunks(b box) [][2]int {
+	var out [][2]int
+	x0, x1, z0, z1 := b[0]>>4, b[3]>>4, b[2]>>4, b[5]>>4
+	if spiderOrder%2 == 0 {
+		for x := x0; x <= x1; x++ {
+			for z := z0; z <= z1; z++ {
+				out = append(out, [2]int{x, z})
+			}
+		}
+	} else {
+		for z := z0; z <= z1; z++ {
+			for x := x0; x <= x1; x++ {
+				out = append(out, [2]int{x, z})
+			}
+		}
+	}
+	if spiderOrder >= 2 {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
+	return out
+}
+
+// spiderPlacedBefore says whether a spider corridor has its spawner from a chunk before (cx, cz) in
+// the fixed order: each earlier chunk is made without structures and post-processed again, which is
+// deterministic, so a corridor gets at most one spawner whichever chunk is made first.
+func (s *Structures) spiderPlacedBefore(m *mineshaft, p *msPiece, cx, cz int) bool {
+	for _, a := range corridorChunks(p.b) {
+		if a == [2]int{cx, cz} {
+			return false
+		}
+		if s.spiderPlacedIn(m, p, a) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Structures) spiderPlacedIn(m *mineshaft, p *msPiece, a [2]int) bool {
+	k := spiderKey{m.start, p.idx, a}
+	s.spiderMu.Lock()
+	v, ok := s.spiderDone[k]
+	s.spiderMu.Unlock()
+	if ok {
+		return v
+	}
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	s.g.GenerateBase(a[0], a[1], c)
+	w := s.place(a[0], a[1], c)
+	v = w.spawned[k]
+	s.spiderMu.Lock()
+	if s.spiderDone == nil || len(s.spiderDone) > 4096 {
+		s.spiderDone = map[spiderKey]bool{}
+	}
+	s.spiderDone[k] = v
+	s.spiderMu.Unlock()
+	return v
 }

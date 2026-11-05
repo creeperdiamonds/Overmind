@@ -26,6 +26,8 @@ type writer struct {
 	rng    *worldgen.BedrockRandom
 	bes    []chunk.BlockEntity
 	carts  []minecartIntent
+	// spawned are the spider corridors that placed their spawner in this chunk.
+	spawned map[spiderKey]bool
 }
 
 func (w *writer) in(x, y, z int) bool {
@@ -91,7 +93,7 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 // place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
 // chest minecarts its mineshafts would spawn.
 func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
-	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz))}
+	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{}}
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 		s.buriedTreasure(w)
 	}
@@ -109,10 +111,9 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 	s.placeIgloos(w)
 	s.placePyramids(w)
 	s.placeDataJigsaws(w)
-	// Strongholds, then mineshafts, after the others: in BDS's seed-100 chunks holding both, the
-	// stronghold's chest seeds sit at the draw index of a stronghold-only stream (P14.3), and buried
-	// treasure chests keep BDS's seeds only when they draw before the mineshafts (TestBuriedTreasure:
-	// 26 of 27 this way, 23 with mineshafts first). The order was not read from the code.
+	// Strongholds, then mineshafts, after the others: fitted (buried treasure 26/27 vs 23/27 with
+	// mineshafts first; ruling 41), until the order is read. In BDS's seed-100 chunks holding both, the
+	// stronghold's chest seeds sit at the draw index of a stronghold-only stream (P14.3).
 	s.placeStrongholds(w)
 	s.placeMineshafts(w)
 	return w
