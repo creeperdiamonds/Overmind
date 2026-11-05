@@ -51,6 +51,9 @@ type jsonJigsaw struct {
 	padTop       int
 	biomeFilters []byte
 	adaptation   string // terrain_adaptation: none, bury, beard_thin, beard_box, encapsulate.
+	// aliases maps a jigsaw's pool name to the pool it resolves to for this start (Java's
+	// PoolAliasLookup; trial chambers, NOTES-loot-trial-bastion T1).
+	aliases map[string]string
 }
 
 // javaJigsaws are an element's jigsaws in Java's template order (blocks with NBT sorted by y, x, z),
@@ -120,6 +123,7 @@ type javaQueued struct {
 type javaAssembly struct {
 	r        *javaRandom
 	pools    map[string]*pool
+	aliases  map[string]string
 	maxDepth int
 	height   func(x, z int) int // getFirstFreeHeight on WORLD_SURFACE_WG.
 	pieces   []*piece
@@ -171,7 +175,7 @@ func assembleJava(r *javaRandom, pools map[string]*pool, j *jsonJigsaw, cx, cz i
 	centreY := bottom + local[1]
 	stub = [3]int{centreX, centreY, centreZ}
 	p := &piece{elem: e, pos: adj, rot: rot, box: b, ground: groundDelta}
-	a := &javaAssembly{r: r, pools: pools, maxDepth: j.maxDepth, height: height, pieces: []*piece{p}}
+	a := &javaAssembly{r: r, pools: pools, aliases: j.aliases, maxDepth: j.maxDepth, height: height, pieces: []*piece{p}}
 	if j.maxDepth <= 0 {
 		return a.pieces, stub
 	}
@@ -222,7 +226,11 @@ func (a *javaAssembly) children(p *piece, ctxFree *region, depth int) {
 		target := [3]int{sj.pos[0] + st[0], sj.pos[1] + st[1], sj.pos[2] + st[2]}
 		localY := sj.pos[1] - sbox[1]
 		baseHeight, haveBase := 0, false
-		pl := a.pools[sj.pool]
+		poolName := sj.pool
+		if to, ok := a.aliases[poolName]; ok {
+			poolName = to // The fallback is the resolved pool's (Java's readPoolKey).
+		}
+		pl := a.pools[poolName]
 		if pl == nil {
 			continue
 		}

@@ -122,6 +122,9 @@ func (s *Structures) groundHeight(w *writer, x0, z0, sx, sz int) (int, bool) {
 				}
 				_, solid := b.Model().(model.Solid)
 				_, liquid := b.(world.Liquid)
+				if solid && treeBlock(b) {
+					continue // BDS builds the piece before the trees grow; a trunk is not the ground.
+				}
 				if solid || liquid {
 					h = y + 1
 					break
@@ -135,6 +138,13 @@ func (s *Structures) groundHeight(w *writer, x0, z0, sx, sz int) (int, bool) {
 		return 0, false
 	}
 	return sum / n, true
+}
+
+// treeBlock says whether a block is a tree's trunk or wood, which our chunk already has when its
+// structures are placed and BDS's does not.
+func treeBlock(b world.Block) bool {
+	n, _ := b.EncodeBlock()
+	return strings.HasSuffix(n, "_log") || strings.HasSuffix(n, "_wood") || strings.HasSuffix(n, "_stem")
 }
 
 // witchHut builds the hut of the start in chunk w (P11).

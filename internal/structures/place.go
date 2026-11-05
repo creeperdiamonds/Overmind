@@ -166,7 +166,7 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 		}
 	}
 	for _, place := range []func(*writer){s.placeVillages, s.placeStrongholds, scattered, s.placeMineshafts, treasure,
-		s.placeMonuments, s.placeShipwrecks, s.placeAncientCities, s.placeDataJigsaws} {
+		s.placeMonuments, s.placeShipwrecks, s.placeAncientCities, s.placeDataJigsaws, s.placeTrialChambers} {
 		w.reseed()
 		place(w)
 	}
