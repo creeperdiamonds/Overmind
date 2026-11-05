@@ -57,6 +57,28 @@ func (g *Generator) DecorationSeed(cx, cz int) uint32 { return g.bseeds.chunk(cx
 // tests read it (NOTES-bedrock-structures 2.1).
 func (g *Generator) BiomeID(x, y, z int) int { return g.BiomeAt(x, y, z).EncodeBiome() }
 
+// BedrockBiomeID is the biome BDS computes for a block (its 8-block grid model, NOTES-bedrock-exact T11)
+// when this generator follows it, else BiomeID.
+func (g *Generator) BedrockBiomeID(x, y, z int) int {
+	if !g.bedrockBiomes {
+		return g.BiomeID(x, y, z)
+	}
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	return biomeRowDefs[s.bedrockBiome(g, x, y, z)].EncodeBiome()
+}
+
+// SurfaceWG is Java's getFirstFreeHeight on the WORLD_SURFACE_WG heightmap at a block column: one above
+// the highest block that is not air at the noise stage (water counts). The data-driven jigsaw
+// structures project their starts and terrain-matching pieces with it (NOTES-structures-phase2 phase 8).
+func (g *Generator) SurfaceWG(x, z int) int {
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	s.startColumnOnly(g)
+	_, nonAir := g.startWalk(s, x, z).rawTops()
+	return nonAir + 1
+}
+
 // Data is the Bedrock feature data this generator reads, nil when no install was read.
 func (g *Generator) Data() *BedrockData { return g.bdata }
 
