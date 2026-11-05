@@ -601,7 +601,8 @@ func (g *Generator) fillNoise(b *baseChunk, s *chunkScratch, x0, x1, z0, z1 int)
 					for dy := cellY - 1; dy >= 0; dy-- {
 						y := baseY + dy
 						fy := float64(dy) / 8.0
-						f := blend.final(fy) + adapt.at(wx, y, wz)
+						nf := blend.final(fy)
+						f := nf + adapt.at(nf, wx, y, wz)
 						var k fillKind = fillSolid
 						if !(f > 0) {
 							k = g.fluidAt(&s.aq, wx, y, wz, f)
@@ -792,4 +793,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.t9r10a"
+const GeneratorVersion = "2026-11-05.t9r10b"

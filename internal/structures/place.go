@@ -24,6 +24,7 @@ type writer struct {
 	cx, cz int
 	c      *chunk.Chunk
 	rng    *worldgen.BedrockRandom
+	seed   uint32 // The chunk's post-process seed, which rng starts from for each structure type.
 	bes    []chunk.BlockEntity
 	carts  []minecartIntent
 	// spawned are the spider corridors that placed their spawner in this chunk.
@@ -130,17 +131,22 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 // place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
 // chest minecarts its mineshafts would spawn.
 func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
-	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), spawned: map[spiderKey]bool{},
+	w := &writer{cx: cx, cz: cz, c: c, rng: worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz)), seed: s.g.DecorationSeed(cx, cz), spawned: map[spiderKey]bool{},
 		lo: minY, hi: maxY, trace: s.trace}
 	if s.nether {
 		w.lo, w.hi = netherMinY, netherMaxY
 		s.placeNether(w)
 		return w
 	}
+	// Each structure type post-processes with the chunk's random seeded afresh (P17.2): the order of
+	// the types changes no draw, only which blocks win where two types overlap. That write order (the
+	// registry's) is not read; strongholds and mineshafts go last.
 	if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
+		w.reseed()
 		s.buriedTreasure(w)
 	}
 	if st, ok := s.StartIn(Scattered, cx, cz); ok {
+		w.reseed()
 		switch st.Piece {
 		case "witch_hut":
 			s.witchHut(w)
@@ -148,20 +154,16 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 			s.jungleTemple(w)
 		}
 	}
-	s.placeAncientCities(w)
-	s.placeVillages(w)
-	s.placeShipwrecks(w)
-	s.placeIgloos(w)
-	s.placePyramids(w)
-	s.placeMonuments(w)
-	s.placeDataJigsaws(w)
-	// Strongholds, then mineshafts, after the others: fitted (buried treasure 26/27 vs 23/27 with
-	// mineshafts first; ruling 41), until the order is read. In BDS's seed-100 chunks holding both, the
-	// stronghold's chest seeds sit at the draw index of a stronghold-only stream (P14.3).
-	s.placeStrongholds(w)
-	s.placeMineshafts(w)
+	for _, place := range []func(*writer){s.placeAncientCities, s.placeVillages, s.placeShipwrecks, s.placeIgloos,
+		s.placePyramids, s.placeMonuments, s.placeDataJigsaws, s.placeStrongholds, s.placeMineshafts} {
+		w.reseed()
+		place(w)
+	}
 	return w
 }
+
+// reseed starts the chunk's post-process random again, as BDS does before each structure type (P17.2).
+func (w *writer) reseed() { w.rng.SetSeed(w.seed) }
 
 // citiesNear calls f with the pieces of every ancient city whose start is within reach chunks of (cx, cz).
 func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
@@ -217,6 +219,7 @@ func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjus
 	}
 	into = s.dataAdjustments(cx, cz, into)
 	into = s.villageAdjustments(cx, cz, into)
+	into = s.strongholdAdjustments(cx, cz, into)
 	s.citiesNear(cx, cz, ancientReach+1, func(pieces []*piece) {
 		for _, p := range pieces {
 			b := p.box

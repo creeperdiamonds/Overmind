@@ -59,10 +59,12 @@ func (s *Structures) placeNether(w *writer) {
 		switch st.Kind {
 		case Fortress:
 			if abs(st.CX-w.cx) <= fortressReach && abs(st.CZ-w.cz) <= fortressReach {
+				w.reseed() // P17.2: a fresh post-process random per structure type.
 				s.placeFortress(w, st)
 			}
 		case Bastion:
 			if abs(st.CX-w.cx) <= bastionReach && abs(st.CZ-w.cz) <= bastionReach {
+				w.reseed()
 				s.placeBastion(w, st)
 			}
 		}

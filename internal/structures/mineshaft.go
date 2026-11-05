@@ -74,13 +74,27 @@ func (s *Structures) mineshaftAtStart(cx, cz int) *mineshaft {
 		p = 0.5
 	}
 	as.roomChildren(room, p)
-	// 7. Height. The mesa rule (P141: j = -64 + 5 + span + 1 ...) is not complete in the notes; mesa
-	// mineshafts take the normal height.
+	// 7. Height (P17.3: the OLD form, which 1.26.60 worlds take). Normal: under the sea (P13.1). Mesa
+	// (Java 1.18's rule): the height h at the bounds' centre quart; y = sea level, or sea level +
+	// nextInt(h - sea level + 1) when h is above it; the shaft's middle moves to y. Not validated: no
+	// mesa mineshaft world. Which heightmap the code reads was not checked: the preliminary surface, as
+	// the stronghold ring's village test (P9.5).
 	boxes := make([]box, len(as.pieces))
 	for i, pc := range as.pieces {
 		boxes[i] = pc.b
 	}
-	dy := moveBelowSea(boundsOf(boxes), r)
+	all := boundsOf(boxes)
+	var dy int
+	if m.mesa {
+		h := s.g.PreliminarySurface(all[0]+(all[3]-all[0]+1)>>1, all[2]+(all[5]-all[2]+1)>>1)
+		y := seaLevelField
+		if seaLevelField < h {
+			y += int(r.NextIntN(int32(h - seaLevelField + 1)))
+		}
+		dy = y - (all[1] + (all[4]-all[1]+1)>>1)
+	} else {
+		dy = moveBelowSea(all, r)
+	}
 	for _, pc := range as.pieces {
 		pc.b = pc.b.shift(dy)
 		for i := range pc.entrances {
@@ -678,8 +692,9 @@ type spiderKey struct {
 
 // spiderOrder is the fixed order in which a corridor's chunks are taken for its spawner mark: 0 x then
 // z ascending, 1 z then x ascending, 2 and 3 the same descending. Fitted (ruling 41): every order gives
-// BDS's spawner count (4 on seed 5's mineshaft, 7 on seed 100's); 2 and 3 put 1 of 4 and 4 of 7 at
-// BDS's position, 0 and 1 put 1 of 4 and 2 of 7 (TestMineshaftsMatchBDS).
+// BDS's spawner count (4 on seed 5's mineshaft, 7 on seed 100's); 2 and 3 put 1 of 4 and 3 of 7 at
+// BDS's position, 0 and 1 put 1 of 4 and 2 of 7 (TestMineshaftsMatchBDS, with P17.2's fresh random per
+// structure type; 4 of 7 on the shared stream before).
 var spiderOrder = 2
 
 // corridorChunks are the chunks a piece box reaches, in spiderOrder.
