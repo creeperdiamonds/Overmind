@@ -92,12 +92,15 @@ func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity 
 		switch st.Piece {
 		case "witch_hut":
 			s.witchHut(w)
+		case "jungle_temple":
+			s.jungleTemple(w)
 		}
 	}
 	s.placeAncientCities(w)
 	s.placeVillages(w)
 	s.placeShipwrecks(w)
 	s.placeIgloos(w)
+	s.placePyramids(w)
 	s.placeDataJigsaws(w)
 	return w.bes
 }

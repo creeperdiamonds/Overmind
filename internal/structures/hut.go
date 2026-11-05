@@ -26,7 +26,7 @@ type codeBuilt struct {
 
 func (c *codeBuilt) set(x, y, z int, rid uint32) {
 	wx, wy, wz := c.x0+x, c.y0+y, c.z0+z
-	if c.w.in(wx, wy, wz) {
+	if c.w.in(wx, wy, wz) && rid != noBlock {
 		c.w.set(wx, wy, wz, rid, false)
 	}
 }

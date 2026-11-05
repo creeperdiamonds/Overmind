@@ -167,3 +167,16 @@ func (j *JavaRandom) NextInt(n int32) int32 { return j.r.nextInt(n) }
 func (j *JavaRandom) NextLong() int64       { return j.r.nextLong() }
 func (j *JavaRandom) NextFloat() float32    { return j.r.nextFloat() }
 func (j *JavaRandom) NextDouble() float64   { return j.r.nextDouble() }
+
+// Xoroshiro is Java's Xoroshiro128++ seeded from a 64-bit seed (RandomSupport's upgrade to 128 bits),
+// which the desert pyramid's archaeology uses on Bedrock too (NOTES-structures-phase2 P11.2).
+type Xoroshiro struct{ r xoro }
+
+// NewXoroshiro seeds a Xoroshiro128++.
+func NewXoroshiro(seed int64) *Xoroshiro { return &Xoroshiro{xoroFromSeed(seed)} }
+
+// NextIntN is Java's bounded nextInt (Lemire's method).
+func (x *Xoroshiro) NextIntN(n int32) int32 { return int32(x.r.nextInt(uint32(n))) }
+
+// NextInt is Java's nextInt(): the low 32 bits of a draw.
+func (x *Xoroshiro) NextInt() int32 { return int32(uint32(x.r.next())) }
