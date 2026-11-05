@@ -31,12 +31,13 @@ const (
 	Stronghold
 	Fortress // The Nether's: fortress and bastion share one placement (nether.go).
 	Bastion
+	EndCity // The End's (endcity.go).
 	numKinds
 )
 
 var kindNames = [numKinds]string{"village", "scattered", "monument", "mansion", "pillager_outpost", "buried_treasure", "shipwreck",
 	"ocean_ruin", "ruined_portal", "ancient_city", "trail_ruins", "trial_chambers", "abandoned_camp", "mineshaft", "stronghold",
-	"fortress", "bastion_remnant"}
+	"fortress", "bastion_remnant", "end_city"}
 
 func (k Kind) String() string { return kindNames[k] }
 
@@ -66,6 +67,7 @@ var spreads = [numKinds]spread{
 	AbandonedCamp:  {37, 8, 91231127, false, true},
 	Fortress:       {30, 4, 30084232, false, false}, // N1 2.2 (NetherStructureFeatureHelper).
 	Bastion:        {30, 4, 30084232, false, false},
+	EndCity:        {20, 11, 10387313, true, false}, // NOTES-bedrock-end phase 8.
 }
 
 // Region seed multipliers: Java's -0x66c60af8 and -0xea9a42b truncated to 32 bits (N1 2.1).

@@ -88,7 +88,11 @@ func Start(cfg config.Config) (*server.Server, error) {
 	}
 	// The End (Task 11): Bedrock's terrain, spikes, islands, chorus and gateways, and the inactive exit
 	// portal, for every profile (it reads no data); no dragon fight yet.
-	endGuard := &offTick{g: gen.End()}
+	end := gen.End()
+	if sd != nil {
+		end.SetStructures(structures.New(end, sd)) // End cities.
+	}
+	endGuard := &offTick{g: end}
 	conf.Generator = func(dim world.Dimension) world.Generator {
 		switch dim {
 		case world.Overworld:

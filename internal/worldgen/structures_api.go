@@ -73,6 +73,27 @@ func (g *Generator) BiomeID(x, y, z int) int {
 	return g.BiomeAt(x, y, z).EncodeBiome()
 }
 
+// IsEnd says whether this is a world's End generator.
+func (g *Generator) IsEnd() bool { return g.dim == dimEnd }
+
+// EndTerrainHeights are the End's terrain heights (first solid block from the top + 1, 0 for void) at
+// columns (local x, z) of chunk (cx, cz), from the terrain alone, as the end city's start test reads them
+// (NOTES-bedrock-end phase 8).
+func (g *Generator) EndTerrainHeights(cx, cz int, cols [][2]int) []int {
+	var cells [endHeight * 256]bs
+	g.endN.noise.fill(cx, cz, &cells, sEndStone)
+	out := make([]int, len(cols))
+	for i, c := range cols {
+		for y := endHeight - 1; y >= 0; y-- {
+			if cells[y<<8|(c[1]&15)<<4|c[0]&15] != 0 {
+				out[i] = y + 1
+				break
+			}
+		}
+	}
+	return out
+}
+
 // IsNether says whether this is a world's Nether generator.
 func (g *Generator) IsNether() bool { return g.dim == dimNether }
 

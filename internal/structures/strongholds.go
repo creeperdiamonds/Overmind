@@ -92,7 +92,7 @@ func (s *Structures) strongholdAt(cx, cz int) bool {
 // the corner of the stronghold's start piece, the spiral stairs down (strongholdpieces.go), so the eye
 // leads to a stronghold that is really there.
 func (s *Structures) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
-	if s.nether {
+	if s.nether || s.end {
 		return cube.Pos{}, false
 	}
 	pcx, pcz := floorDiv(pos[0], 16), floorDiv(pos[2], 16)

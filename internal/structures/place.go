@@ -138,6 +138,11 @@ func (s *Structures) place(cx, cz int, c *chunk.Chunk) *writer {
 		s.placeNether(w)
 		return w
 	}
+	if s.end {
+		w.lo, w.hi = endMinY, endMaxY
+		s.placeEndCities(w)
+		return w
+	}
 	// Each structure type post-processes with the chunk's random seeded afresh (P17.2), in the
 	// registry's order (P18.4: village, stronghold, the scattered feature, mineshaft, mansion, buried
 	// treasure, outpost, monument, ocean ruin, shipwreck, ruined portal, ancient city), which decides
@@ -188,7 +193,7 @@ func (s *Structures) citiesNear(cx, cz, reach int, f func([]*piece)) {
 // it at its origin and places nothing inside one (NOTES-bedrock-exact T15). Ancient cities are the only
 // structures with pieces so far, so only their pieces answer.
 func (s *Structures) InsideStructure(x, y, z int) bool {
-	if s.data == nil || s.nether {
+	if s.data == nil || s.nether || s.end {
 		return false
 	}
 	in := false
@@ -220,7 +225,7 @@ func (s *Structures) placeAncientCities(w *writer) {
 // shave with widths 1 and 5, registered in the chunks its box grown by 12 blocks in x and z reaches.
 // Feature elements are rigid pieces too, with their one-block box.
 func (s *Structures) TerrainAdjustments(cx, cz int, into []worldgen.TerrainAdjustment) []worldgen.TerrainAdjustment {
-	if s.data == nil || s.nether {
+	if s.data == nil || s.nether || s.end {
 		return into
 	}
 	into = s.dataAdjustments(cx, cz, into)

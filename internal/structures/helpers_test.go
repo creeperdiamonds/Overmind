@@ -50,6 +50,15 @@ func worldFor(t testing.TB, seed int64) (*worldgen.Generator, *Structures) {
 	return g, s
 }
 
+// endFor is a seed's Bedrock-profile End generator with its structures attached.
+func endFor(t testing.TB, seed int64) (*worldgen.Generator, *Structures) {
+	bd, d := installData(t)
+	g := worldgen.NewWithData(seed, worldgen.ProfileBedrock, bd).End()
+	s := New(g, d)
+	g.SetStructures(s)
+	return g, s
+}
+
 // worldgenNether is a seed's Bedrock-profile Nether generator without structures.
 func worldgenNether(bd *worldgen.BedrockData, seed int64) *worldgen.Generator {
 	return worldgen.NewWithData(seed, worldgen.ProfileBedrock, bd).Nether()
@@ -123,6 +132,8 @@ func generate(g *worldgen.Generator, cx, cz int) *chunk.Column {
 	r := world.Overworld.Range()
 	if g.IsNether() {
 		r = world.Nether.Range()
+	} else if g.IsEnd() {
+		r = world.End.Range()
 	}
 	col := &chunk.Column{Chunk: chunk.New(world.DefaultBlockRegistry, r)}
 	g.GenerateColumn(world.ChunkPos{int32(cx), int32(cz)}, col)

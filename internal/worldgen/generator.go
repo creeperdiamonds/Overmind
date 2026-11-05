@@ -233,6 +233,7 @@ func (g *Generator) generateInto(cx, cz int, c *chunk.Chunk, col *chunk.Column) 
 		}
 		writeRows(c, cells, 256)
 		storeUniformBiome(c, uint32(biome.End{}.EncodeBiome()), 256)
+		g.placeStructures(cx, cz, c, col)
 		return
 	}
 	writeCells(c, g.finalCells(s, cx, cz))
@@ -793,4 +794,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-05.t9r10c"
+const GeneratorVersion = "2026-11-05.t9r10d"

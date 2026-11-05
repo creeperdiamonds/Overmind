@@ -39,8 +39,10 @@ type Structures struct {
 	strongholds keyCache
 	monuments   keyCache
 	fortresses  keyCache
-	// nether says these are the Nether's structures (fortresses and bastions, nether.go).
-	nether bool
+	endCities   keyCache
+	// nether says these are the Nether's structures (fortresses and bastions, nether.go); end, the
+	// End's (end cities, endcity.go).
+	nether, end bool
 	// omF1, omF2 are the monument start seed's two floats (monument.go).
 	omOnce     sync.Once
 	omF1, omF2 float32
@@ -53,9 +55,9 @@ type Structures struct {
 
 // New makes the structures of a generator's world. The generator must have Bedrock's feature data (its
 // biome files name the village biomes and the jigsaw filters); data is the install's templates and loot
-// tables, nil to place starts only. Given a world's Nether generator, they are the Nether's.
+// tables, nil to place starts only. Given a world's Nether or End generator, they are that dimension's.
 func New(g *worldgen.Generator, data *Data) *Structures {
-	s := &Structures{g: g, bd: g.Data(), data: data, seed: g.Seed(), seed32: g.BedrockLevelSeed(), nether: g.IsNether(),
+	s := &Structures{g: g, bd: g.Data(), data: data, seed: g.Seed(), seed32: g.BedrockLevelSeed(), nether: g.IsNether(), end: g.IsEnd(),
 		villageBiomes: map[int]bool{}, villageTypes: map[int]string{}, jigsawFilters: map[string]json.RawMessage{},
 		biomeNames: map[int]string{}}
 	r := worldgen.NewBedrockRandom(s.seed32)
