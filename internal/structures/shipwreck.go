@@ -6,21 +6,18 @@ import (
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
-// Shipwrecks (ShipwreckPiece postProcess 0x5386700: NOTES-structures-phase2 P9.6, cited P96). The wreck is
-// built whole by the post-process of its start chunk, with that chunk's post-process random R; each of
-// our chunks writes the part of it inside itself, worked out again from the start chunk's R.
+// Shipwrecks (ShipwreckPiece postProcess 0x5386700: NOTES-structures-phase2 P9.6 and P11.5, cited P115).
+// The wreck is built whole by the post-process of its start chunk, with that chunk's post-process random
+// R; each of our chunks writes the part of it inside itself, worked out again from the start chunk's R.
 //   - beached when the biome at the anchor is 15, 16 or 26; rotation nextInt(4); template nextInt(20),
-//     then nextInt(14) when beached (both draws), from P96's table; then nextInt(9) (a pair not decoded);
+//     then nextInt(14) when beached; then nextInt(9) (a pair not decoded);
 //   - the template turns about the anchor shifted by rot0 (0,0), rot1 (+15,0), rot2 (+15,+15),
 //     rot3 (0,+15);
-//   - chests below the data markers mapChest, supplyChest and treasureChest, with LootTableSeed =
-//     R.nextInt() each. P96 left draws 3 to 5 unidentified and the marker order open. Here the first chest
-//     takes draw 7, then treasure, map, one more draw, supply (what seed 12345's three-chest wreck shows).
-//     Not settled: 3 of 9 chests get BDS's seed (TestShipwrecksMatchBDS); in the other wrecks BDS has no
-//     treasure chest where our template has a marker, and its map chest takes draw 7 (draw 6 in one).
-//   - y, read but not checked in P96: the mean (the minimum when beached) of the sea floor height over the
-//     footprint, plus -2 (template under 14 tall) or -4, at least sea level when beached. The sea floor
-//     here is the noise stage's top solid block.
+//   - height: the mean (beached: the minimum) of the first free y over the central half of the
+//     footprint, less 2 (less 4 for the upside-down templates 14..19), at least sea level when beached;
+//   - placing the template draws one value per data marker; then the markers in the order treasure, map,
+//     supply: the chest is the block below; treasure and supply chests are removed when nextInt(10) < 5,
+//     else (and the map chest always) get LootTableSeed = nextInt();
 //   - air and structure blocks of the template are not placed (Java's shipwreck ignores both; not read
 //     for BDS).
 
@@ -38,10 +35,11 @@ var shipwreckLoot = map[string]string{"mapChest": "loot_tables/chests/shipwreck.
 const shipwreckReach = 2 // Chunks a wreck reaches from its start (28 blocks at most, from the shifted anchor).
 
 type wreck struct {
-	t      *Template
-	rot    int
-	origin [3]int
-	chests map[int]chestSpec // Template block index of a chest to its table and seed.
+	t       *Template
+	rot     int
+	origin  [3]int
+	chests  map[int]chestSpec // Template block index of a chest to its table and seed.
+	removed map[int]bool      // Chests replaced by air or water.
 }
 
 type chestSpec struct {
@@ -57,26 +55,24 @@ func (s *Structures) shipwreck(cx, cz int) *wreck {
 	r := worldgen.NewBedrockRandom(s.g.DecorationSeed(cx, cz))
 	rot := int(r.NextIntN(4))
 	t := int(r.NextIntN(20))
-	draws := 2
 	if beached {
 		t = int(r.NextIntN(14))
-		draws++
 	}
-	r.NextIntN(9)
-	r.Consume(7 - (draws + 1)) // The first chest takes draw 7 (see the top).
+	r.NextIntN(9) // The pair table choice (not decoded).
 	tp := s.data.Template("shipwreck/" + shipwreckTemplates[t])
 	if tp == nil {
 		return nil
 	}
 	sh := shipwreckShift[rot]
 	ox, oz := x0+sh[0], z0+sh[1]
-	// The footprint's sea floor.
-	e := &element{template: tp}
-	fb := e.bbox([3]int{ox, 0, oz}, rot)
+	// P115: heights over the central half of the footprint, the first free y of each column (ours: one
+	// above the noise stage's top solid block).
+	sx, sz := tp.Size[0], tp.Size[2]
 	sum, n, low := 0, 0, math.MaxInt
-	for x := fb[0]; x <= fb[3]; x++ {
-		for z := fb[2]; z <= fb[5]; z++ {
-			h := s.g.NoiseHeight(x, z)
+	for lx := sx / 4; lx <= 3*sx/4; lx++ {
+		for lz := sz / 4; lz <= 3*sz/4; lz++ {
+			q := rotate([3]int{lx, 0, lz}, rot)
+			h := s.g.NoiseHeight(ox+q[0], oz+q[2]) + 1
 			sum += h
 			low = min(low, h)
 			n++
@@ -86,19 +82,23 @@ func (s *Structures) shipwreck(cx, cz int) *wreck {
 	if beached {
 		y = low
 	}
-	if tp.Size[1] < 14 {
+	if t < 14 {
 		y -= 2
 	} else {
-		y -= 4
+		y -= 4 // The upside-down templates sink 4.
 	}
 	if beached {
 		y = max(y, seaLevelField)
 	}
-	wk := &wreck{t: tp, rot: rot, origin: [3]int{ox, y, oz}, chests: map[int]chestSpec{}}
+	wk := &wreck{t: tp, rot: rot, origin: [3]int{ox, y, oz}, chests: map[int]chestSpec{}, removed: map[int]bool{}}
 	chestOf := map[string]int{}
+	markers := 0
 	for _, bl := range tp.blocks {
 		if tp.palette[bl.state].name != "structure_block" {
 			continue
+		}
+		if mode := tp.palette[bl.state].props["mode"]; mode == "data" || mode == "" {
+			markers++
 		}
 		meta, _ := bl.nbt["metadata"].(string)
 		if _, ok := shipwreckLoot[meta]; !ok {
@@ -111,14 +111,17 @@ func (s *Structures) shipwreck(cx, cz int) *wreck {
 			}
 		}
 	}
-	for _, m := range []string{"treasureChest", "mapChest", "", "supplyChest"} {
-		if m == "" {
-			r.NextInt() // The measured draw between the map and supply chests.
+	r.Consume(markers) // The template placement draws one value per data marker (P115).
+	for _, m := range []string{"treasureChest", "mapChest", "supplyChest"} {
+		i, ok := chestOf[m]
+		if !ok {
 			continue
 		}
-		if i, ok := chestOf[m]; ok {
-			wk.chests[i] = chestSpec{shipwreckLoot[m], r.NextInt()}
+		if m != "mapChest" && r.NextIntN(10) < 5 {
+			wk.removed[i] = true // P115: the treasure and supply chests are each removed half the time.
+			continue
 		}
+		wk.chests[i] = chestSpec{shipwreckLoot[m], r.NextInt()}
 	}
 	return wk
 }
@@ -149,6 +152,14 @@ func (s *Structures) placeShipwrecks(w *writer) {
 					continue
 				}
 				water := res.waterlog || w.c.Block(uint8(wx&15), int16(wy), uint8(wz&15), 0) == waterRID()
+				if wk.removed[i] {
+					if wy < seaLevelField {
+						w.set(wx, wy, wz, waterRID(), false)
+					} else {
+						w.set(wx, wy, wz, airRID(), false)
+					}
+					continue
+				}
 				if c, ok := wk.chests[i]; ok && res.name == "chest" {
 					w.set(wx, wy, wz, res.rid, water)
 					w.bes = append(w.bes, chestEntity(wx, wy, wz, c.table, c.seed))

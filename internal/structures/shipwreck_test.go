@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// TestShipwrecksMatchBDS: every shipwreck chest of the four measured worlds against ours: position (x, z
-// as P9.6 validated, then y), table and loot seed. Reported; it fails only when a chest has no chest of
-// ours at its x and z with its table.
+// TestShipwrecksMatchBDS: every shipwreck chest of the four measured worlds against ours: position, table
+// and loot seed (P11.5: 9 of 9).
 func TestShipwrecksMatchBDS(t *testing.T) {
 	ev := loadEvidence(t)
 	n, xz, xyz, seed := 0, 0, 0, 0
@@ -41,4 +40,7 @@ func TestShipwrecksMatchBDS(t *testing.T) {
 		}
 	}
 	t.Logf("shipwreck chests: %d of %d at BDS's x, z with its table; %d also at its y; %d with its loot seed", xz, n, xyz, seed)
+	if xyz != n || seed != n {
+		t.Errorf("%d of %d chests at BDS's position, %d with its seed", xyz, n, seed)
+	}
 }
