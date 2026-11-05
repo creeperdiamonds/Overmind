@@ -88,8 +88,9 @@ func (s *Structures) strongholdAt(cx, cz int) bool {
 }
 
 // NearestStronghold is the stronghold start nearest pos, as block (cx*16+2, 0, cz*16+2) of its start
-// chunk, the block BDS's locate names (N2 phase 3 round 2): where an eye of ender leads. The
-// stronghold's pieces are not built yet (NOTES.md); the position is the start's, from placement.
+// chunk, the block BDS's locate names (N2 phase 3 round 2): where an eye of ender leads. That block is
+// the corner of the stronghold's start piece, the spiral stairs down (strongholdpieces.go), so the eye
+// leads to a stronghold that is really there.
 func (s *Structures) NearestStronghold(pos cube.Pos) (cube.Pos, bool) {
 	pcx, pcz := floorDiv(pos[0], 16), floorDiv(pos[2], 16)
 	best, bestD, found := [2]int{}, int64(math.MaxInt64), false

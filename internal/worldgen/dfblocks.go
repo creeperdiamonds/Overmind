@@ -99,7 +99,6 @@ func ownBlocksList() {
 	addOwn("chorus_flower[age=5]", "chorus_flower", map[string]any{"age": int32(5)}, false)
 	plain("end_gateway", "end_gateway", false)
 	plain("budding_amethyst", "budding_amethyst", true)
-	plain("spawner", "mob_spawner", true)
 	plain("bush", "bush", false)
 	plain("firefly_bush", "firefly_bush", false)
 	plain("short_dry_grass", "short_dry_grass", false)
@@ -352,6 +351,8 @@ func dragonflyBlock(name string) world.Block {
 	switch base {
 	case "suspicious_sand", "suspicious_gravel":
 		return Brushable{Gravel: base == "suspicious_gravel"}
+	case "spawner":
+		return MobSpawner{}
 	}
 	if w, ok := strings.CutSuffix(base, "_log"); ok {
 		if t, ok := woods[w]; ok {

@@ -16,7 +16,7 @@ func BenchmarkPlaceChunk(b *testing.B) {
 	for _, area := range []struct {
 		name   string
 		cx, cz int
-	}{{"city", -2, -17}, {"open", 200, 200}} {
+	}{{"city", -2, -17}, {"open", 200, 200}, {"stronghold", 50, 100}} {
 		b.Run(area.name, func(b *testing.B) {
 			bd, d := installData(b)
 			g := worldgen.NewWithData(100, worldgen.ProfileBedrock, bd)

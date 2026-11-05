@@ -17,6 +17,8 @@ import (
 //   - the dispenser (Bedrock: facing_direction 0..5, triggered_bit), holding the loot table and seed of
 //     the jungle temple's traps (block entity Dispenser). It does not fire yet and its contents cannot be
 //     opened: a static block, listed in docs/stage-2-known-gaps.md.
+//   - the mob spawner (Bedrock: mob_spawner, no states), with its mob (block entity MobSpawner:
+//     EntityIdentifier), as mineshafts' cave spiders and strongholds' silverfish. It spawns nothing yet.
 // Tripwire, tripwire hooks, pistons and repeaters are Dragonfly's own registered states with no Go type
 // (static blocks); they need no block entity.
 
@@ -167,7 +169,47 @@ func (d Dispenser) DecodeNBT(data map[string]any) any {
 	return d
 }
 
+// MobSpawner is a monster spawner naming its mob.
+type MobSpawner struct {
+	Entity string // "minecraft:cave_spider"; empty for none.
+}
+
+var spawnerHash = block.NextHash()
+
+// EncodeBlock ...
+func (MobSpawner) EncodeBlock() (string, map[string]any) {
+	return "minecraft:mob_spawner", map[string]any{}
+}
+
+// Hash ...
+func (MobSpawner) Hash() (uint64, uint64) { return spawnerHash, 0 }
+
+// Model ...
+func (MobSpawner) Model() world.BlockModel { return model.Solid{} }
+
+// BreakInfo ...
+func (MobSpawner) BreakInfo() block.BreakInfo {
+	return block.BreakInfo{Hardness: 5, Effective: func(item.Tool) bool { return true }, Harvestable: func(item.Tool) bool { return true },
+		Drops: func(item.Tool, []item.Enchantment) []item.Stack { return nil }}
+}
+
+// EncodeNBT ...
+func (m MobSpawner) EncodeNBT() map[string]any {
+	n := map[string]any{"id": "MobSpawner"}
+	if m.Entity != "" {
+		n["EntityIdentifier"] = m.Entity
+	}
+	return n
+}
+
+// DecodeNBT ...
+func (m MobSpawner) DecodeNBT(data map[string]any) any {
+	m.Entity, _ = data["EntityIdentifier"].(string)
+	return m
+}
+
 func registerStructureBlocks() {
+	world.RegisterBlock(MobSpawner{})
 	for f := range int32(6) {
 		for _, tr := range []bool{false, true} {
 			world.RegisterBlock(Dispenser{Facing: f, Triggered: tr})
