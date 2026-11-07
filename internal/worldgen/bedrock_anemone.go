@@ -17,14 +17,17 @@ import "sync"
 
 const anemoneFloor = 63 - 15
 
-var anemoneStates = sync.OnceValue(func() (out struct {
-	plants, fans [5]bs
-	fans1        [5]bs
-}) { for i, k := range [5]string{"tube", "brain", "bubble", "fire", "horn"} {
-	out.plants[i] = stateOf(k + "_coral[waterlogged=true]")
-	out.fans[i] = stateOf(k + "_coral_fan[waterlogged=true]")
-	out.fans1[i] = stateOf(k + "_coral_fan[coral_fan_direction=1,waterlogged=true]")
-}; return out })
+// anemoneBlocks are the coral plants and the floor fans of both directions, tube to horn.
+type anemoneBlocks struct{ plants, fans0, fans1 [5]bs }
+
+var anemoneStates = sync.OnceValue(func() (out anemoneBlocks) {
+	for i, k := range [5]string{"tube", "brain", "bubble", "fire", "horn"} {
+		out.plants[i] = stateOf(k + "_coral[waterlogged=true]")
+		out.fans0[i] = stateOf(k + "_coral_fan[waterlogged=true]")
+		out.fans1[i] = stateOf(k + "_coral_fan[coral_fan_direction=1,waterlogged=true]")
+	}
+	return out
+})
 
 func seaAnemone(d *decoration, r *bmt, p pos) bool {
 	for !bSolid(d.block(p.x, p.y-1, p.z)) && p.y > anemoneFloor {
@@ -40,7 +43,7 @@ func seaAnemone(d *decoration, r *bmt, p pos) bool {
 	}
 	i := r.nextIntN(5)
 	if r.nextIntN(2) == 0 {
-		d.set(p.x, p.y, p.z, st.fans[i])
+		d.set(p.x, p.y, p.z, st.fans0[i])
 	} else {
 		d.set(p.x, p.y, p.z, st.fans1[i])
 	}
