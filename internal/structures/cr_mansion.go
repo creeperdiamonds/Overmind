@@ -35,17 +35,17 @@ type mansion struct {
 
 // Grid values and room flags.
 const (
-	wmRoom1x1   = 0x10000
-	wmRoom1x2   = 0x20000
-	wmRoom2x2   = 0x40000
-	wmTypeMask  = 0xF0000
-	wmOrigin    = 0x100000
-	wmDoor      = 0x200000
-	wmStairs    = 0x400000
-	wmLinkFlag  = 0x800000
-	wmIDMask    = 0xffff
-	wmGridSize  = 11
-	wmOutside   = 5
+	wmRoom1x1    = 0x10000
+	wmRoom1x2    = 0x20000
+	wmRoom2x2    = 0x40000
+	wmTypeMask   = 0xF0000
+	wmOrigin     = 0x100000
+	wmDoor       = 0x200000
+	wmStairs     = 0x400000
+	wmLinkFlag   = 0x800000
+	wmIDMask     = 0xffff
+	wmGridSize   = 11
+	wmOutside    = 5
 	wmMaxOutline = 4096 // A bound on an outline walk's steps.
 )
 
