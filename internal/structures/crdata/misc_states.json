@@ -1,0 +1,5 @@
+{
+  "chest": "chest[minecraft:cardinal_direction=south]",
+  "suspicious_sand": "suspicious_sand[brushed_progress=0,hanging=0]",
+  "dirt": "dirt"
+}

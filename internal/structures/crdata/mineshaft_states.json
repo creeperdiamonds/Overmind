@@ -1,0 +1,12 @@
+{
+  "air": "air",
+  "cobweb": "web",
+  "chain": "iron_chain[pillar_axis=y]",
+  "spawner": "mob_spawner",
+  "planks normal": "oak_planks",
+  "planks mesa": "dark_oak_planks",
+  "log normal": "oak_log[pillar_axis=y]",
+  "log mesa": "dark_oak_log[pillar_axis=y]",
+  "fence normal": "oak_fence[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]",
+  "fence mesa": "dark_oak_fence[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"
+}

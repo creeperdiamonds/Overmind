@@ -1,0 +1,34 @@
+{
+  "_about": "Stronghold door cells, relative to the door op's 'at' (local piece coordinates; add at[0..2]). Written in this order. 'facing' is a local direction resolved through piece_helpers/facing_states.json with the piece's orientation. No door draws a random.",
+  "open": [
+    {"at":[0,0,0],"block":"air"},{"at":[1,0,0],"block":"air"},{"at":[2,0,0],"block":"air"},
+    {"at":[0,1,0],"block":"air"},{"at":[1,1,0],"block":"air"},{"at":[2,1,0],"block":"air"},
+    {"at":[0,2,0],"block":"air"},{"at":[1,2,0],"block":"air"},{"at":[2,2,0],"block":"air"}
+  ],
+  "wooden_door": [
+    {"at":[0,0,0],"block":"stone_bricks"},{"at":[0,1,0],"block":"stone_bricks"},{"at":[0,2,0],"block":"stone_bricks"},
+    {"at":[1,2,0],"block":"stone_bricks"},{"at":[2,0,0],"block":"stone_bricks"},{"at":[2,1,0],"block":"stone_bricks"},
+    {"at":[2,2,0],"block":"stone_bricks"},
+    {"at":[1,0,0],"block":"DOOR:wooden_door lower","facing":"+z"},
+    {"at":[1,1,0],"block":"DOOR:wooden_door upper","facing":"+z"}
+  ],
+  "iron_door": [
+    {"at":[0,0,0],"block":"stone_bricks"},{"at":[0,1,0],"block":"stone_bricks"},{"at":[0,2,0],"block":"stone_bricks"},
+    {"at":[1,2,0],"block":"stone_bricks"},{"at":[2,0,0],"block":"stone_bricks"},{"at":[2,1,0],"block":"stone_bricks"},
+    {"at":[2,2,0],"block":"stone_bricks"},
+    {"at":[1,0,0],"block":"DOOR:iron_door lower","facing":"+z"},
+    {"at":[1,1,0],"block":"DOOR:iron_door upper","facing":"+z"},
+    {"at":[2,1,1],"block":"BUTTON (stone_button)","facing":"+z"},
+    {"at":[2,1,-1],"block":"BUTTON (stone_button)","facing":"-z"}
+  ],
+  "bars": [
+    {"at":[1,0,0],"block":"air"},{"at":[1,1,0],"block":"air"},
+    {"at":[0,0,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[0,1,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[0,2,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[1,2,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[2,2,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[2,1,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"},
+    {"at":[2,0,0],"block":"iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]"}
+  ]
+}

@@ -43,6 +43,7 @@ type Structures struct {
 	mansions    keyCache
 	portals     keyCache
 	oceanRuins  keyCache
+	pyramids    keyCache // Desert pyramid base heights (cr_temples.go).
 	// nether says these are the Nether's structures (fortresses and bastions, nether.go); end, the
 	// End's (end cities, endcity.go).
 	nether, end bool
@@ -51,7 +52,7 @@ type Structures struct {
 	omF1, omF2 float32
 	// trace, when set (tests only), sees every block a structure writes.
 	trace func(x, y, z int, rid uint32)
-	// spiderDone caches whether a spider corridor placed its spawner in a chunk (mineshaft.go).
+	// spiderDone caches whether a spider corridor placed its spawner in a chunk (cr_mineshaft.go).
 	spiderMu   sync.Mutex
 	spiderDone map[spiderKey]bool
 }
