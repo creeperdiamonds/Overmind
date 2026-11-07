@@ -43,6 +43,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 	switch id {
 	case "minecraft:nether_fossil_feature":
 		return netherFossilFeat{fc.bd}, true, nil
+	case "minecraft:sea_anemone_feature":
+		return codeFeat(seaAnemone), true, nil
 	case "minecraft:pointed_dripstone_feature":
 		return codeFeat(bedrockPointedDripstone), true, nil
 	case "minecraft:delta_feature":
