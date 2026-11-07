@@ -69,9 +69,9 @@ func (w *writer) in(x, y, z int) bool {
 	return x>>4 == w.cx && z>>4 == w.cz && y >= w.lo && y <= w.hi
 }
 
-// blockName is a cell's block name without "minecraft:".
+// blockName is a cell's block name without "minecraft:" ("air" outside the chunk).
 func (w *writer) blockName(x, y, z int) string {
-	return ridName(w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0))
+	return ridName(w.mainAt(x, y, z))
 }
 
 var ridNames sync.Map
@@ -90,8 +90,9 @@ func ridName(rid uint32) string {
 	return n
 }
 
+// block is a cell's main block (air outside the chunk).
 func (w *writer) block(x, y, z int) world.Block {
-	b, _ := world.BlockByRuntimeID(w.chunk().Block(uint8(x&15), int16(y), uint8(z&15), 0))
+	b, _ := world.BlockByRuntimeID(w.mainAt(x, y, z))
 	return b
 }
 
@@ -148,17 +149,10 @@ func (w *writer) height(x, z int) int {
 	return int(w.chunk().HighestBlock(uint8(x&15), uint8(z&15))) + 1
 }
 
-// chestEntity is a chest's block entity with a loot table and seed.
-func chestEntity(x, y, z int, table string, seed int32) chunk.BlockEntity {
-	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "Chest", "LootTable": table, "LootTableSeed": seed}}
-}
-
 // chest puts a chest that will roll table with the next loot seed (N2 2.1).
 func (w *writer) chest(x, y, z int, rid uint32, table string) {
 	w.set(x, y, z, rid, false)
-	w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{
-		"id": "Chest", "LootTable": table, "LootTableSeed": w.rng.NextInt(),
-	}})
+	w.bes = append(w.bes, lootEntity("Chest", x, y, z, table, w.rng.NextInt()))
 }
 
 var (
@@ -270,11 +264,11 @@ func (s *Structures) InsideStructure(x, y, z int) bool {
 
 // placeAncientCities writes the pieces of every city that reaches the chunk.
 func (s *Structures) placeAncientCities(w *writer) {
-	chunkBox := box{w.cx * 16, minY, w.cz * 16, w.cx*16 + 15, maxY, w.cz*16 + 15}
+	cb := w.chunkBox()
 	s.citiesNear(w.cx, w.cz, ancientReach, func(pieces []*piece) {
 		for _, p := range pieces {
 			switch {
-			case p.elem.template != nil && p.box.intersects(chunkBox):
+			case p.elem.template != nil && p.box.intersects(cb):
 				s.placeTemplate(w, p)
 			case p.elem.template == nil && p.elem.name == sculkCityFeature && w.in(p.pos[0], p.pos[1], p.pos[2]):
 				s.sculkElement(w, p.pos)

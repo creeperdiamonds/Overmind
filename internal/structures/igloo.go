@@ -94,7 +94,7 @@ func (s *Structures) placeIglooPart(w *writer, rng *worldgen.BedrockRandom, t *T
 		}
 		if sd, ok := seeds[b.pos]; ok && res.name == "chest" {
 			w.set(x, y, z, res.rid, false)
-			w.bes = append(w.bes, chestEntity(x, y, z, iglooChestTable, sd))
+			w.bes = append(w.bes, lootEntity("Chest", x, y, z, iglooChestTable, sd))
 			continue
 		}
 		w.set(x, y, z, res.rid, res.waterlog)

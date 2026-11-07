@@ -379,7 +379,7 @@ func (s *Structures) placeMineshafts(w *writer) {
 type msBlocks struct{ planks, log, fence uint32 }
 
 func mineshaftBlocks(mesa bool) msBlocks {
-	t := crData().msStates
+	t := pieceData().msStates
 	kind := " normal"
 	if mesa {
 		kind = " mesa"
@@ -399,20 +399,22 @@ func (s *Structures) buildMsPiece(w *writer, m *mineshaft, idx int, p *msPiece) 
 		buildMsCrossing(w, p.b, wood)
 	case msStairs:
 		c := &ctx{w: w, p: &opiece{p.b, p.dir}, r: w.rng}
-		runOps(c, crData().msStairs, nil, nil)
+		runOps(c, pieceData().msStairs, nil, nil)
 	case msCorridor:
 		s.buildMsCorridor(w, m, idx, p, wood)
 	}
 }
 
 // msSkipped is the skip test: the piece's box grown by one and clipped to the chunk is deep dark at its
-// centre, or has a liquid on its faces.
+// centre, or has a liquid on its faces. The piece meets the chunk in x and z, so only an empty y range
+// leaves nothing to test.
 func (s *Structures) msSkipped(w *writer, b box) bool {
-	g := box{max(b[0]-1, w.cx*16), max(b[1]-1, minY), max(b[2]-1, w.cz*16),
-		min(b[3]+1, w.cx*16+15), min(b[4]+1, maxY), min(b[5]+1, w.cz*16+15)}
-	if g[1] > g[4] {
+	g, ok := w.clip(box{b[0] - 1, b[1] - 1, b[2] - 1, b[3] + 1, b[4] + 1, b[5] + 1})
+	if !ok {
 		return false
 	}
+	// The centre's divisions truncate toward zero, not floor: the spec says so (mineshaft/SPEC.md 5.1,
+	// "-269.5 becomes -269"), so (a+b)/2 is meant here, also at negative coordinates.
 	if s.g.BiomeID((g[0]+g[3])/2, (g[1]+g[4])/2, (g[2]+g[5])/2) == msDeepDarkID {
 		return true
 	}
@@ -521,7 +523,7 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 	r := w.rng
 	L := 5*p.sections - 1
 	air := airRID()
-	web := specState(crData().msStates["cobweb"])
+	web := specState(pieceData().msStates["cobweb"])
 	key := spiderKey{m.start, idx, [2]int{w.cx, w.cz}}
 	placed := p.spider && s.spiderPlacedBefore(key, p.b)
 
@@ -561,8 +563,8 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 		if p.spider && !placed {
 			zz := z - 1 + int(r.NextIntN(3))
 			wx, wy, wz := c.p.world(1, 0, zz)
-			if w.in(wx, wy, wz) && wy < maxY && w.interior(wx, wy, wz) {
-				w.put(wx, wy, wz, specState(crData().msStates["spawner"]))
+			if w.in(wx, wy, wz) && wy < w.hi && w.interior(wx, wy, wz) {
+				w.put(wx, wy, wz, specState(pieceData().msStates["spawner"]))
 				w.bes = append(w.bes, spawnerEntity(wx, wy, wz, "minecraft:cave_spider"))
 				placed = true
 				w.spawned[key] = true
@@ -644,35 +646,47 @@ func msPillar(w *writer, x, y, z int, wood msBlocks) {
 	for d := 1; down || up; d++ {
 		if down {
 			yy := y - d
-			ok := yy >= minY && w.replaceable(x, yy, z) && !w.isLava(x, yy, z)
-			if yy >= minY && !ok && w.solidAt(x, yy, z) {
+			ok := yy >= w.lo && w.replaceable(x, yy, z) && !w.isLava(x, yy, z)
+			if yy >= w.lo && !ok && w.solidAt(x, yy, z) {
 				for ly := yy + 1; ly <= y-1; ly++ {
 					w.put(x, ly, z, wood.log)
 				}
 				return
 			}
-			down = d <= 20 && ok && yy > minY+1
+			down = d <= 20 && ok && yy > w.lo+1
 		}
 		if up {
 			yy := y + d
-			ok := yy <= maxY && w.replaceable(x, yy, z)
-			if yy <= maxY && !ok && w.solidAt(x, yy, z) && !w.falling(x, yy, z) {
+			ok := yy <= w.hi && w.replaceable(x, yy, z)
+			if yy <= w.hi && !ok && w.solidAt(x, yy, z) && !w.falling(x, yy, z) {
 				w.put(x, y+1, z, wood.fence)
-				chain := specState(crData().msStates["chain"])
+				chain := specState(pieceData().msStates["chain"])
 				for cy := y + 2; cy <= yy-1; cy++ {
 					w.put(x, cy, z, chain)
 				}
 				return
 			}
-			up = d <= 50 && ok && yy < maxY
+			up = d <= 50 && ok && yy < w.hi
 		}
 	}
 }
 
 // The spawner mark: whether a spider corridor already placed its spawner in a chunk built before this
-// one. A corridor's chunks are taken in the order chunk x descending, then chunk z descending; a chunk
-// counts as having placed it when, made on its own (its base terrain and the structure types before
-// mineshafts), its mineshaft pass places it.
+// one (mineshaft/SPEC.md 5.6).
+//
+// BDS keeps a "spawner placed" mark on the corridor while it builds the corridor's chunks, so a corridor
+// gets one spawner however many chunks it crosses. Our chunks are made from the seed and their position
+// alone, in any order and on any thread, with nothing shared between them, so a chunk cannot see a mark
+// a neighbour left. Instead the spec fixes an order of a corridor's chunks, chunk x descending, then chunk
+// z descending (the same order for every corridor), and a chunk works the mark out by replaying the
+// chunks before it in that order: a chunk counts as having placed the spawner when, made on its own (its
+// base terrain, then the structure types before mineshafts, then its mineshaft pass), it places it.
+//
+// The replay ends: replaying chunk A asks, for each spider corridor in A, only about chunks strictly
+// before A in that one global order, and only within that corridor's box, so every chain of replays moves
+// one way through a finite set of chunks. Replays are deterministic, so their results are cached per
+// (start, piece index, chunk), with a mark per replayed chunk; the cache is dropped whole when it would
+// pass spiderCacheMax entries (it changes speed, never a result).
 
 const spiderCacheMax = 1 << 14
 

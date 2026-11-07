@@ -27,7 +27,7 @@ func cleanroomSpec(t *testing.T, file string, into any) {
 	}
 }
 
-var crOrientNames = map[orient]string{oN: "N", oS: "S", oW: "W", oE: "E"}
+var orientLetters = map[orient]string{oN: "N", oS: "S", oW: "W", oE: "E"}
 
 func TestCleanroomMonumentAssembly(t *testing.T) {
 	var want struct {
@@ -50,8 +50,8 @@ func TestCleanroomMonumentAssembly(t *testing.T) {
 		t.Errorf("start seed %#x, want %#x", got, want.StartSeed)
 	}
 	m := s.monumentAtStart(-12, 6)
-	if m.building.b != want.Building || crOrientNames[m.building.o] != want.Orientation {
-		t.Errorf("building %v %s, want %v %s", m.building.b, crOrientNames[m.building.o], want.Building, want.Orientation)
+	if m.building.b != want.Building || orientLetters[m.building.o] != want.Orientation {
+		t.Errorf("building %v %s, want %v %s", m.building.b, orientLetters[m.building.o], want.Building, want.Orientation)
 	}
 	bad := 0
 	for i := range max(len(m.children), len(want.Children)) {
@@ -129,7 +129,7 @@ func TestCleanroomFortressAssembly(t *testing.T) {
 		got, exp := "-", "-"
 		if i < len(f.pieces) {
 			p := f.pieces[i]
-			got = fmt.Sprintf("%s %v %s %d %v %d", nfKindNames[p.kind], p.b, crOrientNames[p.o], p.depth, p.chest, p.filler)
+			got = fmt.Sprintf("%s %v %s %d %v %d", nfKindNames[p.kind], p.b, orientLetters[p.o], p.depth, p.chest, p.filler)
 		}
 		if i < len(want.Pieces) {
 			p := want.Pieces[i]

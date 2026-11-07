@@ -1,19 +1,40 @@
 package structures
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"sync"
-
-	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// The piece tables of the code-built structures (piecedata/*.json: facts about the pieces' blocks, in local
-// coordinates, from the clean-room spec; embedded as crFiles in piececommon.go) and the runner of their op
-// lists.
+// The piece tables of the code-built structures (piecedata/*.json: facts about the pieces' blocks, in
+// local coordinates, from the clean-room spec; nothing in them is code) and the runner of their op lists.
+// The shared frame, writes and block lookups they use are pieces.go.
+//
+// The tables are embedded at build time, so one that is missing or malformed, or names a block state the
+// registry does not have, is a broken build: every loader here panics with what is wrong.
 
-// crOp is one op of a piece's op list. Which fields are set depends on Op.
-type crOp struct {
+//go:embed piecedata/*.json
+var pieceFiles embed.FS
+
+// pieceTable reads one embedded table.
+func pieceTable(name string) []byte {
+	b, err := pieceFiles.ReadFile("piecedata/" + name)
+	if err != nil {
+		panic(fmt.Sprintf("structures: piece table %s: %v", name, err))
+	}
+	return b
+}
+
+// readTable decodes one embedded table into v.
+func readTable(name string, v any) {
+	if err := json.Unmarshal(pieceTable(name), v); err != nil {
+		panic(fmt.Sprintf("structures: piece table %s: %v", name, err))
+	}
+}
+
+// pieceOp is one op of a piece's op list. Which fields are set depends on Op.
+type pieceOp struct {
 	Op           string   `json:"op"`
 	Block        string   `json:"block"`
 	Inner        string   `json:"inner"`
@@ -38,69 +59,198 @@ type crOp struct {
 	Centre       [3]int   `json:"cellar_centre"`
 }
 
-// crDoorCell is one cell of a stronghold door.
-type crDoorCell struct {
+// doorCell is one cell of a stronghold door.
+type doorCell struct {
 	At     [3]int `json:"at"`
 	Block  string `json:"block"`
 	Facing string `json:"facing"`
 }
 
-type crTables struct {
-	err error
+type pieceTables struct {
 	// facings: world direction ("north", ...) -> key ("LADDER", "STAIRS:stone_stairs", ...) -> state;
 	// "rails" holds the two rail states.
 	facings  map[string]map[string]string
 	misc     map[string]string
 	msStates map[string]string
-	msStairs []crOp
-	shPieces map[string][]crOp
-	shDoors  map[string][]crDoorCell
+	msStairs []pieceOp
+	shPieces map[string][]pieceOp
+	shDoors  map[string][]doorCell
 	shStates map[string]string
-	pyramid  []crOp
-	jungle   []crOp
-	hut      []crOp
+	pyramid  []pieceOp
+	jungle   []pieceOp
+	hut      []pieceOp
 }
 
-var crData = sync.OnceValue(func() *crTables {
-	t := &crTables{}
-	read := func(name string, v any) {
-		if t.err != nil {
-			return
-		}
-		raw, err := crFiles.ReadFile("piecedata/" + name)
-		if err == nil {
-			err = json.Unmarshal(raw, v)
-		}
-		if err != nil {
-			t.err = fmt.Errorf("structures: piece table %s: %w", name, err)
-		}
-	}
-	read("facing_states.json", &t.facings)
-	read("misc_states.json", &t.misc)
-	read("mineshaft_states.json", &t.msStates)
-	var stairs map[string][]crOp
-	read("mineshaft_stairs.json", &stairs)
+var pieceData = sync.OnceValue(func() *pieceTables {
+	t := &pieceTables{}
+	readTable("facing_states.json", &t.facings)
+	readTable("misc_states.json", &t.misc)
+	readTable("mineshaft_states.json", &t.msStates)
+	var stairs map[string][]pieceOp
+	readTable("mineshaft_stairs.json", &stairs)
 	t.msStairs = stairs["stairs"]
-	read("stronghold_pieces.json", &t.shPieces)
+	readTable("stronghold_pieces.json", &t.shPieces)
 	var doors map[string]json.RawMessage
-	read("stronghold_doors.json", &doors)
-	t.shDoors = map[string][]crDoorCell{}
+	readTable("stronghold_doors.json", &doors)
+	t.shDoors = map[string][]doorCell{}
 	for k, raw := range doors {
 		if k == "_about" {
 			continue
 		}
-		var cells []crDoorCell
-		if err := json.Unmarshal(raw, &cells); err != nil && t.err == nil {
-			t.err = fmt.Errorf("structures: stronghold door %s: %w", k, err)
+		var cells []doorCell
+		if err := json.Unmarshal(raw, &cells); err != nil {
+			panic(fmt.Sprintf("structures: stronghold door %s: %v", k, err))
 		}
 		t.shDoors[k] = cells
 	}
-	read("stronghold_states.json", &t.shStates)
-	read("desert_pyramid.json", &t.pyramid)
-	read("jungle_temple.json", &t.jungle)
-	read("witch_hut.json", &t.hut)
+	readTable("stronghold_states.json", &t.shStates)
+	readTable("desert_pyramid.json", &t.pyramid)
+	readTable("jungle_temple.json", &t.jungle)
+	readTable("witch_hut.json", &t.hut)
+	t.check()
 	return t
 })
+
+// The ops every list may use (runOps runs them), and each list's own ops (its structure's special).
+var (
+	commonOps  = []string{"fill", "set", "chance", "chance_box", "column_down", "column_down_each"}
+	shOps      = []string{"stone_box", "door", "chest", "portal_frames"}
+	pyramidOps = []string{"chests_in_order", "cellar_variant", "set_by_variant", "archaeology_begin", "listed_sand", "roof_choice", "suspicious_pass"}
+	jungleOps  = []string{"mossy_box", "container"}
+	hutOps     = []string{"flower_pot_entity", "cauldron"}
+)
+
+// The keys the code itself reads from the state and facing tables.
+var (
+	miscKeys    = []string{"chest", "suspicious_sand", "dirt"}
+	msStateKeys = []string{"cobweb", "chain", "spawner", "planks normal", "planks mesa", "log normal", "log mesa", "fence normal", "fence mesa"}
+	shStateKeys = []string{"cracked", "mossy", "infested", "stone_bricks", "end_portal", "spawner"}
+	facingKeys  = []string{"TORCH (wall torch pointing this way)", "FRAME eye=false", "FRAME eye=true"}
+	railKeys    = []string{"rail along world x (east-west)", "rail along world z (north-south)"}
+)
+
+// cauldronState is the witch hut's water cauldron at a fill level (2, 4 or 6).
+func cauldronState(fill int32) string {
+	return fmt.Sprintf("cauldron[cauldron_liquid=water,fill_level=%d]", fill)
+}
+
+// check panics unless every state the tables name is registered, every key the code reads is there,
+// every op is one its list's runner knows, and the pyramid's archaeology ops come in an order its runner
+// can follow.
+func (t *pieceTables) check() {
+	fail := func(format string, a ...any) { panic("structures: piece tables: " + fmt.Sprintf(format, a...)) }
+	for _, dir := range []string{"north", "south", "west", "east", "rails"} {
+		if len(t.facings[dir]) == 0 {
+			fail("the facing table has no %q", dir)
+		}
+		for _, s := range t.facings[dir] {
+			mustState(s)
+		}
+	}
+	facingKey := func(where, key string) {
+		if key == "TORCH" {
+			key = "TORCH (wall torch pointing this way)"
+		}
+		for _, dir := range facingNames {
+			if _, ok := t.facings[dir][key]; !ok {
+				fail("%s: facing key %q is not in the %s table", where, key, dir)
+			}
+		}
+	}
+	for _, k := range facingKeys {
+		facingKey("code", k)
+	}
+	for _, k := range railKeys {
+		if _, ok := t.facings["rails"][k]; !ok {
+			fail("no rail %q", k)
+		}
+	}
+	for _, tbl := range []struct {
+		name string
+		m    map[string]string
+		keys []string
+	}{{"misc", t.misc, miscKeys}, {"mineshaft", t.msStates, msStateKeys}, {"stronghold", t.shStates, shStateKeys}} {
+		for _, k := range tbl.keys {
+			if _, ok := tbl.m[k]; !ok {
+				fail("%s states: no %q", tbl.name, k)
+			}
+		}
+		for _, s := range tbl.m {
+			mustState(s)
+		}
+	}
+	for _, f := range []int32{2, 4, 6} {
+		mustState(cauldronState(f))
+	}
+	ops := func(where string, list []pieceOp, own []string) {
+		known := map[string]bool{}
+		for _, o := range append(append([]string(nil), commonOps...), own...) {
+			known[o] = true
+		}
+		for _, op := range list {
+			if !known[op.Op] {
+				fail("%s: unknown op %q", where, op.Op)
+			}
+			if op.Op == "door" && op.Type != "own" {
+				if _, ok := t.shDoors[op.Type]; !ok {
+					fail("%s: no door %q", where, op.Type)
+				}
+			}
+			if _, ok := localFacing(op.Facing); ok {
+				facingKey(where, op.Block)
+				if op.Inner != "" {
+					facingKey(where, op.Inner)
+				}
+				continue
+			}
+			for _, s := range []string{op.Block, op.Inner, op.IfTrue, op.IfFalse} {
+				if s != "" {
+					mustState(s)
+				}
+			}
+		}
+	}
+	ops("mineshaft stairs", t.msStairs, nil)
+	for k, l := range t.shPieces {
+		ops("stronghold "+k, l, shOps)
+	}
+	ops("desert pyramid", t.pyramid, pyramidOps)
+	ops("jungle temple", t.jungle, jungleOps)
+	ops("witch hut", t.hut, hutOps)
+	for _, n := range shDoorNames {
+		if _, ok := t.shDoors[n]; !ok && n != "" {
+			fail("no stronghold door %q", n)
+		}
+	}
+	for k, cells := range t.shDoors {
+		for _, c := range cells {
+			if _, ok := localFacing(c.Facing); ok {
+				facingKey("door "+k, c.Block)
+			} else {
+				mustState(c.Block)
+			}
+		}
+	}
+	// The pyramid's archaeology: its random exists from archaeology_begin on, and the suspicious pass
+	// picks from the sand listed since.
+	begun, listed := false, 0
+	for _, op := range t.pyramid {
+		switch op.Op {
+		case "archaeology_begin":
+			begun, listed = true, 0
+		case "listed_sand", "roof_choice", "suspicious_pass":
+			if !begun {
+				fail("desert pyramid: %s before archaeology_begin", op.Op)
+			}
+			if op.Op == "listed_sand" {
+				listed++
+			}
+			if op.Op == "suspicious_pass" && listed == 0 {
+				fail("desert pyramid: suspicious_pass with no listed_sand before it")
+			}
+		}
+	}
+}
 
 // localFacing reads an op's local direction.
 func localFacing(s string) (facing, bool) {
@@ -128,28 +278,21 @@ func blockOf(block, face string, p *opiece) uint32 {
 	if key == "TORCH" {
 		key = "TORCH (wall torch pointing this way)"
 	}
-	st, ok := crData().facings[facingName(p.turn(f))][key]
-	if !ok {
-		return noBlock
-	}
-	return specState(st)
+	return specState(pieceData().facings[facingName(p.turn(f))][key])
 }
 
 // railRID is a rail along world z (true) or world x.
 func railRID(alongZ bool) uint32 {
-	k := "rail along world x (east-west)"
+	k := railKeys[0]
 	if alongZ {
-		k = "rail along world z (north-south)"
+		k = railKeys[1]
 	}
-	return specState(crData().facings["rails"][k])
+	return specState(pieceData().facings["rails"][k])
 }
 
 // runOps runs an op list in c's piece frame. flag answers the ops' `when` fields; special runs the
-// structure's own ops and reports whether it knew the op.
-func runOps(c *ctx, ops []crOp, flag func(string) bool, special func(c *ctx, op *crOp) bool) {
-	if crData().err != nil {
-		return
-	}
+// structure's own ops (pieceTables.check has made sure every op of a list is one its runner knows).
+func runOps(c *ctx, ops []pieceOp, flag func(string) bool, special func(c *ctx, op *pieceOp)) {
 	for i := range ops {
 		op := &ops[i]
 		if op.When != "" && (flag == nil || !flag(op.When)) {
@@ -180,7 +323,6 @@ func runOps(c *ctx, ops []crOp, flag func(string) bool, special func(c *ctx, op 
 				}
 			}
 		default:
-			// Every op of the embedded tables is known (TestPieceTablesResolve); an unknown one does nothing.
 			if special != nil {
 				special(c, op)
 			}
@@ -193,22 +335,17 @@ func runOps(c *ctx, ops []crOp, flag func(string) bool, special func(c *ctx, op 
 func (c *ctx) columnDown(x, y, z int, rid uint32) {
 	wx, wy, wz := c.p.world(x, y, z)
 	air := airRID()
-	for ; wy > minY; wy-- {
+	for ; wy > c.w.lo; wy-- {
 		if !c.w.in(wx, wy, wz) {
 			return
 		}
 		cur := c.w.mainAt(wx, wy, wz)
 		if cur != air && !ridHas(cur, flagLiquid) {
 			if ridName(cur) == "grass_block" {
-				c.w.put(wx, wy, wz, specState(crData().misc["dirt"]))
+				c.w.put(wx, wy, wz, specState(pieceData().misc["dirt"]))
 			}
 			return
 		}
 		c.w.put(wx, wy, wz, rid)
 	}
-}
-
-// lootEntity is a container's block entity with a loot table and seed.
-func lootEntity(id string, x, y, z int, table string, seed int32) chunk.BlockEntity {
-	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": id, "LootTable": table, "LootTableSeed": seed}}
 }

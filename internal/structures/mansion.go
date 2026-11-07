@@ -2,6 +2,7 @@ package structures
 
 import (
 	"strconv"
+	"sync"
 
 	"github.com/df-mc/dragonfly/server/world/chunk"
 
@@ -29,7 +30,7 @@ type wmPiece struct {
 // mansion is one assembled mansion.
 type mansion struct {
 	pieces []*wmPiece
-	draws  int // Draws of the start's random after the rotation.
+	draws  int // Draws of the start's random after the rotation; only TestCleanroomMansionAssembly reads it.
 	all    box // The bounds of every piece box.
 }
 
@@ -812,7 +813,7 @@ func (s *Structures) placeMansions(w *writer) {
 			if m == nil {
 				continue
 			}
-			cb := crChunk(w)
+			cb := w.chunkBox()
 			for _, p := range m.pieces {
 				if p.box.intersects(cb) {
 					wmWrite(w, p)
@@ -883,22 +884,43 @@ func wmWrite(w *writer, p *wmPiece) {
 				}
 			}
 		case len(m.name) >= 5 && m.name[:5] == "Chest":
-			index := map[string]int{"ChestSouth": 2, "ChestWest": 3, "ChestEast": 1}[m.name]
+			index := wmChestIndex(m.name)
 			if p.mirror == 1 && index%2 == 0 || p.mirror == 2 && index%2 == 1 {
 				index += 2
 			}
-			facing := [4]string{"north", "east", "south", "west"}[(index+p.rot)&3]
 			if in && w.blockName(q[0], q[1], q[2]) != "chest" {
-				w.chest(q[0], q[1], q[2], crBlock("chest minecraft:cardinal_direction="+facing), "loot_tables/chests/woodland_mansion.json")
+				w.chest(q[0], q[1], q[2], wmChests()[(index+p.rot)&3], "loot_tables/chests/woodland_mansion.json")
 			}
 		}
 	}
 }
 
+// wmChestIndex is a chest marker's facing as an index of wmChests (0 north, 1 east, 2 south, 3 west):
+// "ChestEast", "ChestSouth" and "ChestWest" name theirs, any other chest marker faces north.
+func wmChestIndex(marker string) int {
+	switch marker {
+	case "ChestEast":
+		return 1
+	case "ChestSouth":
+		return 2
+	case "ChestWest":
+		return 3
+	}
+	return 0
+}
+
+// wmChests are the chest states facing north, east, south and west.
+var wmChests = sync.OnceValue(func() (out [4]uint32) {
+	for i, f := range [4]string{"north", "east", "south", "west"} {
+		out[i] = mustState("chest[minecraft:cardinal_direction=" + f + "]")
+	}
+	return out
+})
+
 // foundation fills cobblestone down from under the mansion's lowest layer, in the chunk, through air
 // and liquids, to y 2 at the lowest.
 func (m *mansion) foundation(w *writer) {
-	cb := crChunk(w)
+	cb := w.chunkBox()
 	if !m.all.intersects(cb) {
 		return
 	}
@@ -912,7 +934,7 @@ func (m *mansion) foundation(w *writer) {
 	if len(under) == 0 || !w.in(cb[0], y0, cb[2]) {
 		return
 	}
-	cobble := crBlock("cobblestone")
+	cobble := mustState("cobblestone")
 	for x := max(m.all[0], cb[0]); x <= min(m.all[3], cb[3]); x++ {
 		for z := max(m.all[2], cb[2]); z <= min(m.all[5], cb[5]); z++ {
 			if w.blockName(x, y0, z) == "air" {
@@ -929,7 +951,7 @@ func (m *mansion) foundation(w *writer) {
 				continue
 			}
 			for y := y0 - 1; y >= 2 && y >= w.lo; y-- {
-				if w.blockName(x, y, z) != "air" && !crWet(w, x, y, z) {
+				if w.mainAt(x, y, z) != airRID() && !w.liquidAt(x, y, z) {
 					break
 				}
 				w.set(x, y, z, cobble, false)

@@ -158,7 +158,7 @@ func TestStructureMemory(t *testing.T) {
 	measure("monuments", keyCap, func() {
 		for i := range keyCap {
 			st := cand(s, Monument, i)
-			s.monuments.get([2]int{st.CX, st.CZ}, func() any { return s.monumentAtStart(st.CX, st.CZ) })
+			s.monuments.get([2]int{st.CX, st.CZ}, func() any { return s.assembleMonument(st.CX, st.CZ) })
 		}
 	})
 	measure("mansions", keyCap, func() {

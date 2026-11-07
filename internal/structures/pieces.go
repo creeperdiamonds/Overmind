@@ -13,10 +13,11 @@ import (
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
 
-// Shared machinery of the code-built pieces (mineshafts, strongholds, the scattered pieces, and the
-// monument, fortress and mansion, which build on the frame and the ctx writes): a piece's local frame,
-// the oriented boxes new pieces are placed with, the chunk-bounded writes and tests, and the lookup of
-// exact block states. Written from the clean-room spec (piece_helpers/SPEC.md, INTERFACE.md).
+// The helpers shared by every code-built structure (mineshafts, strongholds, the scattered pieces, the
+// monument, the fortress and the mansion) live in this file: a piece's local frame, the oriented boxes
+// new pieces are placed with, the chunk-bounded writes and tests, the block state lookups, and the
+// block entities they write. Their embedded tables and the op-list runner are pieceops.go. Written from
+// the clean-room spec (piece_helpers/SPEC.md, INTERFACE.md).
 
 // orient is a piece's orientation, in the order int(4) draws them.
 type orient uint8
@@ -44,12 +45,6 @@ var facingNames = [4]string{"north", "south", "west", "east"}
 
 // facingName is a world facing's compass name, as the facing tables key it.
 func facingName(f facing) string { return facingNames[f&3] }
-
-// facingByte is a world facing's letter, as stairsRID takes it.
-func facingByte(f facing) byte { return "NSWE"[f&3] }
-
-// facingIndex is a world facing's Bedrock facing_direction (north 2, south 3, west 4, east 5).
-func facingIndex(f facing) int { return [4]int{2, 3, 4, 5}[f&3] }
 
 // localStep is a local facing as a step in local x and z.
 func (f facing) localStep() (dx, dz int) {
@@ -83,7 +78,9 @@ type opiece struct {
 	o orient
 }
 
-// world maps local coordinates to world coordinates (the frame table).
+// world maps local coordinates to world coordinates (the frame table): south keeps both axes, north
+// counts z down from the box's far side, west and east run local x along world z and local z along world
+// x (west from the box's east side, east from its west side).
 func (p *opiece) world(x, y, z int) (int, int, int) {
 	b := p.b
 	switch p.o {
@@ -97,6 +94,13 @@ func (p *opiece) world(x, y, z int) (int, int, int) {
 		return b[0] + z, b[1] + y, b[2] + x
 	}
 	return x, y, z
+}
+
+// span is the world box spanned by two local corners.
+func (p *opiece) span(a, c [3]int) box {
+	x0, y0, z0 := p.world(a[0], a[1], a[2])
+	x1, y1, z1 := p.world(c[0], c[1], c[2])
+	return box{min(x0, x1), min(y0, y1), min(z0, z1), max(x0, x1), max(y0, y1), max(z0, z1)}
 }
 
 // turn is the world facing of a local facing.
@@ -249,11 +253,8 @@ func (c *ctx) interior(x, y, z int) bool {
 // solid says whether a local cell is in the chunk and holds a full solid block.
 func (c *ctx) solid(x, y, z int) bool {
 	wx, wy, wz := c.p.world(x, y, z)
-	return c.solidAt(wx, wy, wz)
+	return c.w.solidAt(wx, wy, wz)
 }
-
-// solidAt is solid for a world cell.
-func (c *ctx) solidAt(wx, wy, wz int) bool { return c.w.solidAt(wx, wy, wz) }
 
 // The writer's chunk-bounded reads and tests.
 
@@ -287,8 +288,15 @@ func (w *writer) chunkBox() box {
 	return box{w.cx * 16, w.lo, w.cz * 16, w.cx*16 + 15, w.hi, w.cz*16 + 15}
 }
 
-// liquidAt says whether a world cell is in the chunk and holds a liquid, as its main block or in its
-// second layer.
+// clip intersects a world box with the chunk's box; ok is false when they do not meet.
+func (w *writer) clip(b box) (box, bool) {
+	c := w.chunkBox()
+	out := box{max(b[0], c[0]), max(b[1], c[1]), max(b[2], c[2]), min(b[3], c[3]), min(b[4], c[4]), min(b[5], c[5])}
+	return out, out[0] <= out[3] && out[1] <= out[4] && out[2] <= out[5]
+}
+
+// liquidAt says whether a world cell is in the chunk and holds a liquid: water or lava as its main
+// block, or anything in its second layer.
 func (w *writer) liquidAt(x, y, z int) bool {
 	if !w.in(x, y, z) {
 		return false
@@ -301,7 +309,8 @@ func (w *writer) liquidAt(x, y, z int) bool {
 	return c.Block(lx, int16(y), lz, 1) != airRID()
 }
 
-// replaceable is the mineshaft pillar's test: air, a liquid, glow lichen or seagrass.
+// replaceable is the support columns' test (mineshaft pillars, fortress and monument columns): air, a
+// liquid, glow lichen or seagrass.
 func (w *writer) replaceable(x, y, z int) bool {
 	rid := w.mainAt(x, y, z)
 	return rid == airRID() || ridHas(rid, flagLichenOrGrass) || w.liquidAt(x, y, z)
@@ -369,51 +378,39 @@ func ridHas(rid uint32, f uint8) bool {
 	return int(rid) < len(t) && t[rid]&f != 0
 }
 
-// Block states.
+// Block states. The piece tables write states in two formats, each with one parser: "name[k=v,...]"
+// (specState, exact) everywhere, and "name k=v ..." (paletteState, the fortress palettes). Both resolve
+// through findState.
 
 // noBlock stands for a block the registry does not have: writing it does nothing.
 const noBlock = uint32(math.MaxUint32)
 
-var stateRIDs sync.Map // string key -> uint32 (noBlock when missing)
-
-// stateRID is the registered state with exactly this name and exactly this property set.
-func stateRID(name string, props map[string]any) (uint32, bool) {
+// findState is the registered state of a block holding the given properties (values as the registry
+// prints them: booleans 0 or 1). With exact, the state must have exactly those properties; without, it is
+// the first registered state holding every given value, or with no properties the block's default state
+// (ridOfName). noBlock when there is none.
+func findState(name string, props map[string]string, exact bool) uint32 {
 	name = strings.TrimPrefix(name, "minecraft:")
-	keys := make([]string, 0, len(props))
-	for k := range props {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var sb strings.Builder
-	sb.WriteString(name)
-	for _, k := range keys {
-		sb.WriteString("|" + k + "=" + propString(props[k]))
-	}
-	key := sb.String()
-	if v, ok := stateRIDs.Load(key); ok {
-		rid := v.(uint32)
-		return rid, rid != noBlock
+	if !exact && len(props) == 0 {
+		if rid, ok := ridOfName(name); ok {
+			return rid
+		}
+		return noBlock
 	}
 	registry.load()
-	rid := noBlock
+states:
 	for _, s := range registry.byName[name] {
-		if len(s.props) != len(props) {
+		if exact && len(s.props) != len(props) {
 			continue
 		}
-		same := true
 		for k, v := range props {
-			if got, ok := s.props[k]; !ok || got != propString(v) {
-				same = false
-				break
+			if got, ok := s.props[k]; !ok || got != v {
+				continue states
 			}
 		}
-		if same {
-			rid = s.rid
-			break
-		}
+		return s.rid
 	}
-	stateRIDs.Store(key, rid)
-	return rid, rid != noBlock
+	return noBlock
 }
 
 var specRIDs sync.Map // spec state string -> uint32
@@ -425,7 +422,7 @@ func specState(s string) uint32 {
 		return v.(uint32)
 	}
 	name, rest, _ := strings.Cut(s, "[")
-	props := map[string]any{}
+	props := map[string]string{}
 	if rest = strings.TrimSuffix(rest, "]"); rest != "" {
 		for _, kv := range strings.Split(rest, ",") {
 			if k, v, ok := strings.Cut(kv, "="); ok {
@@ -433,16 +430,43 @@ func specState(s string) uint32 {
 			}
 		}
 	}
-	rid, _ := stateRID(name, props)
+	rid := findState(name, props, true)
 	specRIDs.Store(s, rid)
 	return rid
+}
+
+// mustState is specState for a state the code or an embedded table names, which must be registered:
+// a missing one is a broken build, not a hole in the world.
+func mustState(s string) uint32 {
+	rid := specState(s)
+	if rid == noBlock {
+		panic("structures: block state " + s + " is not registered")
+	}
+	return rid
+}
+
+// paletteState is the runtime ID of a state written "name k=v k=v ...", the fortress palettes' format:
+// the first registered state of that name holding every given value, or the name's default state
+// without properties. noBlock when there is none. Only the table loader calls it.
+func paletteState(s string) uint32 {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return noBlock
+	}
+	props := map[string]string{}
+	for _, kv := range fields[1:] {
+		k, v, _ := strings.Cut(kv, "=")
+		props[k] = v
+	}
+	return findState(fields[0], props, false)
 }
 
 var nearRIDs sync.Map
 
 // ridNamed is the registered state of a block nearest the given properties: the most properties
 // matching, then the block's default state, then the lowest runtime ID. noBlock when the block is
-// unknown.
+// unknown. The template-built structures (ruined portals, ocean ruins, end cities) use it for states
+// they work out in code; it is a different rule from findState's, so it keeps its own loop.
 func ridNamed(name string, props map[string]any) uint32 {
 	name = strings.TrimPrefix(name, "minecraft:")
 	keys := make([]string, 0, len(props))
@@ -475,13 +499,7 @@ func ridNamed(name string, props map[string]any) uint32 {
 	return best
 }
 
-// weirdoOf is the stairs' weirdo_direction for a world facing letter.
-var weirdoOf = map[byte]int32{'E': 0, 'W': 1, 'S': 2, 'N': 3}
-
-// stairsRID is a stairs block, not upside down, facing f ('N', 'S', 'E' or 'W', world).
-func stairsRID(name string, f byte) uint32 {
-	return ridNamed(name, map[string]any{"weirdo_direction": weirdoOf[f], "upside_down_bit": false, "minecraft:corner": "none"})
-}
+// Block entities.
 
 // spawnerEntity is a mob spawner's block entity.
 func spawnerEntity(x, y, z int, entity string) chunk.BlockEntity {
@@ -489,4 +507,10 @@ func spawnerEntity(x, y, z int, entity string) chunk.BlockEntity {
 		entity = "minecraft:" + entity
 	}
 	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": "MobSpawner", "EntityIdentifier": entity}}
+}
+
+// lootEntity is a container's block entity (id "Chest", "Barrel", "BrushableBlock", ...) with a loot
+// table and seed.
+func lootEntity(id string, x, y, z int, table string, seed int32) chunk.BlockEntity {
+	return chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{"id": id, "LootTable": table, "LootTableSeed": seed}}
 }

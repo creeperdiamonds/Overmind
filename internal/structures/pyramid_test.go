@@ -85,7 +85,7 @@ func beKeys(bes []chunk.BlockEntity) []string {
 
 // refPyramid writes the pyramid of start (sx, sz) into chunk (cx, cz) as the op table reads, on its own.
 func refPyramid(t *testing.T, g *worldgen.Generator, c *chunk.Chunk, cx, cz, sx, sz int) []chunk.BlockEntity {
-	ops := crData().pyramid
+	ops := pieceData().pyramid
 	lo := math.MaxInt
 	for x := sx * 16; x < sx*16+16; x++ {
 		for z := sz * 16; z < sz*16+16; z++ {

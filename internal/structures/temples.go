@@ -41,8 +41,8 @@ func groundHeight(w *writer, x0, z0, nx, nz int) int {
 	sum := 0
 	for x := x0; x < x0+nx; x++ {
 		for z := z0; z < z0+nz; z++ {
-			h := minY
-			for y := min(maxY, w.height(x, z)); y >= minY+1; y-- {
+			h := w.lo
+			for y := min(w.hi, w.height(x, z)); y >= w.lo+1; y-- {
 				rid := w.mainAt(x, y, z)
 				if ridHas(rid, flagLiquid) {
 					h = y + 1
@@ -71,7 +71,7 @@ func (s *Structures) witchHut(w *writer) {
 	x0, z0 := w.cx*16, w.cz*16
 	y0 := groundHeight(w, x0, z0, 7, 9) + 1
 	c := &ctx{w: w, p: cornerPiece(w.cx, w.cz, y0), r: w.rng}
-	runOps(c, crData().hut, nil, func(c *ctx, op *crOp) bool {
+	runOps(c, pieceData().hut, nil, func(c *ctx, op *pieceOp) {
 		switch op.Op {
 		case "flower_pot_entity":
 			wx, wy, wz := c.p.world(op.At[0], op.At[1], op.At[2])
@@ -82,12 +82,8 @@ func (s *Structures) witchHut(w *writer) {
 		case "cauldron":
 			fill := c.r.NextIntN(3)*2 + 2
 			c.r.NextIntN(100) // BDS's potion; no cauldron entity is written.
-			rid, _ := stateRID("cauldron", map[string]any{"cauldron_liquid": "water", "fill_level": fill})
-			c.set(op.At[0], op.At[1], op.At[2], rid)
-		default:
-			return false
+			c.set(op.At[0], op.At[1], op.At[2], specState(cauldronState(fill)))
 		}
-		return true
 	})
 }
 
@@ -96,8 +92,8 @@ func (s *Structures) jungleTemple(w *writer) {
 	x0, z0 := w.cx*16, w.cz*16
 	y0 := groundHeight(w, x0, z0, 12, 15)
 	c := &ctx{w: w, p: cornerPiece(w.cx, w.cz, y0), r: w.rng}
-	cobble, mossy := specState("cobblestone"), specState("mossy_cobblestone")
-	runOps(c, crData().jungle, nil, func(c *ctx, op *crOp) bool {
+	cobble, mossy := mustState("cobblestone"), mustState("mossy_cobblestone")
+	runOps(c, pieceData().jungle, nil, func(c *ctx, op *pieceOp) {
 		switch op.Op {
 		case "mossy_box":
 			for y := op.From[1]; y <= op.To[1]; y++ {
@@ -118,10 +114,7 @@ func (s *Structures) jungleTemple(w *writer) {
 				w.put(wx, wy, wz, specState(op.Block))
 				w.bes = append(w.bes, lootEntity(op.EntityID, wx, wy, wz, op.Loot, seed))
 			}
-		default:
-			return false
 		}
-		return true
 	})
 }
 
@@ -162,14 +155,14 @@ func (s *Structures) desertPyramid(w *writer, cx, cz, y0 int) {
 	p := worldgen.NewBedrockRandom(s.g.DecorationSeed(w.cx, w.cz))
 	p.NextIntN(3)
 	c := &ctx{w: w, p: cornerPiece(cx, cz, y0), r: p}
-	misc := crData().misc
+	misc := pieceData().misc
 	var (
 		cellar bool
 		x      *worldgen.Xoroshiro
 		sand   [][3]int
 	)
-	sandRID, sandstone := specState("sand"), specState("sandstone")
-	runOps(c, crData().pyramid, nil, func(c *ctx, op *crOp) bool {
+	sandRID, sandstone := mustState("sand"), mustState("sandstone")
+	runOps(c, pieceData().pyramid, nil, func(c *ctx, op *pieceOp) {
 		switch op.Op {
 		case "chests_in_order":
 			for _, cell := range op.Cells {
@@ -189,6 +182,8 @@ func (s *Structures) desertPyramid(w *writer, cx, cz, y0 int) {
 			}
 			c.set(op.At[0], op.At[1], op.At[2], specState(b))
 		case "archaeology_begin":
+			// The table loader has checked that the archaeology ops below come after this one, and that
+			// at least one listed_sand comes before suspicious_pass, so x is set and sand is not empty.
 			wx, wy, wz := c.p.world(op.Centre[0], op.Centre[1], op.Centre[2])
 			x = worldgen.NewXoroshiro(int64(int32(posSeed(wx, wy, wz))))
 			sand = sand[:0]
@@ -215,8 +210,7 @@ func (s *Structures) desertPyramid(w *writer, cx, cz, y0 int) {
 					return
 				}
 				w.put(wx, wy, wz, sus)
-				w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{wx, wy, wz}, Data: map[string]any{"id": "BrushableBlock",
-					"LootTable": pyramidSandTable, "LootTableSeed": x.NextInt()}})
+				w.bes = append(w.bes, lootEntity("BrushableBlock", wx, wy, wz, pyramidSandTable, x.NextInt()))
 			}
 			for _, cell := range sand[:max(n, 1)] {
 				mark(cell)
@@ -224,9 +218,6 @@ func (s *Structures) desertPyramid(w *writer, cx, cz, y0 int) {
 			rx := int(x.NextIntN(5)) + 14
 			rz := int(x.NextIntN(5)) + 11
 			mark([3]int{rx, 0, rz})
-		default:
-			return false
 		}
-		return true
 	})
 }

@@ -10,12 +10,10 @@ import (
 )
 
 // TestPieceTablesResolve: every block state the piece tables name is a registered state, and every op is
-// one the runners know.
+// one the runners know. The loaders panic on any of these (pieceTables.check, nfTables, omTables); this
+// test names each failure instead, over every table in piecedata/.
 func TestPieceTablesResolve(t *testing.T) {
-	d := crData()
-	if d.err != nil {
-		t.Fatal(d.err)
-	}
+	d := pieceData()
 	check := func(where, s string) {
 		if specState(s) == noBlock {
 			t.Errorf("%s: state %q is not registered", where, s)
@@ -31,15 +29,15 @@ func TestPieceTablesResolve(t *testing.T) {
 			check(k, s)
 		}
 	}
-	known := map[string]bool{"fill": true, "set": true, "chance": true, "chance_box": true, "column_down": true,
-		"column_down_each": true, "stone_box": true, "door": true, "chest": true, "portal_frames": true, "mossy_box": true,
-		"container": true, "chests_in_order": true, "cellar_variant": true, "set_by_variant": true, "archaeology_begin": true,
-		"listed_sand": true, "roof_choice": true, "suspicious_pass": true, "cauldron": true, "flower_pot_entity": true}
 	facingKey := func(b string) bool {
 		return b == "TORCH" || b == "LADDER" || strings.HasPrefix(b, "STAIRS:") || strings.HasPrefix(b, "DOOR:") ||
 			strings.HasPrefix(b, "BUTTON") || strings.HasPrefix(b, "FRAME")
 	}
-	ops := func(where string, list []crOp) {
+	ops := func(where string, list []pieceOp, own []string) {
+		known := map[string]bool{}
+		for _, o := range append(append([]string(nil), commonOps...), own...) {
+			known[o] = true
+		}
 		for _, op := range list {
 			if !known[op.Op] {
 				t.Errorf("%s: unknown op %q", where, op.Op)
@@ -49,8 +47,10 @@ func TestPieceTablesResolve(t *testing.T) {
 					continue
 				}
 				if facingKey(b) {
-					if _, ok := d.facings["north"][strings.Replace(b, "TORCH", "TORCH (wall torch pointing this way)", 1)]; !ok {
-						t.Errorf("%s: facing block %q not in the facing table", where, b)
+					for _, dir := range facingNames {
+						if _, ok := d.facings[dir][strings.Replace(b, "TORCH", "TORCH (wall torch pointing this way)", 1)]; !ok {
+							t.Errorf("%s: facing block %q not in the %s facing table", where, b, dir)
+						}
 					}
 					continue
 				}
@@ -58,13 +58,13 @@ func TestPieceTablesResolve(t *testing.T) {
 			}
 		}
 	}
-	ops("mineshaft stairs", d.msStairs)
+	ops("mineshaft stairs", d.msStairs, nil)
 	for k, l := range d.shPieces {
-		ops("stronghold "+k, l)
+		ops("stronghold "+k, l, shOps)
 	}
-	ops("pyramid", d.pyramid)
-	ops("jungle temple", d.jungle)
-	ops("witch hut", d.hut)
+	ops("pyramid", d.pyramid, pyramidOps)
+	ops("jungle temple", d.jungle, jungleOps)
+	ops("witch hut", d.hut, hutOps)
 	for k, cells := range d.shDoors {
 		for _, c := range cells {
 			if c.Facing == "" {
@@ -73,13 +73,65 @@ func TestPieceTablesResolve(t *testing.T) {
 		}
 	}
 	for _, f := range []int32{2, 4, 6} {
-		if _, ok := stateRID("cauldron", map[string]any{"cauldron_liquid": "water", "fill_level": f}); !ok {
-			t.Errorf("cauldron fill %d is not registered", f)
-		}
+		check("cauldron", cauldronState(f))
 	}
 	if len(d.shPieces) != 21 {
 		t.Errorf("stronghold op lists: %d, want 21", len(d.shPieces))
 	}
+
+	// The fortress table: every palette entry ("name k=v ..." or nether brick stairs with a facing) and
+	// every layer key.
+	var fortress []nfRaw
+	readTable("fortress_pieces.json", &fortress)
+	for _, r := range fortress {
+		for _, n := range r.Palette {
+			if name, f, ok := strings.Cut(n, " facing="); ok {
+				if _, known := weirdo[f]; !known || name != "nether_brick_stairs" {
+					t.Errorf("fortress %s: stairs %q", r.Kind, n)
+				}
+			} else if paletteState(n) == noBlock {
+				t.Errorf("fortress %s: block %q is not registered", r.Kind, n)
+			}
+		}
+		for _, layer := range r.Layers {
+			for _, row := range layer {
+				for _, ch := range row {
+					if i := strings.IndexRune(nfKeys, ch); ch != '.' && (i < 0 || i >= len(r.Palette)) {
+						t.Errorf("fortress %s: layer key %q outside its palette", r.Kind, ch)
+					}
+				}
+			}
+		}
+	}
+	// The monument tables: every block an op writes.
+	var building []omRawOp
+	readTable("monument_building.json", &building)
+	var rooms map[string][]omRawOp
+	readTable("monument_rooms.json", &rooms)
+	rooms["building"] = building
+	for k, list := range rooms {
+		for _, op := range list {
+			if op.Block != "" {
+				check("monument "+k, op.Block)
+			}
+		}
+	}
+	// Every table in the folder is one of the above.
+	entries, err := pieceFiles.ReadDir("piecedata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := map[string]bool{"facing_states.json": true, "misc_states.json": true, "mineshaft_states.json": true,
+		"mineshaft_stairs.json": true, "stronghold_pieces.json": true, "stronghold_doors.json": true,
+		"stronghold_states.json": true, "desert_pyramid.json": true, "jungle_temple.json": true, "witch_hut.json": true,
+		"fortress_pieces.json": true, "monument_building.json": true, "monument_rooms.json": true}
+	for _, e := range entries {
+		if !read[e.Name()] {
+			t.Errorf("piecedata/%s is not checked here", e.Name())
+		}
+	}
+	nfTables()
+	omTables()
 }
 
 // TestFrameAndOrientBox: the frame maps and oriented boxes agree: a piece placed with orientBox going d

@@ -167,6 +167,8 @@ func (l *shLayout) portalFallback() {
 	if B[1] <= shMinY {
 		return
 	}
+	// c is (a+b)/2 truncated toward zero, not floored, also at negative coordinates: the spec says so
+	// (stronghold/SPEC.md 2.7, "division truncating toward zero").
 	var b box
 	switch last.o {
 	case oS:
@@ -282,6 +284,10 @@ func (l *shLayout) exit(x, y, z int, d orient, k int) {
 	if k > shMaxDepth || abs(x-l.x0) > shMaxFoot || abs(z-l.z0) > shMaxFoot {
 		return
 	}
+	// Intended: each exit draws its kind, door and flags from a copy of the whole random, so the main
+	// stream does not advance here and all the exits of one piece start from the same state. Only the
+	// start's two draws (a word, the orientation), the pending-list picks (layoutStronghold) and the final height draw advance it. The spec's 149-piece layout
+	// (TestStrongholdLayoutMatchesSpec) depends on this.
 	cp := *l.r
 	r := &cp
 	D := k + 1
@@ -516,7 +522,7 @@ var shFlagNames = map[int][4]string{
 }
 
 func buildShPiece(w *writer, p *shPiece) {
-	t := crData()
+	t := pieceData()
 	c := &ctx{w: w, p: &opiece{p.b, p.o}, r: w.rng}
 	flag := func(name string) bool {
 		for i, n := range shFlagNames[p.kind] {
@@ -526,7 +532,7 @@ func buildShPiece(w *writer, p *shPiece) {
 		}
 		return false
 	}
-	runOps(c, t.shPieces[shOpsKey(p)], flag, func(c *ctx, op *crOp) bool {
+	runOps(c, t.shPieces[shOpsKey(p)], flag, func(c *ctx, op *pieceOp) {
 		switch op.Op {
 		case "stone_box":
 			shStoneBox(c, op.From, op.To)
@@ -541,23 +547,20 @@ func buildShPiece(w *writer, p *shPiece) {
 		case "chest":
 			wx, wy, wz := c.p.world(op.At[0], op.At[1], op.At[2])
 			if !w.in(wx, wy, wz) || ridName(w.mainAt(wx, wy, wz)) == "chest" {
-				return true
+				return // No seed is drawn for a chest outside the chunk or already there.
 			}
 			w.put(wx, wy, wz, specState(t.misc["chest"]))
 			w.bes = append(w.bes, lootEntity("Chest", wx, wy, wz, op.Loot, c.r.NextInt()))
 		case "portal_frames":
 			shPortalFrames(c)
-		default:
-			return false
 		}
-		return true
 	})
 }
 
 // shStoneBox is the stronghold's wall: its shell random stone bricks (one draw per shell cell, in the
 // chunk or not), its inside air.
 func shStoneBox(c *ctx, from, to [3]int) {
-	t := crData().shStates
+	t := pieceData().shStates
 	cracked, mossy, infested, plain := specState(t["cracked"]), specState(t["mossy"]), specState(t["infested"]), specState(t["stone_bricks"])
 	air := airRID()
 	for y := from[1]; y <= to[1]; y++ {
@@ -605,7 +608,7 @@ func shPortalFrames(c *ctx) {
 		c.set(fr.x, 3, fr.z, blockOf(key, fr.f, c.p))
 	}
 	if all {
-		portal := specState(crData().shStates["end_portal"])
+		portal := specState(pieceData().shStates["end_portal"])
 		for x := 4; x <= 6; x++ {
 			for z := 9; z <= 11; z++ {
 				c.set(x, 3, z, portal)
@@ -614,7 +617,7 @@ func shPortalFrames(c *ctx) {
 	}
 	if c.in(5, 3, 6) {
 		wx, wy, wz := c.p.world(5, 3, 6)
-		c.w.put(wx, wy, wz, specState(crData().shStates["spawner"]))
+		c.w.put(wx, wy, wz, specState(pieceData().shStates["spawner"]))
 		c.w.bes = append(c.w.bes, spawnerEntity(wx, wy, wz, "minecraft:silverfish"))
 	}
 }

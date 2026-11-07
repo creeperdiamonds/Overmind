@@ -1,8 +1,6 @@
 package structures
 
 import (
-	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,12 +33,6 @@ type omCell struct {
 	claimed bool
 }
 
-// omFrame is a box with the monument's orientation.
-type omFrame struct {
-	b box
-	o orient
-}
-
 // omChild is one room piece of the building.
 type omChild struct {
 	kind   string
@@ -51,10 +43,11 @@ type omChild struct {
 
 // monument is one assembled monument.
 type monument struct {
-	building omFrame
+	building opiece // The building's box, with the monument's orientation.
 	children []omChild
 	grid     [75]*omCell // By index gy*25 + gz*5 + gx; nil where the grid has no room.
-	// valid says the start passes the monument's biome tests (monumentAt).
+	// valid says the start passes the monument's biome tests (monumentAt); only a valid start is
+	// assembled.
 	valid bool
 }
 
@@ -71,11 +64,16 @@ func (s *Structures) monumentStartSeed(cx, cz int) uint32 {
 	return uint32(int64(a)) ^ uint32(int64(b)) ^ s.seed32
 }
 
-// monumentAtStart is the monument whose start chunk is (cx, cz), assembled once and cached.
+// monumentAtStart is the monument whose start chunk is (cx, cz), assembled once and cached. A candidate
+// that fails the biome tests is not assembled (the assembly draws only from its own randoms, so skipping
+// it changes nothing else).
 func (s *Structures) monumentAtStart(cx, cz int) *monument {
 	return s.monuments.get([2]int{cx, cz}, func() any {
+		if !s.monumentAt(cx, cz) {
+			return &monument{}
+		}
 		m := s.assembleMonument(cx, cz)
-		m.valid = s.monumentAt(cx, cz)
+		m.valid = true
 		return m
 	}).(*monument)
 }
@@ -117,7 +115,7 @@ func (s *Structures) assembleMonument(cx, cz int) *monument {
 	r := worldgen.NewBedrockRandom(seed)
 	o := [4]orient{oN, oS, oW, oE}[r.NextIntN(4)]
 	x0, z0 := cx*16-21, cz*16-21
-	m := &monument{building: omFrame{box{x0, 39, z0, x0 + 57, 61, z0 + 57}, o}}
+	m := &monument{building: opiece{box{x0, 39, z0, x0 + 57, 61, z0 + 57}, o}}
 
 	// The grid and its connections.
 	var grid [75]*omCell
@@ -195,7 +193,7 @@ func (s *Structures) assembleMonument(cx, cz int) *monument {
 
 	// Room pieces.
 	bw := [3]int{}
-	bw[0], bw[1], bw[2] = crLocal(m.building.b, o, 9, 0, 22)
+	bw[0], bw[1], bw[2] = m.building.world(9, 0, 22)
 	room := func(kind string, a *omCell, w, h, d, design int) omChild {
 		gx, gy, gz := a.g[0], a.g[1], a.g[2]
 		sx, sy, sz := 8*w, 4*h, 8*d
@@ -253,11 +251,11 @@ func (s *Structures) assembleMonument(cx, cz int) *monument {
 		}
 	}
 	wing := int(r.NextInt())
-	b := m.building.b
+	bd := &m.building
 	m.children = append(m.children,
-		omChild{kind: "wing_room", b: crSpan(b, o, [3]int{1, 1, 1}, [3]int{23, 8, 21}), design: wing & 1},
-		omChild{kind: "wing_room", b: crSpan(b, o, [3]int{34, 1, 1}, [3]int{56, 8, 21}), design: (wing + 1) & 1},
-		omChild{kind: "penthouse", b: crSpan(b, o, [3]int{22, 13, 22}, [3]int{35, 17, 35})})
+		omChild{kind: "wing_room", b: bd.span([3]int{1, 1, 1}, [3]int{23, 8, 21}), design: wing & 1},
+		omChild{kind: "wing_room", b: bd.span([3]int{34, 1, 1}, [3]int{56, 8, 21}), design: (wing + 1) & 1},
+		omChild{kind: "penthouse", b: bd.span([3]int{22, 13, 22}, [3]int{35, 17, 35})})
 	return m
 }
 
@@ -335,7 +333,7 @@ func omParseOps(raw []omRawOp) []omOp {
 		}
 		op := omOp{kind: k, b: r.Box}
 		if r.Block != "" {
-			op.rid = crBlock(r.Block)
+			op.rid = mustState(r.Block)
 		}
 		for _, l := range r.When {
 			c := omCond{}
@@ -387,14 +385,10 @@ func omParseOps(raw []omRawOp) []omOp {
 func omTables() {
 	omOnceTables.Do(func() {
 		var b []omRawOp
-		if err := json.Unmarshal(crTable("monument_building.json"), &b); err != nil {
-			panic(fmt.Sprintf("monument building table: %v", err))
-		}
+		readTable("monument_building.json", &b)
 		omBuilding = omParseOps(b)
 		var rooms map[string][]omRawOp
-		if err := json.Unmarshal(crTable("monument_rooms.json"), &rooms); err != nil {
-			panic(fmt.Sprintf("monument room table: %v", err))
-		}
+		readTable("monument_rooms.json", &rooms)
 		omRooms = map[string][]omOp{}
 		for k, v := range rooms {
 			omRooms[k] = omParseOps(v)
@@ -405,7 +399,7 @@ func omTables() {
 // omRun is one piece being run in one chunk.
 type omRun struct {
 	w      *writer
-	f      omFrame
+	f      opiece
 	roles  [6]*omCell
 	design int
 	pillar bool
@@ -415,7 +409,7 @@ func (c omCond) holds(r *omRun) bool {
 	v := false
 	switch c.what {
 	case omTouch:
-		a := crSpan(r.f.b, r.f.o, [3]int{c.rect[0], 0, c.rect[1]}, [3]int{c.rect[2], 0, c.rect[3]})
+		a := r.f.span([3]int{c.rect[0], 0, c.rect[1]}, [3]int{c.rect[2], 0, c.rect[3]})
 		v = a[0] <= r.w.cx*16+15 && a[3] >= r.w.cx*16 && a[2] <= r.w.cz*16+15 && a[5] >= r.w.cz*16
 	case omDesign:
 		v = r.design == c.design
@@ -451,8 +445,7 @@ func (r *omRun) run(ops []omOp) {
 		}
 		switch op.kind {
 		case omFill, omWater, omReplaceWater:
-			wb := crSpan(r.f.b, r.f.o, [3]int{op.b[0], op.b[1], op.b[2]}, [3]int{op.b[3], op.b[4], op.b[5]})
-			cb, in := crClip(w, wb)
+			cb, in := w.clip(r.f.span([3]int{op.b[0], op.b[1], op.b[2]}, [3]int{op.b[3], op.b[4], op.b[5]}))
 			if !in {
 				continue
 			}
@@ -477,18 +470,18 @@ func (r *omRun) run(ops []omOp) {
 				}
 			}
 		case omColumn:
-			x, y, z := crLocal(r.f.b, r.f.o, op.b[0], op.b[1], op.b[2])
+			x, y, z := r.f.world(op.b[0], op.b[1], op.b[2])
 			if !w.in(x, y, z) {
 				continue
 			}
 			for ; y >= w.lo+2; y-- {
-				if !crSoft(w, x, y, z) && !omWaterLike(w.blockName(x, y, z)) {
+				if !w.replaceable(x, y, z) && !omWaterLike(w.blockName(x, y, z)) {
 					break
 				}
 				w.set(x, y, z, op.rid, false)
 			}
 		case omElder:
-			x, y, z := crLocal(r.f.b, r.f.o, op.b[0], op.b[1], op.b[2])
+			x, y, z := r.f.world(op.b[0], op.b[1], op.b[2])
 			if w.in(x, y, z) {
 				w.spawns = append(w.spawns, spawnIntent{Pos: [3]int{x, y, z}, Entity: "minecraft:elder_guardian"})
 			}
@@ -503,7 +496,7 @@ func (r *omRun) run(ops []omOp) {
 						if ly == op.b[1] && !low {
 							continue
 						}
-						x, y, z := crLocal(r.f.b, r.f.o, lx, ly, lz)
+						x, y, z := r.f.world(lx, ly, lz)
 						if w.in(x, y, z) {
 							w.set(x, y, z, op.rid, false)
 						}
@@ -541,7 +534,7 @@ func (s *Structures) placeMonuments(w *writer) {
 }
 
 func (s *Structures) monumentChunk(w *writer, m *monument) {
-	cb := crChunk(w)
+	cb := w.chunkBox()
 	if !m.building.b.intersects(cb) {
 		return
 	}
@@ -552,7 +545,7 @@ func (s *Structures) monumentChunk(w *writer, m *monument) {
 		if !c.b.intersects(cb) {
 			continue
 		}
-		r := &omRun{w: w, f: omFrame{c.b, m.building.o}, design: c.design}
+		r := &omRun{w: w, f: opiece{c.b, m.building.o}, design: c.design}
 		if a := c.a; a != nil {
 			r.roles[omRoleA] = a
 			r.roles[omRoleE], r.roles[omRoleN], r.roles[omRoleAU] = a.link[omE], a.link[omN], a.link[omU]
