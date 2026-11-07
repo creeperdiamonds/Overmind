@@ -1,0 +1,21 @@
+{
+  "air (all air the stronghold writes)": "air",
+  "stone_bricks": "stone_bricks",
+  "cracked": "cracked_stone_bricks",
+  "mossy": "mossy_stone_bricks",
+  "infested": "infested_stone_bricks",
+  "cobblestone": "cobblestone",
+  "oak_planks": "oak_planks",
+  "bookshelf": "bookshelf",
+  "cobweb": "web",
+  "oak_fence": "oak_fence[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]",
+  "iron_bars": "iron_bars[minecraft:connection_east=0,minecraft:connection_north=0,minecraft:connection_south=0,minecraft:connection_west=0]",
+  "water": "water[liquid_depth=0]",
+  "lava": "lava[liquid_depth=0]",
+  "stone_brick_slab": "stone_brick_slab[minecraft:vertical_half=bottom]",
+  "smooth_stone_slab": "smooth_stone_slab[minecraft:vertical_half=bottom]",
+  "smooth_stone_double_slab": "smooth_stone_double_slab[minecraft:vertical_half=bottom]",
+  "end_portal": "end_portal",
+  "spawner": "mob_spawner",
+  "torch standing": "torch[torch_facing_direction=top]"
+}

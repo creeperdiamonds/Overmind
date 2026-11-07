@@ -1,0 +1,66 @@
+{
+  "north": {
+    "TORCH (wall torch pointing this way)": "torch[torch_facing_direction=south]",
+    "LADDER": "ladder[facing_direction=2]",
+    "STAIRS:stone_stairs": "stone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=3]",
+    "STAIRS:stone_brick_stairs": "stone_brick_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=3]",
+    "STAIRS:sandstone_stairs": "sandstone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=3]",
+    "STAIRS:spruce_stairs": "spruce_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=3]",
+    "DOOR:wooden_door lower": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=north,open_bit=0,upper_block_bit=0]",
+    "DOOR:wooden_door upper": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=north,open_bit=0,upper_block_bit=1]",
+    "DOOR:iron_door lower": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=north,open_bit=0,upper_block_bit=0]",
+    "DOOR:iron_door upper": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=north,open_bit=0,upper_block_bit=1]",
+    "BUTTON (stone_button)": "stone_button[button_pressed_bit=0,facing_direction=2]",
+    "FRAME eye=false": "end_portal_frame[end_portal_eye_bit=0,minecraft:cardinal_direction=north]",
+    "FRAME eye=true": "end_portal_frame[end_portal_eye_bit=1,minecraft:cardinal_direction=north]"
+  },
+  "south": {
+    "TORCH (wall torch pointing this way)": "torch[torch_facing_direction=north]",
+    "LADDER": "ladder[facing_direction=3]",
+    "STAIRS:stone_stairs": "stone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=2]",
+    "STAIRS:stone_brick_stairs": "stone_brick_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=2]",
+    "STAIRS:sandstone_stairs": "sandstone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=2]",
+    "STAIRS:spruce_stairs": "spruce_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=2]",
+    "DOOR:wooden_door lower": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=south,open_bit=0,upper_block_bit=0]",
+    "DOOR:wooden_door upper": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=south,open_bit=0,upper_block_bit=1]",
+    "DOOR:iron_door lower": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=south,open_bit=0,upper_block_bit=0]",
+    "DOOR:iron_door upper": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=south,open_bit=0,upper_block_bit=1]",
+    "BUTTON (stone_button)": "stone_button[button_pressed_bit=0,facing_direction=3]",
+    "FRAME eye=false": "end_portal_frame[end_portal_eye_bit=0,minecraft:cardinal_direction=south]",
+    "FRAME eye=true": "end_portal_frame[end_portal_eye_bit=1,minecraft:cardinal_direction=south]"
+  },
+  "west": {
+    "TORCH (wall torch pointing this way)": "torch[torch_facing_direction=east]",
+    "LADDER": "ladder[facing_direction=4]",
+    "STAIRS:stone_stairs": "stone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=1]",
+    "STAIRS:stone_brick_stairs": "stone_brick_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=1]",
+    "STAIRS:sandstone_stairs": "sandstone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=1]",
+    "STAIRS:spruce_stairs": "spruce_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=1]",
+    "DOOR:wooden_door lower": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=west,open_bit=0,upper_block_bit=0]",
+    "DOOR:wooden_door upper": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=west,open_bit=0,upper_block_bit=1]",
+    "DOOR:iron_door lower": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=west,open_bit=0,upper_block_bit=0]",
+    "DOOR:iron_door upper": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=west,open_bit=0,upper_block_bit=1]",
+    "BUTTON (stone_button)": "stone_button[button_pressed_bit=0,facing_direction=4]",
+    "FRAME eye=false": "end_portal_frame[end_portal_eye_bit=0,minecraft:cardinal_direction=west]",
+    "FRAME eye=true": "end_portal_frame[end_portal_eye_bit=1,minecraft:cardinal_direction=west]"
+  },
+  "east": {
+    "TORCH (wall torch pointing this way)": "torch[torch_facing_direction=west]",
+    "LADDER": "ladder[facing_direction=5]",
+    "STAIRS:stone_stairs": "stone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=0]",
+    "STAIRS:stone_brick_stairs": "stone_brick_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=0]",
+    "STAIRS:sandstone_stairs": "sandstone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=0]",
+    "STAIRS:spruce_stairs": "spruce_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=0]",
+    "DOOR:wooden_door lower": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=east,open_bit=0,upper_block_bit=0]",
+    "DOOR:wooden_door upper": "wooden_door[door_hinge_bit=0,minecraft:cardinal_direction=east,open_bit=0,upper_block_bit=1]",
+    "DOOR:iron_door lower": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=east,open_bit=0,upper_block_bit=0]",
+    "DOOR:iron_door upper": "iron_door[door_hinge_bit=0,minecraft:cardinal_direction=east,open_bit=0,upper_block_bit=1]",
+    "BUTTON (stone_button)": "stone_button[button_pressed_bit=0,facing_direction=5]",
+    "FRAME eye=false": "end_portal_frame[end_portal_eye_bit=0,minecraft:cardinal_direction=east]",
+    "FRAME eye=true": "end_portal_frame[end_portal_eye_bit=1,minecraft:cardinal_direction=east]"
+  },
+  "rails": {
+    "rail along world z (north-south)": "rail[rail_direction=0]",
+    "rail along world x (east-west)": "rail[rail_direction=1]"
+  }
+}

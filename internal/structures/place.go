@@ -175,24 +175,12 @@ func (s *Structures) placeWith(cx, cz int, c *chunk.Chunk, mk func() *chunk.Chun
 	// treasure, outpost, monument, ocean ruin, shipwreck, ruined portal, ancient city), which decides
 	// only which blocks win where two types overlap. The data-driven jigsaws are not in that list (their
 	// pass was not read): last.
-	scattered := func(w *writer) {
-		if st, ok := s.StartIn(Scattered, cx, cz); ok {
-			switch st.Piece {
-			case "witch_hut":
-				s.witchHut(w)
-			case "jungle_temple":
-				s.jungleTemple(w)
-			}
-		}
-		s.placeIgloos(w)
-		s.placePyramids(w)
-	}
 	treasure := func(w *writer) {
 		if _, ok := s.StartIn(BuriedTreasure, cx, cz); ok {
 			s.buriedTreasure(w)
 		}
 	}
-	for _, place := range []func(*writer){s.placeVillages, s.placeStrongholds, scattered, s.placeMineshafts, s.placeMansions, treasure,
+	for _, place := range []func(*writer){s.placeVillages, s.placeStrongholds, s.placeScattered, s.placeMineshafts, s.placeMansions, treasure,
 		s.placeMonuments, s.placeOceanRuins, s.placeShipwrecks, s.placeRuinedPortals, s.placeAncientCities} {
 		w.reseed()
 		place(w)
