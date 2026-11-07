@@ -19,6 +19,10 @@ import (
 // fortressReach is how many chunks from its start a fortress piece can reach.
 const fortressReach = 9
 
+// nfFar is how far (blocks, per axis) from the start piece's corner a piece may still open onto more than
+// an end filler.
+const nfFar = 112
+
 // Piece kinds.
 const (
 	nfBridgeStraight = iota
@@ -316,7 +320,7 @@ func (a *nfBuild) right(p *nfPiece, yo, zo int, l int) {
 // child adds a piece at a foot: from the list when the foot is near the start, else an end filler.
 func (a *nfBuild) child(x, y, z int, o orient, depth int, l int) {
 	var p *nfPiece
-	if abs(x-a.start[0]) <= 112 && abs(z-a.start[2]) <= 112 {
+	if abs(x-a.start[0]) <= nfFar && abs(z-a.start[2]) <= nfFar {
 		p = a.choose(x, y, z, o, depth+1, &a.lists[l])
 	} else {
 		p = a.create(nfEndFiller, x, y, z, o, depth)

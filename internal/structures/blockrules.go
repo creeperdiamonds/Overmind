@@ -40,7 +40,26 @@ type rulePred struct {
 
 type blockRule struct {
 	src, tgt rulePred
-	result   string // Bedrock name of the result, "" to keep the block (only its state reset).
+	pos      *axisPos // nil: AlwaysTrue.
+	result   string   // Bedrock name of the result, "" to keep the block (only its state reset).
+}
+
+// axisPos is an AxisAlignedPosition predicate (the bastion's highrampart list, NOTES-leftovers L4):
+// passes when nextFloat() <= the chance lerped from minP to maxP as the distance along the axis from
+// the piece's position goes from minD to maxD. Its draw is Java's AxisAlignedLinearPosTest (one
+// nextFloat() each test, after the block and target tests); Bedrock's was not read.
+type axisPos struct {
+	minP, maxP float32
+	minD, maxD int
+	axis       int // 0 x, 1 y, 2 z.
+}
+
+func (a *axisPos) test(d int, r *worldgen.BedrockRandom) bool {
+	t := float32(0)
+	if a.maxD > a.minD {
+		t = min(max(float32(abs(d)-a.minD)/float32(a.maxD-a.minD), 0), 1)
+	}
+	return r.NextFloat() <= a.minP+(a.maxP-a.minP)*t
 }
 
 // test runs a predicate on a block (name and runtime ID), drawing from r as P9's table says.
@@ -144,7 +163,8 @@ func ridOfName(name string) (uint32, bool) {
 }
 
 // applyRules runs a rule list on a template block about to be written at a world position.
-func (w *writer) applyRules(rules []blockRule, r *worldgen.BedrockRandom, name string, rid uint32, x, y, z int) (string, uint32) {
+// origin is the piece's position, which a position predicate measures from.
+func (w *writer) applyRules(rules []blockRule, r *worldgen.BedrockRandom, name string, rid uint32, x, y, z int, origin [3]int) (string, uint32) {
 	var worldName string
 	var worldRID uint32
 	worldRead := false
@@ -165,6 +185,9 @@ func (w *writer) applyRules(rules []blockRule, r *worldgen.BedrockRandom, name s
 			if !ru.tgt.test(worldName, worldRID, r) {
 				continue
 			}
+		}
+		if ru.pos != nil && !ru.pos.test([3]int{x, y, z}[ru.pos.axis]-origin[ru.pos.axis], r) {
+			continue
 		}
 		res := ru.result
 		if res == "" {

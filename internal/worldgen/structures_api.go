@@ -12,8 +12,10 @@ import (
 // Structures live in their own package; this file only exposes the generator's seeds, biomes and
 // random numbers, so that the two share one implementation of each.
 
-// StructurePlacer places structure pieces into a chunk once its terrain and decoration are done.
-// It is a pure function of the seed and the chunk position, safe on any number of workers.
+// StructurePlacer places structure pieces into a chunk. PlaceChunk writes a finished chunk (after its
+// decoration: Overjava's order); a placer that is also a StructureLogger is used before decoration in
+// the Bedrock profile instead (structures_base.go). It is a pure function of the seed and the chunk
+// position, safe on any number of workers.
 type StructurePlacer interface {
 	// PlaceChunk writes the parts of every structure piece inside chunk (cx, cz) and returns the
 	// block entities it made (chests with a loot table and seed).
@@ -33,7 +35,10 @@ func (g *Generator) GenerateColumn(pos world.ChunkPos, col *chunk.Column) {
 }
 
 // GenerateBase is an Overworld chunk as GenerateChunk makes it before any structure piece is written.
-// Structures replay a neighbour chunk's post-process on it (a mineshaft corridor's spawner mark).
+// Structures replay a neighbour chunk's post-process on it (a mineshaft corridor's spawner mark) and read
+// the terrain a ruined portal is planned on. Overworld generators only: it writes the Overworld's cell
+// layout and biomes (a Nether or End generator would fill the chunk wrongly); no structure of those
+// dimensions calls it.
 func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
 	g.cache.begin()
 	defer g.cache.end()

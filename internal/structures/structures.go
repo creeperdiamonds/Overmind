@@ -1,4 +1,5 @@
-// Package structures places Overworld structures and builds their pieces (Task 9), in our own Go from the
+// Package structures places the structures of the Overworld, the Nether (fortresses, bastions) and the
+// End (end cities) and builds their pieces (Task 9), in our own Go from the
 // study of BDS 1.26.60.6 (NOTES-bedrock-structures.md, NOTES-structures-phase2.md, outside the repo).
 // Templates and loot tables come from the local Bedrock install at start-up (Data); nothing of
 // Mojang's is in this repo. See NOTES.md for what is built and what is not.

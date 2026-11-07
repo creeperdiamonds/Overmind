@@ -41,7 +41,7 @@ type element struct {
 	// its rotation shuffle, but has no jigsaws, so it never attaches (P16.3 rule 1).
 	missing bool
 	// mob is a bastion mob element (bastion/mobs/*.mcstructure): a 1 x 3 x 1 piece that places no
-	// blocks; its mob is recorded, not spawned (P16.3 rule 2).
+	// blocks; its mob becomes a spawn intent, dropped, not spawned (P16.3 rule 2).
 	mob string
 }
 
@@ -164,12 +164,10 @@ type assembly struct {
 	pools    map[string]*pool
 	maxDepth int
 	height   func(x, z int) int
-	// expansion is the expansion hack (villages; not in the notes' 1.6, measured: see village.go).
-	expansion bool
-	pieces    []*piece
-	free      []region
-	queue     []queued
-	seq       int
+	pieces   []*piece
+	free     []region
+	queue    []queued
+	seq      int
 }
 
 func shuffleJigsaws(r *worldgen.BedrockRandom, a []jigsaw) {
@@ -180,16 +178,11 @@ func shuffleJigsaws(r *worldgen.BedrockRandom, a []jigsaw) {
 	}
 }
 
-// assemble is addPieces (N2 1.4) from a chosen start element.
+// assemble is addPieces (N2 1.4) from a chosen start element. It has no expansion hack: no structure
+// placed through it (bastions, ancient cities) uses one, and villages have their own placer (village.go).
 func assemble(r *worldgen.BedrockRandom, pools map[string]*pool, start *element, x, z, rot int, startJigsaw string,
 	maxDepth, maxDist int, height func(x, z int) int) []*piece {
-	return assembleWith(r, pools, start, x, z, rot, startJigsaw, maxDepth, maxDist, height, false)
-}
-
-// assembleWith is assemble with the expansion hack chosen.
-func assembleWith(r *worldgen.BedrockRandom, pools map[string]*pool, start *element, x, z, rot int, startJigsaw string,
-	maxDepth, maxDist int, height func(x, z int) int, expansion bool) []*piece {
-	a := &assembly{r: r, pools: pools, maxDepth: maxDepth, height: height, expansion: expansion}
+	a := &assembly{r: r, pools: pools, maxDepth: maxDepth, height: height}
 	pos := [3]int{x, 0, z}
 	var anchor [3]int
 	if startJigsaw != "" {
@@ -302,10 +295,6 @@ func (a *assembly) tryPool(p *piece, sbox box, sj *jigsaw, target [3]int, pl *po
 		for _, rot := range rots {
 			tjs := e.jigsaws([3]int{}, rot)
 			shuffleJigsaws(a.r, tjs)
-			expandTo := 0
-			if a.expansion {
-				expandTo = a.expandTo(e, rot, tjs)
-			}
 			for k := range tjs {
 				tj := &tjs[k]
 				if !canAttach(sj, tj) {
@@ -327,9 +316,6 @@ func (a *assembly) tryPool(p *piece, sbox box, sj *jigsaw, target [3]int, pl *po
 				newMin := (sj.pos[1] - (sbox[1] + tj.pos[1])) + base + dyStep
 				sh := newMin - tb[1]
 				tb = tb.shift(sh)
-				if expandTo > 0 {
-					tb[4] = max(tb[4], tb[1]+max(expandTo+1, tb[4]-tb[1]))
-				}
 				raw[1] += sh
 				if inside { // One new index per attempt, as coded (N2 1.6).
 					fi++
@@ -364,35 +350,4 @@ func (a *assembly) tryPool(p *piece, sbox box, sj *jigsaw, target [3]int, pl *po
 		}
 	}
 	return false
-}
-
-// expandTo is the expansion hack's height for a target element (Java's Placer: a target no more than 16
-// tall grows to hold the tallest element of the pools its inward-pointing jigsaws draw from).
-func (a *assembly) expandTo(e *element, rot int, tjs []jigsaw) int {
-	hb := e.bbox([3]int{}, rot)
-	if hb[4]-hb[1]+1 > 16 {
-		return 0
-	}
-	best := 0
-	for _, tj := range tjs {
-		st := faceStep[tj.front]
-		if !hb.inside([3]int{tj.pos[0] + st[0], tj.pos[1] + st[1], tj.pos[2] + st[2]}) {
-			continue
-		}
-		for _, name := range []string{tj.pool, ""} {
-			pl := a.pools[tj.pool]
-			if name == "" && pl != nil {
-				pl = a.pools[pl.fallback]
-			}
-			if pl == nil {
-				continue
-			}
-			for _, c := range pl.elems {
-				if c != nil {
-					best = max(best, c.size()[1])
-				}
-			}
-		}
-	}
-	return best
 }

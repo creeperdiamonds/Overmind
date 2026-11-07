@@ -11,14 +11,18 @@ import (
 // End cities (Task 11), our own Go of NOTES-structures-phase2 P18.1 to P18.3 (cited P181..P183) with the
 // start of NOTES-bedrock-end phase 8. Validated in the study on seed 100's (5,65) city: 119 of 119 pieces,
 // 100% of 35,417 cells, 7 of 7 chest loot seeds. The pieces are the install's endcity templates.
-// Shulkers are mobs (stage 4): their Sentry markers are recorded as spawn intents only.
+// Shulkers are mobs (stage 4): their Sentry markers become spawn intents, which are dropped (place.go).
 //
 // Bedrock's changes from the reference model: the pieces continue the region placement's random after
 // its four nextInt(9) words (a local MT only gives the rotation), and the collision box is one block
 // longer in x and z (P181).
 
 const (
-	endCityReach   = 12 // Chunks from the start a piece can reach (bridges, and the ship 70 out).
+	// endCityReach is how far (chunks) a piece reaches from its start. The placer has no distance limit,
+	// only its depth (8), so this is measured, not read: of 19,200 starts over 12 seeds the farthest piece
+	// was 10 chunks out (20 starts; 114 at 9), and 2 more are kept as a margin (TestPiecesStayWithinReach
+	// checks 1,944 starts).
+	endCityReach   = 12
 	endCityMinY    = 60 // P183: below this no city.
 	endCityMinDist = 4096
 	endMinY        = 0
@@ -55,13 +59,19 @@ func (s *Structures) endCityAt(cx, cz int) *endCity {
 	if x != cx || z != cz || int64(cx)*int64(cx)+int64(cz)*int64(cz) <= endCityMinDist {
 		return nil
 	}
-	rot := int(worldgen.NewBedrockRandom(uint32(int32(cz))*10387313+uint32(int32(cx))).U32() & 3)
+	rot := endCityRotation(cx, cz)
 	o1, o2 := [4]int{12, 12, 2, 2}[rot], [4]int{12, 2, 2, 12}[rot]
 	hs := s.g.EndTerrainHeights(cx, cz, [][2]int{{7, 7}, {7, o1}, {o2, 7}, {o2, o1}})
 	h := min(hs[0], hs[1], hs[2], hs[3])
 	if h < endCityMinY {
 		return nil
 	}
+	return s.assembleEndCity(cx, cz, rot, h, r)
+}
+
+// assembleEndCity builds a city at start chunk (cx, cz) and height h on the region random r (left after
+// the placement draws), nil when a template is missing.
+func (s *Structures) assembleEndCity(cx, cz, rot, h int, r *worldgen.BedrockRandom) *endCity {
 	as := &ecAssembler{s: s, r: r, ok: true}
 	base := as.piece("base_floor", [3]int{cx*16 + 8, h, cz*16 + 8}, rot, true)
 	second := as.child(base, "second_floor", [3]int{-1, 0, -1}, rot, false)
@@ -75,13 +85,18 @@ func (s *Structures) endCityAt(cx, cz int) *endCity {
 	return &endCity{pieces: list}
 }
 
+// endCityRotation is a start's rotation, from a local MT (P181).
+func endCityRotation(cx, cz int) int {
+	return int(worldgen.NewBedrockRandom(uint32(int32(cz))*10387313+uint32(int32(cx))).U32() & 3)
+}
+
 // piece is a template piece at a position (P183) with its collision box (P181 item 2).
 func (as *ecAssembler) piece(name string, pos [3]int, rot int, overwrite bool) *ecPiece {
 	t := as.s.data.Template("endcity/" + name)
 	p := &ecPiece{t: t, name: name, pos: pos, rot: rot & 3, overwrite: overwrite}
 	if t == nil {
 		as.ok = false
-		as.s.data.problem("end city template endcity/%s is missing", name)
+		as.s.data.missingTemplate("end city", "endcity/"+name)
 		p.box = box{pos[0], pos[1], pos[2], pos[0], pos[1], pos[2]}
 		return p
 	}

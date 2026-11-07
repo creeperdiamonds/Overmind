@@ -11,7 +11,7 @@ import "math"
 //
 // Not modelled: an unread extra test in the smoothing step (an object at dimension +0x1b0, T26).
 
-const icebergSea = 63 // The origin's y: the dimension's sea level (T26; 62 scores worse).
+const icebergSea = 63 // The origin's y: the dimension's sea level, the short at +0xac (read, T26).
 
 // legacyIce is LegacyIceFeature's place at a chunk's rule position (its corner).
 func legacyIce(d *decoration, r *bmt, p pos) bool {

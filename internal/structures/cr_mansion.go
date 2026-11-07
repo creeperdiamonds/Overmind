@@ -783,7 +783,7 @@ third:
 	b.floor(1, O.off(0, 0, 8, rot), &base, &f1)
 	b.floor(2, O.off(0, 0, 19, rot), &third, &f2)
 	if b.missing != "" {
-		s.data.problem("woodland mansion at chunk (%d, %d): no template mansion/%s; the mansion is not placed", st.CX, st.CZ, b.missing)
+		s.data.missingTemplate("mansion", "mansion/"+b.missing) // Logged once per template; the mansion is not placed.
 		return nil
 	}
 	m := &mansion{pieces: b.pieces, draws: r.n}

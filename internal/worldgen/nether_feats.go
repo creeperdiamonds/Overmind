@@ -3,8 +3,8 @@ package worldgen
 // The Nether's code features that its data-driven rules place (Task 10), in our own Go from the study
 // of BDS 1.26.60.6 (NOTES-bedrock-nether R2-4b to R2-4e): DeltaFeature, BasaltColumnsFeature,
 // HugeFungusFeature (crimson and warped) and WeepingVinesClusterFeature. Each draws on the rule's
-// feature MT. The basalt pillar and twisting vines are in nether_pillars.go. Not written: the nether
-// fossil (not read).
+// feature MT. The basalt pillar and twisting vines are in nether_pillars.go, the nether fossil in
+// bedrock_fossil.go (F2).
 
 var (
 	sMagma        = laterState("magma_block")

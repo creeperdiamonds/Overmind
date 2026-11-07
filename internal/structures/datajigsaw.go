@@ -7,9 +7,9 @@ import (
 )
 
 // Trail ruins and abandoned camps: data-driven jigsaw structures (N1 2.4 placement, BR assembly), from
-// the install's structure, pool and template files. Trial chambers place their starts but are not
-// assembled: their pools are registered in code and the study's table of them is not yet trusted (BR:
-// the old extract drops the empty entries).
+// the install's structure, pool and template files. Trial chambers use the same assembly with their
+// code-registered pools (trialchambers.go, pools_trial_chambers.go). All three are post-processed here,
+// after the legacy types, on one Xoroshiro per chunk (P20.5).
 
 // dataReach is how far (chunks) a data-driven structure's pieces can reach from its start chunk: its
 // maximum horizontal distance (camps 116, trail ruins 80) plus a piece.
@@ -69,7 +69,6 @@ func (s *Structures) columnHasBiome(x, z int, filter []byte) bool {
 	}
 	return false
 }
-
 
 // dataAdjustments are the br beardifier's records near chunk (cx, cz) (P9.3, Java 1.21's Beardifier):
 // every rigid piece of a trail ruin (bury) or abandoned camp (beard_thin) within 12 blocks of the chunk,
