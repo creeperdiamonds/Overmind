@@ -370,7 +370,7 @@ func (s *Structures) placeTemplateWith(w *writer, p *piece, xr *worldgen.Xoroshi
 			continue
 		}
 		if rr != nil {
-			res.name, res.rid = w.applyRules(p.elem.rules, rr, res.name, res.rid, x, y, z)
+			res.name, res.rid = w.applyRules(p.elem.rules, rr, res.name, res.rid, x, y, z, p.pos)
 		}
 		if processed != nil && processed[bi] != res.name {
 			if nr, ok := ridOfName(processed[bi]); ok {

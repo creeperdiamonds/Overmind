@@ -80,8 +80,41 @@ var bastionPoolDefs = []basPoolDef{
 	{"minecraft:bastion/blocks/gold", "minecraft:empty", []poolEntry{{3, "minecraft:bastion_blocks_air"}, {1, "minecraft:bastion_blocks_gold"}}},
 }
 
-// bastionElements gives each element its template path and its block-rule list (not applied: the
-// lists' contents were not dumped, NOTES.md).
+// bastionRuleLists are the bastion's 12 block-rule lists, transcribed from the study's dump of BDS's
+// rule builder (NOTES-leftovers L4; the study's leftovers/rules_bastion.txt, emulating 0x53c89f0): rules in
+// list order, every target AlwaysTrue, every position AlwaysTrue but highrampart's AxisAlignedPosition
+// (0.0, 0.05, 0, 100, Y). The rule random is P9.1's, as the ancient city's.
+var bastionRuleLists = func() map[string][]blockRule {
+	const pbb, cbr = "polished_blackstone_bricks", "cracked_polished_blackstone_bricks"
+	r := func(name string, p float32, result string) blockRule {
+		return blockRule{src: bmr(name, p), result: result}
+	}
+	return map[string][]blockRule{
+		"minecraft:bastion_housing_units": {r(pbb, 0.3, cbr), r("blackstone", 0.0001, "air"), r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_hoglin_stable_generic": {r(pbb, 0.1, cbr), r("blackstone", 0.0001, "air"),
+			r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_hoglin_stable_sidewall": {r("chiseled_polished_blackstone", 0.5, "air"), r("gold_block", 0.1, cbr),
+			r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_treasure_room_roof": {r(pbb, 0.3, cbr), r(pbb, 0.15, "air"), r(pbb, 0.3, "blackstone")},
+		"minecraft:bastion_treasure_room_generic": {r(pbb, 0.35, cbr), r("chiseled_polished_blackstone", 0.1, cbr),
+			r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_treasure_room_highwall": {r(pbb, 0.01, "air"), r(pbb, 0.5, cbr), r(pbb, 0.3, "blackstone")},
+		"minecraft:bastion_treasure_room_highrampart": {r("gold_block", 0.3, cbr),
+			{src: rulePred{kind: predMatch, names: []string{pbb}}, pos: &axisPos{minP: 0, maxP: 0.05, minD: 0, maxD: 100, axis: 1}, result: "air"}},
+		"minecraft:bastion_treasure_room_bottomrampart": {r("magma", 0.75, cbr), r(cbr, 0.15, pbb), r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_bridge_rampart": {r(pbb, 0.4, cbr), r("blackstone", 0.01, cbr), r(pbb, 0.0001, "air"),
+			r("blackstone", 0.0001, "air"), r("gold_block", 0.3, cbr), r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_bridge_generic": {r(pbb, 0.3, cbr), r("blackstone", 0.0001, "air"), r("gold_block", 0.3, cbr),
+			r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_bridge_entrance_replacement": {r("chiseled_polished_blackstone", 0.5, "air"), r("gold_block", 0.6, cbr),
+			r("blackstone", 0.01, "gilded_blackstone")},
+		"minecraft:bastion_bridge_bridge": {r(pbb, 0.3, cbr), r("blackstone", 0.0001, "air")},
+	}
+}()
+
+// bastionElements gives each element its template path and its block-rule list (bastionRuleLists; a name
+// that is not one of the 12 lists is a pool or element id the dump carried, and the element has no
+// rules, NOTES-leftovers L4).
 var bastionElements = map[string][2]string{
 	"minecraft:bridge_starting_pieces_entrance_base":                    {"bastion/bridge/starting_pieces/entrance_base", "minecraft:bastion_bridge_generic"},
 	"minecraft:bridge_starting_pieces_entrance":                         {"bastion/bridge/starting_pieces/entrance", "minecraft:bastion_bridge_entrance_replacement"},

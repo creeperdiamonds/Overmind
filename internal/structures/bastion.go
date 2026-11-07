@@ -18,8 +18,8 @@ import (
 //
 // Start (N2 1.3, P10.2): rot = nextInt(4), kind = nextInt(4) (bridge, treasure, hoglin stable, units),
 // the element nextInt(pool size), at (cx*16, cz*16), height the Nether's sea level + 1, maximum depth 15,
-// maximum distance 80, no start jigsaw. The block-rule lists the elements name are not applied: their
-// contents were not dumped (NOTES.md).
+// maximum distance 80, no start jigsaw. The block-rule lists the elements name run as the ancient city's
+// (pools_bastion.go, NOTES-leftovers L4).
 
 const (
 	bastionMaxDepth = 15 // N2 1.3 (0xf).
@@ -47,7 +47,7 @@ func (d *Data) bastionPools() map[string]*pool {
 				d.problem("bastion element %s: not in the element table", name)
 				return nil
 			}
-			el := &element{name: name, bedrockLegacy: true}
+			el := &element{name: name, bedrockLegacy: true, rules: bastionRuleLists[def[1]]}
 			switch path := def[0]; {
 			case strings.HasPrefix(path, "bastion/mobs/") && path != "bastion/mobs/empty":
 				el.mob = strings.TrimPrefix(path, "bastion/mobs/")
