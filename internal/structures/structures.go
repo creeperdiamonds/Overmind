@@ -46,7 +46,7 @@ type Structures struct {
 	// nether says these are the Nether's structures (fortresses and bastions, nether.go); end, the
 	// End's (end cities, endcity.go).
 	nether, end bool
-	// omF1, omF2 are the monument start seed's two floats (monument.go).
+	// omF1, omF2 are the monument start seed's two floats (cr_monument.go).
 	omOnce     sync.Once
 	omF1, omF2 float32
 	// trace, when set (tests only), sees every block a structure writes.
