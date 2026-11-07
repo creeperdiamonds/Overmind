@@ -63,12 +63,16 @@ var nfSizes = [...][6]int{
 }
 
 const (
-	nfMaxDepth    = 30  // P162.
-	nfFar         = 112 // A foot farther than this from the start's corner gets a filler (P152).
-	nfMoveLow     = 48  // moveInsideHeights(48, 70): Nether sea level 32 + 16 and + 38 (P152).
-	nfMoveHigh    = 70
-	nfStartY      = 64
-	fortressReach = 9 // Chunks from the start a piece can reach: 112 blocks plus a piece.
+	nfMaxDepth = 30  // P162.
+	nfFar      = 112 // A foot farther than this from the start's corner gets a filler (P152).
+	nfMoveLow  = 48  // moveInsideHeights(48, 70): Nether sea level 32 + 16 and + 38 (P152).
+	nfMoveHigh = 70
+	nfStartY   = 64
+	// fortressReach is how far (chunks) a piece reaches from its start, read from the placer: a foot up to
+	// nfFar from the start piece's corner (cx*16+2) gets a piece of at most 19 blocks, whose exit past nfFar
+	// gets an end filler of 8, so pieces lie within cx*16+2 +- 138: chunks cx-9 .. cx+8. Measured 9 on
+	// 1,176 starts (TestPiecesStayWithinReach checks the span).
+	fortressReach = 9
 )
 
 type nfPiece struct {

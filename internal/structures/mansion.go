@@ -14,7 +14,7 @@ import (
 // (cited P153, P185, P186, P201..P206). Validated in the study on seed 987654321's (105,-292) mansion:
 // 0.9975 air / not air of 88,608 cells, 0.9998 block names of 36,719 non-air cells, 6 of 6 chest loot
 // seeds. The pieces are the install's mansion templates, old-format Java NBT whose legacy names are
-// rewritten here (P207). Evokers, vindicators and allays are mobs (stage 4): recorded as spawn intents.
+// rewritten here (P207). Evokers, vindicators and allays are mobs (stage 4): spawn intents, dropped.
 //
 // One random runs through the whole start: the region stream after its four placement words, then the
 // rotation, the grid's corridor walk, the three room shuffles and the placer's door and room draws.
@@ -423,7 +423,7 @@ func (b *mBuilder) piece(name string, pos [3]int, rot, mirror int) {
 	p.t = b.s.data.Template("mansion/" + name)
 	if p.t == nil {
 		b.ok = false
-		b.s.data.problem("mansion template mansion/%s is missing", name)
+		b.s.data.missingTemplate("mansion", "mansion/"+name)
 		return
 	}
 	s := p.t.Size

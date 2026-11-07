@@ -17,8 +17,9 @@ import "github.com/creeperdiamonds/overmind/internal/worldgen"
 const iglooChestTable = "loot_tables/chests/igloo_chest.json"
 
 // iglooSnowLift is how far the first free y at the corner lies above the noise stage's top solid block, a
-// height the notes do not pin to our generator: measured on seed 10's igloo, 0 puts its chest at BDS's
-// y 43 and scores 96.71% of the igloo's box (1 scores 95.24%, 2 94.55%; TestIglooMatchesBDS).
+// height the notes do not pin to our generator. Fitted (ruling 41): chosen from 0, 1 and 2 by score on
+// seed 10's igloo, the one measured; 0 puts its chest at BDS's y 43 and scores 96.71% of the igloo's box
+// (1 scores 95.24%, 2 94.55%; TestIglooMatchesBDS). It may miss on unseen seeds.
 const iglooSnowLift = 0
 
 // placeIgloos writes the part inside the chunk of every igloo whose start is in or beside it: the
@@ -60,7 +61,8 @@ func (s *Structures) igloo(w *writer, cx, cz int) {
 func (s *Structures) placeIglooPart(w *writer, rng *worldgen.BedrockRandom, t *Template, base, off [3]int, rot int, chests bool) {
 	q := rotate(off, rot)
 	o := [3]int{base[0] + q[0], base[1] + q[1], base[2] + q[2]}
-	chestAt := map[[3]int]bool{}
+	// Each chest marker's loot seed, drawn in template order (vanilla's igloo_bottom has one marker).
+	seeds := map[[3]int]int32{}
 	if chests {
 		for _, b := range t.blocks {
 			if t.palette[b.state].name == "structure_block" {
@@ -69,13 +71,12 @@ func (s *Structures) placeIglooPart(w *writer, rng *worldgen.BedrockRandom, t *T
 		}
 		for _, b := range t.blocks {
 			if meta, _ := b.nbt["metadata"].(string); t.palette[b.state].name == "structure_block" && meta == "chest" {
-				chestAt[[3]int{b.pos[0], b.pos[1] - 1, b.pos[2]}] = true
+				p := [3]int{b.pos[0], b.pos[1] - 1, b.pos[2]}
+				if _, dup := seeds[p]; !dup {
+					seeds[p] = rng.NextInt()
+				}
 			}
 		}
-	}
-	seeds := map[[3]int]int32{}
-	for p := range chestAt {
-		seeds[p] = rng.NextInt()
 	}
 	for _, b := range t.blocks {
 		st := t.palette[b.state]

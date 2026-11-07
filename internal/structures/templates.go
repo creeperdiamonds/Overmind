@@ -1,11 +1,6 @@
 package structures
 
 import (
-	"bytes"
-	"compress/gzip"
-	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
@@ -50,87 +45,21 @@ type jigsaw struct {
 
 var faceIndex = map[string]int{"down": 0, "up": 1, "north": 2, "south": 3, "west": 4, "east": 5}
 
-// Limits on a template file from the install, so a broken or hostile one cannot exhaust memory or make
-// boxes that reach every chunk. Vanilla's largest template is well under a megabyte unpacked and 48
-// blocks across.
-const (
-	maxTemplateBytes = 4 << 20 // Unpacked NBT.
-	maxTemplateSide  = 256     // Size on each axis.
-)
-
-// readTemplate parses a template file.
+// readTemplate parses a template file through worldgen's shared reader (worldgen/javatemplate.go: its
+// limits on the file, the unpacked NBT and the size, and its block checks).
 func readTemplate(path, file string) (*Template, error) {
-	if st, err := os.Stat(file); err != nil {
-		return nil, err
-	} else if st.Size() > maxTemplateBytes {
-		return nil, fmt.Errorf("%s: %d bytes, more than %d", file, st.Size(), maxTemplateBytes)
-	}
-	raw, err := os.ReadFile(file)
+	jt, err := worldgen.ReadJavaTemplate(file)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) > 2 && raw[0] == 0x1f && raw[1] == 0x8b {
-		zr, err := gzip.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			return nil, err
-		}
-		if raw, err = io.ReadAll(io.LimitReader(zr, maxTemplateBytes+1)); err != nil {
-			return nil, err
-		}
-		if len(raw) > maxTemplateBytes {
-			return nil, fmt.Errorf("%s: unpacks to more than %d bytes", file, maxTemplateBytes)
-		}
+	t := &Template{Path: path, Size: jt.Size, palette: make([]tState, len(jt.Palette)), blocks: make([]tBlock, len(jt.Blocks))}
+	for i, st := range jt.Palette {
+		t.palette[i] = tState{name: st.Name, props: st.Props}
 	}
-	root, err := worldgen.ReadJavaNBT(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", file, err)
-	}
-	t := &Template{Path: path}
-	size := ints(root["size"])
-	if len(size) != 3 {
-		return nil, fmt.Errorf("%s: no size", file)
-	}
-	t.Size = [3]int{size[0], size[1], size[2]}
-	for _, n := range t.Size {
-		if n < 1 || n > maxTemplateSide {
-			return nil, fmt.Errorf("%s: size %v outside 1..%d", file, t.Size, maxTemplateSide)
-		}
-	}
-	pal, _ := root["palette"].([]any)
-	if pal == nil { // Variants: the first palette (N1 1.3). Which one a piece takes is not read.
-		if ps, ok := root["palettes"].([]any); ok && len(ps) > 0 {
-			pal, _ = ps[0].([]any)
-		}
-	}
-	for _, e := range pal {
-		m, _ := e.(map[string]any)
-		name, _ := m["Name"].(string)
-		st := tState{name: strings.TrimPrefix(name, "minecraft:"), props: map[string]string{}}
-		if p, ok := m["Properties"].(map[string]any); ok {
-			for k, v := range p {
-				st.props[k], _ = v.(string)
-			}
-		}
-		t.palette = append(t.palette, st)
-	}
-	bl, _ := root["blocks"].([]any)
-	for _, e := range bl {
-		m, _ := e.(map[string]any)
-		p := ints(m["pos"])
-		s, _ := m["state"].(int32)
-		if len(p) != 3 || int(s) < 0 || int(s) >= len(t.palette) {
-			return nil, fmt.Errorf("%s: bad block %v", file, m)
-		}
-		for a := range 3 {
-			if p[a] < 0 || p[a] >= t.Size[a] {
-				return nil, fmt.Errorf("%s: block at %v outside the size %v", file, p, t.Size)
-			}
-		}
-		b := tBlock{pos: [3]int{p[0], p[1], p[2]}, state: int(s)}
-		b.nbt, _ = m["nbt"].(map[string]any)
-		t.blocks = append(t.blocks, b)
-		if st := t.palette[s]; st.name == "jigsaw" {
-			t.jigsaws = append(t.jigsaws, newJigsaw(b, st))
+	for i, b := range jt.Blocks {
+		t.blocks[i] = tBlock{pos: b.Pos, state: b.State, nbt: b.NBT}
+		if st := t.palette[b.State]; st.name == "jigsaw" {
+			t.jigsaws = append(t.jigsaws, newJigsaw(t.blocks[i], st))
 		}
 	}
 	return t, nil
@@ -176,28 +105,4 @@ func newJigsaw(b tBlock, st tState) jigsaw {
 	}
 	j.placePrio, j.selectPri = num("placement_priority"), num("selection_priority")
 	return j
-}
-
-// ints reads an NBT list or array of ints.
-func ints(v any) []int {
-	switch l := v.(type) {
-	case []any:
-		out := make([]int, 0, len(l))
-		for _, e := range l {
-			switch n := e.(type) {
-			case int32:
-				out = append(out, int(n))
-			case float64:
-				out = append(out, int(n))
-			}
-		}
-		return out
-	case []int32:
-		out := make([]int, len(l))
-		for i, n := range l {
-			out[i] = int(n)
-		}
-		return out
-	}
-	return nil
 }

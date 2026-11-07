@@ -14,7 +14,7 @@ import (
 // with bound k, no whole-box water fill, water boxes that never keep ice, the left middle wall's chunk
 // test to z 54, and the double-y room's floor flag.
 //
-// Elder guardians are mobs (stage 4): their spawn positions are recorded, not spawned
+// Elder guardians are mobs (stage 4): their spawn positions become spawn intents, dropped, not spawned
 // (docs/stage-2-known-gaps.md).
 
 // Room faces, as the room graph indexes them (P161: down, up, north, south, west, east; the steps are

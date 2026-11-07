@@ -1,9 +1,12 @@
 package structures
 
-// The bastion's pools and elements, transcribed (ruling 43) from the study's emulation of BDS 1.26.60.6's
-// registration code: NOTES-structures-phase2 P9.2, files p9/pools_bas.txt (63 pools, registration order,
-// weights as stored) and p9/bas_elements.txt (element name, template path, block-rule list). The mob
-// elements are bastion/mobs/*.mcstructure, and bastion/mobs/empty a real 1 x 1 x 1 template (P16.3).
+// TRANSCRIBED TABLE: the bastion's pools and elements.
+//
+// Where from: BDS 1.26.60.6's bastion registration code, as the study read it by emulating that code
+// (NOTES-structures-phase2 P9.2; the study's p9/pools_bas.txt (63 pools, registration order, weights as
+// stored) and p9/bas_elements.txt (element name, template path, block-rule list), kept outside the repo).
+// Transcribed tables are allowed by the owner's ruling 43, one file per structure with its source. The
+// mob elements are bastion/mobs/*.mcstructure, and bastion/mobs/empty a real 1 x 1 x 1 template (P16.3).
 // Templates themselves are read from the install.
 
 type basPoolDef struct {

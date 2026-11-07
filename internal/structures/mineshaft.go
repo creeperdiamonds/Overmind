@@ -46,9 +46,24 @@ type mineshaft struct {
 // (P11.8: the biome passes 0xce67db0; the set is the badlands family).
 var msMesaBiomes = idSet(37, 38, 39, 165, 166, 167)
 
-// msReach is how far (in chunks) a mineshaft's pieces can reach from its start: the factory's 80
-// blocks from the room's corner plus a piece.
-const msReach = 6
+// A mineshaft's pieces lie within x (and z) cx*16 + msSpanLow .. cx*16 + msSpanHigh of start chunk cx,
+// read from the placer (make, P141 step 3): the factory refuses a foot more than msFootMax blocks from the
+// room's corner cx*16 + 2, and the longest piece runs msPieceMax blocks on from its foot (a corridor of 4
+// sections, 20 long; a crossing reaches 4 on, stairs 8). Floor division makes the reach uneven: a start
+// reaches chunks cx-7 .. cx+6, so chunk c is reached by starts c-6 .. c+7 (msStarts).
+// TestPiecesStayWithinReach checks it on thousands of starts.
+const (
+	msFootMax  = 80
+	msPieceMax = 19
+	msSpanLow  = 2 - msFootMax - msPieceMax // -97: chunk cx-7, local x 15.
+	msSpanHigh = 2 + msFootMax + msPieceMax // 101: chunk cx+6.
+	msReach    = 7                          // The farthest chunk a piece reaches from its start ((cx*16 - 97) >> 4).
+)
+
+// msStarts are the start chunks (on one axis) whose pieces can reach chunk c.
+func msStarts(c int) (lo, hi int) {
+	return -floorDiv(msSpanHigh-c*16, 16), floorDiv(c*16+15-msSpanLow, 16)
+}
 
 type msAssembler struct {
 	r      *worldgen.BedrockRandom
@@ -361,7 +376,8 @@ func torchRID(f facing) uint32 {
 }
 
 // minecartIntent is a chest minecart the mineshaft would spawn (P141 step 5). Entities in new chunks are
-// not supported yet, so the cart is recorded, not spawned (docs/stage-2-known-gaps.md).
+// not supported yet: the cart is worked out (its loot seed is drawn) and then dropped with the writer,
+// never spawned (docs/stage-2-known-gaps.md).
 type minecartIntent struct {
 	Pos       [3]int
 	LootTable string
@@ -371,8 +387,10 @@ type minecartIntent struct {
 // placeMineshafts post-processes every mineshaft that reaches the chunk.
 func (s *Structures) placeMineshafts(w *writer) {
 	cb := w.chunkBox()
-	for sx := w.cx - msReach; sx <= w.cx+msReach; sx++ {
-		for sz := w.cz - msReach; sz <= w.cz+msReach; sz++ {
+	x0, x1 := msStarts(w.cx)
+	z0, z1 := msStarts(w.cz)
+	for sx := x0; sx <= x1; sx++ {
+		for sz := z0; sz <= z1; sz++ {
 			if !s.mineshaftAt(sx, sz) {
 				continue
 			}

@@ -103,7 +103,7 @@ func (s *Structures) oceanRuinAt(cx, cz int) []*ruinPiece {
 		for i, n := range names {
 			t := s.data.Template("ruin/" + n)
 			if t == nil {
-				s.data.problem("ocean ruin template ruin/%s is missing", n)
+				s.data.missingTemplate("ocean ruin", "ruin/"+n)
 				continue
 			}
 			ps = append(ps, &ruinPiece{t: t, origin: [3]int{x, 0, z}, rot: rot, integrity: integ[i], big: big})

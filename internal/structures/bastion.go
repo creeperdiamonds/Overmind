@@ -14,7 +14,7 @@ import (
 //     minecraft:melee_connector, the others minecraft:mob_connector;
 //  3. bastion_mobs_empty is the real 1 x 1 x 1 template bastion/mobs/empty, not an empty element.
 // Mob pieces enter the piece list and the queue and draw nothing when processed. Piglins and hoglins are
-// mobs (stage 4): their pieces record a spawn, nothing is spawned.
+// mobs (stage 4): their pieces make a spawn intent, which is dropped; nothing is spawned.
 //
 // Start (N2 1.3, P10.2): rot = nextInt(4), kind = nextInt(4) (bridge, treasure, hoglin stable, units),
 // the element nextInt(pool size), at (cx*16, cz*16), height the Nether's sea level + 1, maximum depth 15,

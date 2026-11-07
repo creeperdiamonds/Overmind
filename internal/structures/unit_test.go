@@ -1,14 +1,14 @@
 package structures
 
 import (
-	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block"
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/item/inventory"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
@@ -170,28 +170,33 @@ func TestBrokenLootTablesStayBounded(t *testing.T) {
 	}
 }
 
-// TestTemplateMemory parses every ancient city template of the install and reports what they hold:
-// the estimate the bound counts and the heap they take. The estimate must not be far under the heap.
-func TestTemplateMemory(t *testing.T) {
-	_, d0 := installData(t)
-	d := &Data{Dir: d0.Dir, templates: d0.templates, loot: d0.loot, loaded: true}
-	var before, after runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&before)
-	n := 0
-	for path := range d.templates {
-		if strings.HasPrefix(path, "ancient_city/") && d.Template(path) != nil {
-			n++
+// TestMissingTemplateLogsOnce: a structure meeting the same missing template again adds no problem.
+func TestMissingTemplateLogsOnce(t *testing.T) {
+	d := &Data{templates: map[string]string{}}
+	for range 3 {
+		if d.Template("ruin/none") != nil {
+			t.Fatal("a template from nowhere")
 		}
+		d.missingTemplate("ocean ruin", "ruin/none")
 	}
-	runtime.GC()
-	runtime.ReadMemStats(&after)
-	heap := int64(after.HeapAlloc) - int64(before.HeapAlloc)
-	t.Logf("%d ancient city templates: estimate %.1f MB, heap %.1f MB (bound %d MB)", n, float64(d.parsedBytes.Load())/1e6, float64(heap)/1e6, maxParsedBytes>>20)
-	if n == 0 {
-		t.Fatal("no ancient city templates")
+	d.missingTemplate("mansion", "mansion/none")
+	if len(d.Problems) != 2 {
+		t.Fatalf("problems %q, want one per missing path", d.Problems)
 	}
-	if heap > 3*d.parsedBytes.Load() {
-		t.Errorf("the estimate %d is far under the heap %d: the bound would not hold", d.parsedBytes.Load(), heap)
+}
+
+// TestOverwrittenBlockDropsItsEntity: a block written over a structure chest drops the chest's entity
+// (BDS removes a replaced block's entity); the same chest written again keeps it.
+func TestOverwrittenBlockDropsItsEntity(t *testing.T) {
+	c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+	w := &writer{cx: 0, cz: 0, c: c, rng: worldgen.NewBedrockRandom(1), lo: minY, hi: maxY}
+	chest := world.BlockRuntimeID(block.NewChest())
+	w.chest(1, 64, 1, chest, "loot_tables/chests/a.json")
+	w.chest(2, 64, 2, chest, "loot_tables/chests/b.json")
+	w.set(1, 64, 1, world.BlockRuntimeID(block.Stone{}), false)
+	w.set(2, 64, 2, chest, false)
+	got := w.entities()
+	if len(got) != 1 || got[0].Pos != [3]int{2, 64, 2} {
+		t.Fatalf("entities %v, want only the chest left standing at (2,64,2)", got)
 	}
 }

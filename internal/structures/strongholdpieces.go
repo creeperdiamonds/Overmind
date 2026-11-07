@@ -65,7 +65,7 @@ func shWeights() []*shRecord {
 }
 
 // strongholdReach is how far (in chunks) a stronghold's pieces can reach from its start: the factory's
-// 112 blocks plus a piece.
+// 112 blocks plus a piece (measured 8 on 2,400 starts, TestPiecesStayWithinReach).
 const strongholdReach = 9
 
 type stronghold struct {

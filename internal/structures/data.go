@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/creeperdiamonds/overmind/internal/worldgen"
 )
@@ -38,11 +39,11 @@ type Data struct {
 	campOrder     []string // The abandoned_camp set's structures, in the set's order.
 
 	parsed sync.Map // Template path to *Template or error, parsed on first use.
-	// parsedBytes is an estimate of the parsed templates' memory; past maxParsedBytes a template is
-	// parsed for each use instead of kept (TestTemplateMemory measures the ancient city's).
+	// parsedBytes is templateBytes's estimate of the parsed templates' memory (see templateWarnBytes).
 	parsedBytes atomic.Int64
 	problemsMu  sync.Mutex
-	loaded      bool // LoadData has returned: later problems are logged as they happen.
+	missingSeen sync.Map // Template paths already reported missing (missingTemplate).
+	loaded      bool     // LoadData has returned: later problems are logged as they happen.
 
 	trialOnce sync.Once
 	trial     map[string]*pool
@@ -55,44 +56,36 @@ type Data struct {
 
 	bastionOnce sync.Once
 	bastion     map[string]*pool
+	// archives are the worldgen archive files read (noteArchive), for the fingerprint.
+	archives []string
 	// Problems lists files that could not be read; each is skipped.
 	Problems []string
 }
 
 // LoadData reads an install's structure data. It fails only when the folder holds no vanilla pack.
 func LoadData(dir string) (*Data, error) {
-	packs, err := worldgen.PacksDir(dir)
+	packs, err := worldgen.VanillaPacks(dir)
 	if err != nil {
 		return nil, err
 	}
-	ents, err := os.ReadDir(packs)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, e := range ents {
-		if e.IsDir() && worldgen.IsVanillaPack(e.Name()) {
-			names = append(names, e.Name())
-		}
-	}
-	slices.SortFunc(names, func(a, b string) int { return slices.Compare(worldgen.PackVersion(b), worldgen.PackVersion(a)) })
 	d := &Data{Dir: dir, templates: map[string]string{}, loot: map[string]*LootTable{}, jigsawFilters: map[string]json.RawMessage{},
 		jigsaws: map[string]*jsonJigsaw{}, rawPools: map[string]json.RawMessage{}, procLists: map[string][]brProcessor{}}
-	for _, pack := range names {
-		root := filepath.Join(packs, pack)
+	for _, root := range packs {
 		d.indexTemplates(filepath.Join(root, "structures"))
 		d.readLoot(root)
 		d.readJigsaw(filepath.Join(root, "__brarchive", "worldgen"))
 	}
 	if len(d.templates) == 0 {
-		return nil, fmt.Errorf("%s: the vanilla packs hold no structure templates", packs)
+		return nil, fmt.Errorf("%s: the vanilla packs hold no structure templates", dir)
 	}
 	d.loaded = true
 	return d, nil
 }
 
-// Fingerprint names the structure data read: a SHA-256 of every template's and loot table's path and
-// size, so a world records when its structure data changes (the app's provenance record).
+// Fingerprint names the structure data read, so a world records when its structure data changes (the
+// app's provenance record): a SHA-256 of every template's path and size, every loot table's path and
+// pool count, every Bedrock-format template (.mcstructure) path, and every worldgen archive file read
+// (jigsaw structures, template pools, processor lists, structure sets) with a hash of its text.
 func (d *Data) Fingerprint() string {
 	h := sha256.New()
 	var keys []string
@@ -115,7 +108,31 @@ func (d *Data) Fingerprint() string {
 	for _, k := range keys {
 		fmt.Fprintf(h, "l %s %d\n", k, len(d.loot[k].Pools))
 	}
+	keys = keys[:0]
+	for k := range d.mcstructures {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		fmt.Fprintf(h, "m %s\n", k)
+	}
+	for _, a := range slices.Sorted(slices.Values(d.archives)) {
+		fmt.Fprintf(h, "a %s\n", a)
+	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// noteArchive records each file of a worldgen archive read, for the fingerprint: its path relative to
+// the install, its name and a hash of its text.
+func (d *Data) noteArchive(path string, files [][2]string) {
+	rel, err := filepath.Rel(d.Dir, path)
+	if err != nil {
+		rel = path
+	}
+	for _, f := range files {
+		sum := sha256.Sum256([]byte(f[1]))
+		d.archives = append(d.archives, filepath.ToSlash(rel)+" "+f[0]+" "+hex.EncodeToString(sum[:8]))
+	}
 }
 
 // problem notes a file that could not be used. After loading (a template parsed on a chunk worker) it
@@ -130,18 +147,107 @@ func (d *Data) problem(format string, a ...any) {
 	}
 }
 
-// maxParsedBytes bounds the memory kept by parsed templates, outside the generator's cache.
-const maxParsedBytes = 32 << 20
+// missingTemplate notes a template a structure needs and the install lacks (or cannot parse), once per
+// path: with a partial install, every ocean ruin or mansion piece met again adds no log line and no
+// problem.
+func (d *Data) missingTemplate(what, path string) {
+	if _, seen := d.missingSeen.LoadOrStore(path, true); !seen {
+		d.problem("%s template %s is missing", what, path)
+	}
+}
 
-// templateBytes estimates a parsed template's memory.
+// Parsed templates are kept for the server's life. The structures' caches keep the templates of the
+// starts they hold (mansion and end city pieces, ocean ruins, the pools' elements), so parsing a template
+// again for each use would keep one copy per cached start instead: measured, 64 cached mansions took 379
+// MB when their templates were parsed per use. What is kept is the set the world's structures use, at
+// most the install's whole set: BDS 1.26.60's 1,285 templates take 54 MB of heap (TestTemplateMemory),
+// 43 MB of them the pools' (TestStructureMemory; NOTES.md). parsedBytes counts them by templateBytes's
+// estimate, and past templateWarnBytes, above vanilla's whole set, a warning is logged once.
+const templateWarnBytes = 64 << 20
+
+// templateBytes estimates a parsed template's heap: the Template, its block, palette and jigsaw slices,
+// the palette's names and property maps, and each block's NBT (maps, lists, strings and boxed numbers, as
+// the NBT reader makes them). TestTemplateMemory holds it near the heap the install's templates take.
 func templateBytes(t *Template) int64 {
-	n := int64(len(t.blocks))*64 + int64(len(t.palette))*96 + int64(len(t.jigsaws))*128
+	n := allocBytes(int(unsafe.Sizeof(Template{}))) + allocBytes(cap(t.blocks)*int(unsafe.Sizeof(tBlock{}))) +
+		allocBytes(cap(t.palette)*int(unsafe.Sizeof(tState{}))) + allocBytes(cap(t.jigsaws)*int(unsafe.Sizeof(jigsaw{})))
+	for _, p := range t.palette {
+		n += allocBytes(len(p.name)+len("minecraft:")) + mapBytes(len(p.props)) // The name is a slice of the file's.
+		for k, v := range p.props {
+			n += allocBytes(len(k)) + allocBytes(len(v))
+		}
+	}
 	for _, b := range t.blocks {
 		if b.nbt != nil {
-			n += 256
+			n += nbtBytes(b.nbt)
 		}
 	}
 	return n
+}
+
+// allocBytes is the heap an allocation of n bytes takes, rounded up as Go's size classes roughly do.
+func allocBytes(n int) int64 {
+	switch {
+	case n <= 0:
+		return 0
+	case n <= 16:
+		return 16
+	case n <= 128:
+		return int64(n+15) &^ 15
+	case n <= 1024:
+		return int64(n+63) &^ 63
+	case n <= 32<<10:
+		return int64(n+511) &^ 511
+	}
+	return int64(n+8191) &^ 8191
+}
+
+// mapBytes is the heap of a map[string]T (T a string or an interface) holding k entries: its header and,
+// once it has entries, its groups of 8 slots of 32 bytes and 8 control bytes, kept 7/8 full at most.
+func mapBytes(k int) int64 {
+	const header, group = 48, 8 + 8*32
+	if k == 0 {
+		return header
+	}
+	if k <= 8 {
+		return header + allocBytes(group)
+	}
+	groups := 1
+	for groups*7 < k {
+		groups *= 2
+	}
+	return header + 64 + allocBytes(groups*group)
+}
+
+// nbtBytes is the heap of an NBT value as the reader makes it, the interface's boxing included.
+func nbtBytes(v any) int64 {
+	switch x := v.(type) {
+	case map[string]any:
+		n := mapBytes(len(x))
+		for k, e := range x {
+			n += allocBytes(len(k)) + nbtBytes(e)
+		}
+		return n
+	case []any:
+		n := allocBytes(24) + allocBytes(16*cap(x))
+		for _, e := range x {
+			n += nbtBytes(e)
+		}
+		return n
+	case string:
+		return allocBytes(16) + allocBytes(len(x))
+	case byte:
+		return 0 // Go keeps single bytes in an interface without allocating.
+	case int16, int32, float32, int64, float64:
+		return 8
+	case []byte:
+		return allocBytes(24) + allocBytes(len(x))
+	case []int32:
+		return allocBytes(24) + allocBytes(4*len(x))
+	case []int64:
+		return allocBytes(24) + allocBytes(8*len(x))
+	}
+	return 16
 }
 
 // indexTemplates notes each .nbt file under a pack's structures folder, unless a newer pack has it.
@@ -185,12 +291,12 @@ func (d *Data) Template(path string) *Template {
 		}
 		return nil
 	}
-	if n := templateBytes(t); d.parsedBytes.Load()+n > maxParsedBytes {
-		return t // Over the bound: used, not kept.
-	} else if v, loaded := d.parsed.LoadOrStore(path, t); loaded {
-		t, _ = v.(*Template)
-	} else {
-		d.parsedBytes.Add(n)
+	if v, loaded := d.parsed.LoadOrStore(path, t); loaded {
+		return v.(*Template)
+	}
+	n := templateBytes(t)
+	if total := d.parsedBytes.Add(n); total > templateWarnBytes && total-n <= templateWarnBytes {
+		slog.Default().Warn("Structure templates take more memory than a vanilla install's", "megabytes", total>>20)
 	}
 	return t
 }
@@ -228,6 +334,7 @@ func (d *Data) readJigsaw(dir string) {
 	if err != nil {
 		d.problem("%v", err)
 	}
+	d.noteArchive(filepath.Join(dir, "structures.brarchive"), files)
 	for _, f := range files {
 		var j struct {
 			J struct {
@@ -291,6 +398,7 @@ func (d *Data) readJigsaw(dir string) {
 	if err != nil {
 		d.problem("%v", err)
 	}
+	d.noteArchive(filepath.Join(dir, "processors.brarchive"), procs)
 	for _, f := range procs {
 		var pl struct {
 			L struct {
@@ -316,6 +424,7 @@ func (d *Data) readJigsaw(dir string) {
 	if err != nil {
 		d.problem("%v", err)
 	}
+	d.noteArchive(filepath.Join(dir, "structure_sets.brarchive"), sets)
 	for _, f := range sets {
 		var s struct {
 			S struct {
@@ -353,6 +462,7 @@ func (d *Data) readPools(dir string) {
 			d.problem("%v", err)
 			return nil
 		}
+		d.noteArchive(p, files)
 		for _, f := range files {
 			var tp struct {
 				P struct {
@@ -415,6 +525,9 @@ func (d *Data) dataPools() map[string]*pool {
 				case "single_pool_element", "legacy_single_pool_element":
 					t := d.Template(strings.TrimPrefix(e.Element.Location, "minecraft:"))
 					if t == nil {
+						// Dropped with its weight slots, unlike the code pools' missing elements (village,
+						// trial chambers, bastion), which keep theirs as BDS does (P16.3, P18.7): no data pool
+						// element is missing in the vanilla install, and BDS's rule for one was not read.
 						d.problem("template pool %s: no template %s", id, e.Element.Location)
 						continue
 					}
