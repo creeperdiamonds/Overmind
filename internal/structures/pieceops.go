@@ -8,8 +8,8 @@ import (
 	"github.com/df-mc/dragonfly/server/world/chunk"
 )
 
-// The piece tables of the code-built structures (crdata/*.json: facts about the pieces' blocks, in local
-// coordinates, from the clean-room spec; embedded as crFiles in cr_common.go) and the runner of their op
+// The piece tables of the code-built structures (piecedata/*.json: facts about the pieces' blocks, in local
+// coordinates, from the clean-room spec; embedded as crFiles in piececommon.go) and the runner of their op
 // lists.
 
 // crOp is one op of a piece's op list. Which fields are set depends on Op.
@@ -67,7 +67,7 @@ var crData = sync.OnceValue(func() *crTables {
 		if t.err != nil {
 			return
 		}
-		raw, err := crFiles.ReadFile("crdata/" + name)
+		raw, err := crFiles.ReadFile("piecedata/" + name)
 		if err == nil {
 			err = json.Unmarshal(raw, v)
 		}

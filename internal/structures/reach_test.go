@@ -221,7 +221,7 @@ func TestPiecesStayWithinReach(t *testing.T) {
 			st := candidate(s, Fortress, j)
 			var bs []box
 			// The read span: a foot up to nfFar from the start piece's corner (cx*16+2) gets a piece of at most
-			// 19 blocks; that piece's exit, past nfFar, an end filler of 8 (cr_fortress.go).
+			// 19 blocks; that piece's exit, past nfFar, an end filler of 8 (fortress.go).
 			const span = nfFar + 18 + 1 + 7
 			x0, z0 := st.CX*16+2, st.CZ*16+2
 			for _, p := range s.fortressAtStart(st).pieces {

@@ -6,16 +6,16 @@ import (
 	"sync"
 )
 
-// Shared pieces of the clean-room ocean monument, Nether fortress and woodland mansion (cr_*.go),
+// Shared pieces of the clean-room ocean monument, Nether fortress and woodland mansion,
 // written from the facts-only specification of how they turn out on BDS 1.26.60 worlds. The tables in
-// crdata/ are that specification's facts (operation lists and final cells); nothing in them is code.
+// piecedata/ are that specification's facts (operation lists and final cells); nothing in them is code.
 
-//go:embed crdata/*.json
+//go:embed piecedata/*.json
 var crFiles embed.FS
 
 // crTable reads one embedded table.
 func crTable(name string) []byte {
-	b, err := crFiles.ReadFile("crdata/" + name)
+	b, err := crFiles.ReadFile("piecedata/" + name)
 	if err != nil {
 		panic(err) // Embedded at build time: missing means a broken build.
 	}

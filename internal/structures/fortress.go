@@ -13,7 +13,7 @@ import (
 
 // The Nether fortress (clean-room spec "fortress"): the start's region random goes on to grow a tree of
 // pieces from two weighted lists, then moves it to a random height; each piece writes its final cells
-// (crdata/fortress_pieces.json), its chest or spawner and its support columns, and an end filler writes
+// (piecedata/fortress_pieces.json), its chest or spawner and its support columns, and an end filler writes
 // rows from its own random.
 
 // fortressReach is how many chunks from its start a fortress piece can reach.

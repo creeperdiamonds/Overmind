@@ -12,7 +12,7 @@ import (
 
 // The ocean monument (clean-room spec "monument"): one random assembles a building, a grid of rooms
 // whose walls are opened and closed, and the rooms fitted into it; each chunk the building touches then
-// runs the building's and each touching room's operation list (crdata/monument_*.json).
+// runs the building's and each touching room's operation list (piecedata/monument_*.json).
 
 // Faces of a grid room, in the order the closing draw names them.
 const (
