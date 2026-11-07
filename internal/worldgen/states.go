@@ -152,10 +152,18 @@ func addState(name string) bs {
 	if s, ok := stateIndex[name]; ok {
 		return s
 	}
+	if len(stateIndex) >= maxStates {
+		// Only the generator's own names reach here once structure states stop short of the reserve
+		// (stateRoom): a full table is a programming error.
+		panic("worldgen: state table full adding " + name)
+	}
 	s := bs(len(stateIndex))
 	base, props, _ := strings.Cut(name, "[")
 	b, ok := blockIndex[base]
 	if !ok {
+		if len(blockIndex) >= maxBlocks {
+			panic("worldgen: block table full adding " + name)
+		}
 		b = uint16(len(blockIndex))
 		blockIndex[base] = b
 		blockName[b] = base

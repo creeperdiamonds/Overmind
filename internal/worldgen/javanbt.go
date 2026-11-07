@@ -59,6 +59,10 @@ func (r *nbtReader) u64() uint64 {
 
 func (r *nbtReader) str() string { return string(r.take(int(r.u16()))) }
 
+// nbtMinSize is the fewest bytes a payload of each tag takes (an empty string, list, array or compound
+// still has its length or end byte); index 0, the end tag, holds no list elements.
+var nbtMinSize = [13]int{1, 1, 2, 4, 8, 4, 8, 4, 2, 5, 1, 4, 4}
+
 func (r *nbtReader) payload(tag byte, depth int) any {
 	if depth > 64 {
 		r.err = errNBT
@@ -86,11 +90,12 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 	case 9:
 		t := r.u8()
 		n := int(int32(r.u32()))
-		if n < 0 || n > len(r.b) {
-			r.err = errNBT
+		if n < 0 || (t == 0 && n > 0) || t < 13 && n > (len(r.b)-r.off)/nbtMinSize[t] {
+			r.err = errNBT // More elements than the bytes left can hold.
 			return nil
 		}
-		l := make([]any, 0, n)
+		// The list grows as elements arrive, so a hostile count costs no more than the bytes read.
+		l := make([]any, 0, min(n, 64))
 		for range n {
 			l = append(l, r.payload(t, depth+1))
 			if r.err != nil {
@@ -111,7 +116,7 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 		return m
 	case 11:
 		n := int(int32(r.u32()))
-		if n < 0 || n*4 > len(r.b) {
+		if n < 0 || n > (len(r.b)-r.off)/4 {
 			r.err = errNBT
 			return nil
 		}
@@ -122,7 +127,7 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 		return a
 	case 12:
 		n := int(int32(r.u32()))
-		if n < 0 || n*8 > len(r.b) {
+		if n < 0 || n > (len(r.b)-r.off)/8 {
 			r.err = errNBT
 			return nil
 		}
@@ -136,7 +141,6 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 	return nil
 }
 
-// readNBT reads a root compound.
 // ReadJavaNBT reads a Java big-endian NBT root compound.
 func ReadJavaNBT(b []byte) (map[string]any, error) {
 	r := &nbtReader{b: b}
