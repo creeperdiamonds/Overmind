@@ -1,0 +1,11 @@
+{
+  "stairs": [
+    {"block":"air","from":[0,5,0],"op":"fill","to":[2,7,1]},
+    {"block":"air","from":[0,0,7],"op":"fill","to":[2,2,8]},
+    {"block":"air","from":[0,4,2],"op":"fill","to":[2,7,2]},
+    {"block":"air","from":[0,3,3],"op":"fill","to":[2,6,3]},
+    {"block":"air","from":[0,2,4],"op":"fill","to":[2,5,4]},
+    {"block":"air","from":[0,1,5],"op":"fill","to":[2,4,5]},
+    {"block":"air","from":[0,1,6],"op":"fill","to":[2,3,6]}
+  ]
+}

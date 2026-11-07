@@ -220,12 +220,16 @@ func lushOwnBlocks() {
 			}
 			for _, w := range bools {
 				addOwn("pointed_dripstone[thickness="+th+",vertical_direction="+dn+",waterlogged="+w+"]", "pointed_dripstone", map[string]any{"dripstone_thickness": b, "hanging": uint8(di)}, true)
+				// The sulfur caves' spike has the pointed dripstone's states (T42).
+				addOwn("sulfur_spike[thickness="+th+",vertical_direction="+dn+",waterlogged="+w+"]", "sulfur_spike", map[string]any{"dripstone_thickness": b, "hanging": uint8(di)}, true)
 			}
 		}
 	}
 	coralDir := map[string]int32{"west": 0, "east": 1, "north": 2, "south": 3}
 	for _, k := range [5]string{"tube", "brain", "bubble", "fire", "horn"} {
 		addOwn(k+"_coral_fan[waterlogged=true]", k+"_coral_fan", map[string]any{"coral_fan_direction": int32(0)}, false)
+		// The other floor fan direction, which the sea anemone draws (NOTES-leftovers L5).
+		addOwn(k+"_coral_fan[coral_fan_direction=1,waterlogged=true]", k+"_coral_fan", map[string]any{"coral_fan_direction": int32(1)}, false)
 		for _, f := range cardinals {
 			addOwn(k+"_coral_wall_fan[facing="+f+",waterlogged=true]", k+"_coral_wall_fan", map[string]any{"coral_direction": coralDir[f]}, false)
 		}

@@ -27,7 +27,11 @@ import (
 const (
 	villageMaxDepth  = 6
 	villageAbandoned = 0.02 // P9 / the decompile's constant at 0x1218054.
-	villageReach     = 7    // Chunks a village's pieces can reach from its start.
+	// villageReach is how far (chunks) a village's pieces reach from its start. The placer has no distance
+	// limit, only its depth, so this is measured, not read: of 30,000 starts over 12 seeds (region
+	// candidates, every village type) the farthest piece was 8 chunks out (40 starts; 1,300 at 7, none at
+	// 9), and 2 more are kept as a margin. TestPiecesStayWithinReach checks it on 3,456 starts.
+	villageReach = 10
 )
 
 // villagePoolType maps a biome's village_type to the pools' type name.

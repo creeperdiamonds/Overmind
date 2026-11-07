@@ -1,4 +1,5 @@
-// Package structures places Overworld structures and builds their pieces (Task 9), in our own Go from the
+// Package structures places the structures of the Overworld, the Nether (fortresses, bastions) and the
+// End (end cities) and builds their pieces (Task 9), in our own Go from the
 // study of BDS 1.26.60.6 (NOTES-bedrock-structures.md, NOTES-structures-phase2.md, outside the repo).
 // Templates and loot tables come from the local Bedrock install at start-up (Data); nothing of
 // Mojang's is in this repo. See NOTES.md for what is built and what is not.
@@ -43,6 +44,7 @@ type Structures struct {
 	mansions    keyCache
 	portals     keyCache
 	oceanRuins  keyCache
+	pyramids    keyCache // Desert pyramid base heights (temples.go).
 	// nether says these are the Nether's structures (fortresses and bastions, nether.go); end, the
 	// End's (end cities, endcity.go).
 	nether, end bool

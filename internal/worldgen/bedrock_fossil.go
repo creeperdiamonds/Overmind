@@ -1,15 +1,10 @@
 package worldgen
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"sync"
 )
 
@@ -89,102 +84,49 @@ func (bd *BedrockData) fossilTemplates() *[8]*fossilTemplate {
 	return &bd.fossils
 }
 
+// readFossil reads a fossil template through the shared template reader (javatemplate.go), from the
+// newest pack that has it.
 func (bd *BedrockData) readFossil(dir, name string) (*fossilTemplate, error) {
-	packs, _, err := packsDir(bd.Dir)
+	packs, err := VanillaPacks(bd.Dir)
 	if err != nil {
 		return nil, err
 	}
-	ents, err := os.ReadDir(packs)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, e := range ents {
-		if e.IsDir() && vanillaPack.MatchString(e.Name()) {
-			names = append(names, e.Name())
-		}
-	}
-	slices.SortFunc(names, func(a, b string) int { return slices.Compare(packVersion(b), packVersion(a)) })
-	for _, pack := range names {
-		file := filepath.Join(packs, pack, "structures", dir, name+".nbt")
-		raw, err := os.ReadFile(file)
-		if err != nil {
+	for _, pack := range packs {
+		file := filepath.Join(pack, "structures", dir, name+".nbt")
+		if _, err := os.Stat(file); err != nil {
 			continue
 		}
-		if len(raw) > 2 && raw[0] == 0x1f && raw[1] == 0x8b {
-			zr, err := gzip.NewReader(bytes.NewReader(raw))
-			if err != nil {
-				return nil, err
-			}
-			if raw, err = io.ReadAll(io.LimitReader(zr, 1<<20)); err != nil {
-				return nil, err
-			}
-		}
-		root, err := ReadJavaNBT(raw)
+		jt, err := ReadJavaTemplate(file)
 		if err != nil {
 			return nil, err
 		}
-		return parseFossil(root)
+		return parseFossil(jt)
 	}
 	return nil, fmt.Errorf("no template file")
 }
 
-func parseFossil(root map[string]any) (*fossilTemplate, error) {
-	ints := func(v any) []int {
-		l, _ := v.([]any)
-		var out []int
-		for _, e := range l {
-			if n, ok := e.(int32); ok {
-				out = append(out, int(n))
-			}
-		}
-		return out
-	}
-	size := ints(root["size"])
-	if len(size) != 3 || size[0] < 1 || size[2] < 1 || size[0] > 15 || size[2] > 15 || size[1] < 1 || size[1] > 64 {
+// parseFossil keeps a template's blocks with their bone axis; the feature's own limit on the size (it
+// fits a chunk) comes on top of the reader's.
+func parseFossil(jt *JavaTemplate) (*fossilTemplate, error) {
+	size := jt.Size
+	if size[0] > 15 || size[2] > 15 || size[1] > 64 {
 		return nil, fmt.Errorf("size %v", size)
 	}
-	t := &fossilTemplate{size: [3]int{size[0], size[1], size[2]}}
-	pal, _ := root["palette"].([]any)
-	if pal == nil {
-		if ps, ok := root["palettes"].([]any); ok && len(ps) > 0 {
-			pal, _ = ps[0].([]any)
-		}
-	}
-	axes := make([]string, len(pal))
-	bone := make([]bool, len(pal))
-	for i, e := range pal {
-		m, _ := e.(map[string]any)
-		n, _ := m["Name"].(string)
-		bone[i] = strings.TrimPrefix(n, "minecraft:") == "bone_block"
-		axes[i] = "y"
-		if p, ok := m["Properties"].(map[string]any); ok {
-			if a, ok := p["axis"].(string); ok {
-				axes[i] = a
-			}
-		}
-	}
-	bl, _ := root["blocks"].([]any)
-	for _, e := range bl {
-		m, _ := e.(map[string]any)
-		p := ints(m["pos"])
-		s, _ := m["state"].(int32)
-		if len(p) != 3 || int(s) < 0 || int(s) >= len(pal) {
-			return nil, fmt.Errorf("bad block")
-		}
-		for a := range 3 {
-			if p[a] < 0 || p[a] >= t.size[a] {
-				return nil, fmt.Errorf("block outside the size")
-			}
-		}
-		if !bone[s] {
+	t := &fossilTemplate{size: size}
+	for _, b := range jt.Blocks {
+		st := jt.Palette[b.State]
+		if st.Name != "bone_block" {
 			// F1: the Overworld templates hold only bone blocks; anything else (the Nether ones' air) is
 			// taken as the settings' ignore block, which the notes do not name (labelled: air assumed). It
 			// still draws its integrity word.
-			t.blocks = append(t.blocks, fossilBlock{pos: [3]int{p[0], p[1], p[2]}})
+			t.blocks = append(t.blocks, fossilBlock{pos: b.Pos})
 			continue
 		}
-		t.blocks = append(t.blocks, fossilBlock{pos: [3]int{p[0], p[1], p[2]}, axis: axes[s]})
+		axis := st.Props["axis"]
+		if axis == "" {
+			axis = "y"
+		}
+		t.blocks = append(t.blocks, fossilBlock{pos: b.Pos, axis: axis})
 	}
 	return t, nil
 }

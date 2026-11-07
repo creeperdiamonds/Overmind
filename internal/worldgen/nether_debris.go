@@ -2,12 +2,12 @@ package worldgen
 
 // Ancient debris, steps 14 and 15 of the Nether's decoration (NOTES-bedrock-nether N5 step table and
 // (G); counts and the skipped words from NOTES-bedrock-exact T28, read from the code): after the
-// data-driven passes, the chunk's MT is seeded again with the chunk seed, one word is used up, and one
-// more (basalt_pillar_feature's rule-level Math.Random, a nextFloat) when every quart of the chunk is
-// soul sand valley. Then 2 deep blobs at y 8..23 of nextInt(4) blocks and 3 tall ones at y 8..119 of
-// nextInt(3), each NoSurfaceOreFeature (0x5409930): a random walk from the position. The study's
-// figures: seed 1 98.88% / 98.88% recall / precision of BDS's ancient debris (196 chunks), seed 100's
-// soul sand and basalt delta boxes 100%. Which call uses the first word is not read.
+// data-driven passes, the chunk's MT is seeded again with the chunk seed, one word is used up (the
+// filterless underwater magma rule's Math.Random, T47), and one more (basalt_pillar_feature's, a
+// nextFloat) when the chunk's decorated biome, the one at its column (15, 15), is soul sand valley (T46). Then 2 deep blobs at y 8..23 of nextInt(4) blocks and 3 tall ones at y 8..119 of
+// nextInt(3), each NoSurfaceOreFeature (0x5409930): a random walk from the position. Ours against BDS's
+// worlds (Task 9 round 11, with T46's one biome per chunk): seed 100 4141 of 4141 debris blocks, seed 1
+// 1050 of 1052. Which call uses the first word is not read.
 
 var sAncientDebris = laterState("ancient_debris")
 
@@ -15,7 +15,7 @@ var sAncientDebris = laterState("ancient_debris")
 func (d *decoration) netherDebris(r *bmt, cx, cz int) {
 	r.setSeed(d.g.bseeds.chunk(cx, cz))
 	r.u32()
-	if d.g.netherN.singleBiomeChunk(cx, cz, bSoulSandValley) {
+	if d.g.netherN.biome(cx*16+15, cz*16+15) == bSoulSandValley {
 		r.nextFloat()
 	}
 	x0, z0 := cx*16, cz*16

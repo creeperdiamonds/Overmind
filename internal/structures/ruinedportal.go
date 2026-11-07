@@ -118,7 +118,7 @@ func (s *Structures) ruinedPortalAt(cx, cz int) *rpPlan {
 	}
 	t := s.data.Template("ruined_portal/" + name)
 	if t == nil {
-		s.data.problem("ruined portal template ruined_portal/%s is missing", name)
+		s.data.missingTemplate("ruined portal", "ruined_portal/"+name)
 		return nil
 	}
 	h0 := v.height(ax, az, !floor)

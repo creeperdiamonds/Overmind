@@ -51,18 +51,6 @@ func (n *netherGen) cells(cx, cz int, out *[netherHeight * 256]bs) {
 	n.carveCaves(out, cx, cz, n.seeds)
 }
 
-// singleBiomeChunk says whether every quart of chunk (cx, cz) holds biome b.
-func (n *netherGen) singleBiomeChunk(cx, cz int, b uint8) bool {
-	for i := range 4 {
-		for k := range 4 {
-			if n.biomes.quart(cx*4+i, cz*4+k) != b {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // storeBiomes writes the chunk's biomes: 2D, each quart's column from the biome source.
 func (n *netherGen) storeBiomes(c *chunk.Chunk, cx, cz int) {
 	var section [4][4][4]uint32

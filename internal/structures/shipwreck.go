@@ -162,7 +162,7 @@ func (s *Structures) placeShipwrecks(w *writer) {
 				}
 				if c, ok := wk.chests[i]; ok && res.name == "chest" {
 					w.set(wx, wy, wz, res.rid, water)
-					w.bes = append(w.bes, chestEntity(wx, wy, wz, c.table, c.seed))
+					w.bes = append(w.bes, lootEntity("Chest", wx, wy, wz, c.table, c.seed))
 					continue
 				}
 				w.set(wx, wy, wz, res.rid, water)
