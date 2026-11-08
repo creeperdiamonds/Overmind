@@ -25,15 +25,17 @@ import (
 //   - a piece draws one word (L1.4): warm big_ruin_warm 4-7 / ruin_warm 1-8, cold big_ruin 1, 2, 3, 8 /
 //     ruin4, ruin1-8 as three overlaid templates (brick, cracked 0.7, mossy 0.5 integrity; the plain
 //     ruin4 alone).
-//   - post-processed in every chunk its box reaches: Java's height scan (O1, without the ice test; not
-//     re-checked in L1), the integrity draws on a fresh MT(the chunk's post-process seed) per template,
-//     the archaeology replacement (L1.5), then the chest markers (L1.4) in Bedrock's map order: the marker
+//   - post-processed in every chunk its box reaches: its height (NOTES-leftovers L9, read: the origin
+//     column's heightmap, water counted, then O1's scan down to the floor; ruinHeight), the integrity
+//     draws on a fresh MT(the chunk's post-process seed) per template, the archaeology replacement (L1.5), then the chest markers (L1.4) in Bedrock's map order: the marker
 //     cell becomes water (sandstone in warm ruins; stone bricks in ruin3_brick, gravel in ruin2_brick and
 //     the big brick ruins), the chest goes one below it facing east, waterlogged when the marker is at or
 //     below the sea level field, its loot seed the chunk's random's nextInt().
 // Labelled where used: the deep oceans' large probability (fitted), the cluster probability and the
-// ocean's large one (Java's, which the measured starts fit), which biomes are warm (Java's split), and the
-// archaeology's random (not traced). Drowned: Bedrock's templates have none.
+// ocean's large one (Java's, which the measured starts fit), which biomes are warm (Java's split), the
+// archaeology's random (not traced), and that a piece's height sees the earlier pieces whole (ruinHeight).
+// Measured: 20 of the 20 ruin chests at BDS's position with its table and loot seed. Drowned: Bedrock's
+// templates have none.
 
 const (
 	oceanRuinReach   = 3 // Chunks a ruin's pieces reach from the start (the cluster corners lie within 24 blocks).
@@ -64,10 +66,14 @@ var ruinWarmBiomes = map[string]bool{"warm_ocean": true, "lukewarm_ocean": true,
 type ruinPiece struct {
 	t         *Template
 	name      string // The template's name under ruin/.
-	origin    [3]int // x, z of the template origin; y is worked out per chunk.
+	origin    [3]int // x, z of the template origin; y is the height below.
 	rot       int
 	integrity float32
 	big, warm bool
+	// y is the piece's y (ruinHeights), worked out for all of the start's pieces at once, the first time a
+	// chunk one of them reaches is made.
+	heights *sync.Once // Shared by the start's pieces.
+	y       int
 }
 
 func (p *ruinPiece) xzBox() box {
@@ -113,6 +119,7 @@ func (s *Structures) oceanRuinAt(cx, cz int) []*ruinPiece {
 		large = ruinDeepLargeChance
 	}
 	var out []*ruinPiece
+	heights := &sync.Once{}
 	add := func(x, z, rot int, big bool) {
 		var names []string
 		var integ []float32
@@ -149,7 +156,7 @@ func (s *Structures) oceanRuinAt(cx, cz int) []*ruinPiece {
 				s.data.missingTemplate("ocean ruin", "ruin/"+n)
 				continue
 			}
-			out = append(out, &ruinPiece{t: t, name: n, origin: [3]int{x, 0, z}, rot: rot, integrity: integ[i], big: big, warm: warm})
+			out = append(out, &ruinPiece{t: t, name: n, origin: [3]int{x, 0, z}, rot: rot, integrity: integ[i], big: big, warm: warm, heights: heights})
 		}
 	}
 	rot := int(r.NextIntN(4))
@@ -184,17 +191,48 @@ func (s *Structures) oceanRuinAt(cx, cz int) []*ruinPiece {
 	return out
 }
 
-// ruinHeight is the piece's y in a chunk (O1's height scan on the terrain): the template origin's ocean
-// floor, lowered to the lowest column under the footprint plus one when most columns lie 3 or more below.
-func (s *Structures) ruinHeight(p *ruinPiece) int {
-	py := s.g.NoiseHeight(p.origin[0], p.origin[2]) + 1
+// ruinHeights works out the y of each of a start's pieces (ruinHeight), once, on one view of the terrain:
+// in list order, each piece put on the view after its y is known when a later piece's box meets its own.
+func (s *Structures) ruinHeights(ps []*ruinPiece) {
+	ps[0].heights.Do(func() {
+		v := s.newTerrainView()
+		for i, p := range ps {
+			p.y = s.ruinHeight(v, p)
+			b := p.xzBox()
+			for _, q := range ps[i+1:] {
+				if q.xzBox().intersects(b) {
+					s.ruinOverlay(v, p, p.y)
+					break
+				}
+			}
+		}
+	})
+}
+
+// ruinHeight is the piece's y, the same in every chunk it reaches (NOTES-leftovers L9, read): the piece
+// first re-reads its start y from the heightmap of the template origin's column, which counts water (so
+// 63 in open water: the top water block plus one); then O1's height scan: each footprint column from
+// that y - 1 down through air and water to its floor; when the lowest floor j lies more than 3 below and
+// enough columns do, the piece's y is j (else the start y less one). In open water it sits on the lowest
+// sea-floor block under its footprint. Both read the terrain as structures see it (the carvers stage,
+// GenerateBase), so carvers, the surface's sand and gravel and the aquifers count, and no chunk depends on
+// which was made first; BDS reads its chunks as they stand.
+// The pieces before it in the start's list stand on that view, whole; its own blocks do not.
+// BDS post-processes a start's pieces in list order, so the cracked and mossy templates overlaid on a
+// brick one read its blocks and can sit higher (seed 1's (26, 323): BDS's chests at y -10 and -8; seed
+// 12345's (38, 438) at 33 and 34). Whole means every chunk of the earlier pieces already made, which in
+// BDS holds only for some orders (assumed: one fixed answer for every order); measured 20 of 20 chests.
+func (s *Structures) ruinHeight(v *terrainView, p *ruinPiece) int {
+	b := p.xzBox()
+	py := v.height(p.origin[0], p.origin[2], true)
 	q := rotate([3]int{p.t.Size[0] - 1, 0, p.t.Size[2] - 1}, p.rot)
-	x0, x1 := min(p.origin[0], p.origin[0]+q[0]), max(p.origin[0], p.origin[0]+q[0])
-	z0, z1 := min(p.origin[2], p.origin[2]+q[2]), max(p.origin[2], p.origin[2]+q[2])
 	j, l := 512, 0
-	for x := x0; x <= x1; x++ {
-		for z := z0; z <= z1; z++ {
-			y := max(min(py-1, s.g.NoiseHeight(x, z)), minY+1)
+	for x := b[0]; x <= b[3]; x++ {
+		for z := b[2]; z <= b[5]; z++ {
+			y := py - 1
+			for y > minY+1 && ruinSinks(v.rid(x, y, z)) {
+				y--
+			}
 			j = min(j, y)
 			if y < py-3 {
 				l++
@@ -208,6 +246,79 @@ func (s *Structures) ruinHeight(p *ruinPiece) int {
 	return ny - 1
 }
 
+// ruinOverlay puts piece e, at y0, on the view: its block pass in every chunk it reaches, with that
+// chunk's integrity draws, then its chests and their marker cells.
+func (s *Structures) ruinOverlay(v *terrainView, e *ruinPiece, y0 int) {
+	b := e.xzBox()
+	for cx := b[0] >> 4; cx <= b[3]>>4; cx++ {
+		for cz := b[2] >> 4; cz <= b[5]>>4; cz++ {
+			ruinPass(e, y0, cx, cz, s.g.DecorationSeed(cx, cz), func(x, y, z int, res convResult) {
+				v.set(x, y, z, res.rid)
+			})
+		}
+	}
+	ruinChests(e, y0, func(x, y, z int) {
+		v.set(x, y, z, ruinMarkerBlock(e))
+		v.set(x, y-1, z, ruinChestRID())
+	})
+}
+
+// ruinPass is one piece's block pass in chunk (cx, cz) at y0 (L1.4): the integrity draws on a fresh
+// MT(the chunk's post-process seed), one per template block other than air, structure void and the
+// markers, and every kept block inside the chunk's columns that converts goes to f.
+func ruinPass(p *ruinPiece, y0, cx, cz int, seed uint32, f func(x, y, z int, res convResult)) {
+	l := worldgen.NewBedrockRandom(seed)
+	for _, b := range p.t.blocks {
+		st := p.t.palette[b.state]
+		if st.name == "structure_block" || st.name == "air" || st.name == "structure_void" {
+			continue
+		}
+		if float64(l.U32())*(1.0/4294967296.0) > float64(p.integrity) {
+			continue
+		}
+		q := rotate(b.pos, p.rot)
+		x, y, z := p.origin[0]+q[0], y0+b.pos[1], p.origin[2]+q[2]
+		if x>>4 != cx || z>>4 != cz {
+			continue
+		}
+		if res := convert.state(st, p.rot); res.ok {
+			f(x, y, z, res)
+		}
+	}
+}
+
+// ruinChests gives a piece's chest markers in Bedrock's map order, at y0: the marker cell (x, y, z), the
+// chest goes one below.
+func ruinChests(p *ruinPiece, y0 int, f func(x, y, z int)) {
+	type marker struct {
+		pos  [3]int
+		name string
+	}
+	var markers []marker
+	for _, b := range p.t.blocks {
+		if p.t.palette[b.state].name == "structure_block" {
+			md, _ := b.nbt["metadata"].(string)
+			markers = append(markers, marker{b.pos, md})
+		}
+	}
+	for _, i := range markerOrder(len(markers), func(i int) [3]int { return markers[i].pos }) {
+		m := markers[i]
+		if strings.EqualFold(m.name, "chest") {
+			q := rotate(m.pos, p.rot)
+			f(p.origin[0]+q[0], y0+m.pos[1], p.origin[2]+q[2])
+		}
+	}
+}
+
+// ruinSinks is a block the height scan goes down through: air and water (L9's material 5).
+func ruinSinks(rid uint32) bool {
+	if rid == airRID() || rid == waterRID() {
+		return true
+	}
+	n := ridName(rid)
+	return n == "air" || n == "water" || n == "flowing_water"
+}
+
 // placeOceanRuins post-processes every ruin piece that reaches the chunk.
 func (s *Structures) placeOceanRuins(w *writer) {
 	cb := w.chunkBox()
@@ -219,65 +330,35 @@ func (s *Structures) placeOceanRuins(w *writer) {
 			ps, _ := s.oceanRuins.get([2]int{cx, cz}, func() any { return s.oceanRuinAt(cx, cz) }).([]*ruinPiece)
 			for _, p := range ps {
 				if p.xzBox().intersects(cb) {
-					s.ruinPost(w, p)
+					s.ruinHeights(ps)
+					s.ruinPost(w, p, p.y)
 				}
 			}
 		}
 	}
 }
 
-// ruinPost is one piece in one chunk.
-func (s *Structures) ruinPost(w *writer, p *ruinPiece) {
-	y0 := s.ruinHeight(p)
-	l := worldgen.NewBedrockRandom(w.seed)
-	type marker struct {
-		pos  [3]int
-		name string
-	}
-	var markers []marker
+// ruinPost is one piece in one chunk, at y0.
+func (s *Structures) ruinPost(w *writer, p *ruinPiece, y0 int) {
 	// The archaeology candidates (L1.5): the cells written with the replacement's input block.
 	input, output := "gravel", "suspicious_gravel"
 	if p.warm {
 		input, output = "sand", "suspicious_sand"
 	}
 	var cands [][3]int
-	for _, b := range p.t.blocks {
-		st := p.t.palette[b.state]
-		if st.name == "structure_block" {
-			md, _ := b.nbt["metadata"].(string)
-			markers = append(markers, marker{b.pos, md})
-			continue
-		}
-		if st.name == "air" || st.name == "structure_void" {
-			continue
-		}
-		if float64(l.U32())*(1.0/4294967296.0) > float64(p.integrity) {
-			continue
-		}
-		q := rotate(b.pos, p.rot)
-		x, y, z := p.origin[0]+q[0], y0+b.pos[1], p.origin[2]+q[2]
+	ruinPass(p, y0, w.cx, w.cz, w.seed, func(x, y, z int, res convResult) {
 		if !w.in(x, y, z) {
-			continue
-		}
-		res := convert.state(st, p.rot)
-		if !res.ok {
-			continue
+			return
 		}
 		w.set(x, y, z, res.rid, res.waterlog || y < seaLevelField && w.liquidAt(x, y, z))
 		if res.name == input {
 			cands = append(cands, [3]int{x, y, z})
 		}
-	}
+	})
 	s.ruinArchaeology(w, p, cands, input, output)
-	for _, i := range markerOrder(len(markers), func(i int) [3]int { return markers[i].pos }) {
-		m := markers[i]
-		if !strings.EqualFold(m.name, "chest") {
-			continue
-		}
-		q := rotate(m.pos, p.rot)
-		x, y, z := p.origin[0]+q[0], y0+m.pos[1], p.origin[2]+q[2]
+	ruinChests(p, y0, func(x, y, z int) {
 		if !w.in(x, y, z) || !w.in(x, y-1, z) {
-			continue
+			return
 		}
 		cell := ruinMarkerBlock(p)
 		w.set(x, y, z, cell, false)
@@ -288,7 +369,7 @@ func (s *Structures) ruinPost(w *writer, p *ruinPiece) {
 		w.set(x, y-1, z, ruinChestRID(), y <= seaLevelField)
 		w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y - 1, z}, Data: map[string]any{"id": "Chest", "LootTable": table,
 			"LootTableSeed": w.rng.NextInt()}})
-	}
+	})
 }
 
 // ruinMarkerBlock is the block a chest marker's cell becomes (L1.4): water, sandstone in a warm ruin,

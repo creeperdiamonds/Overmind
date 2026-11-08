@@ -32,13 +32,14 @@ type writer struct {
 	rng    *worldgen.BedrockRandom
 	seed   uint32 // The chunk's post-process seed, which rng starts from for each structure type.
 	bes    []chunk.BlockEntity
-	carts  []minecartIntent
+	// bases are the neighbour chunks' terrain a mineshaft has read (mineshaft.go msAirAt).
+	bases map[[2]int]worldgen.BaseCells
 	// spawned are the spider corridors that placed their spawner in this chunk.
 	spawned map[spiderKey]bool
 	// spawns are the mobs the structures would spawn here (elder guardians, piglins, hoglins, shulkers,
-	// illagers, allays), and carts the mineshafts' chest minecarts: worked out, then dropped with the
-	// writer (PlaceChunk and PlaceLogged return block entities only), until entities in new chunks exist
-	// (stage 4 needs a path out for them; docs/stage-2-known-gaps.md).
+	// illagers, allays): worked out, then dropped with the writer (PlaceChunk and PlaceLogged return
+	// block entities only), until entities in new chunks exist (stage 4 needs a path out for them;
+	// docs/stage-2-known-gaps.md).
 	spawns []spawnIntent
 	// lo, hi are the dimension's block range: the Overworld's -64..319 or the Nether's 0..127.
 	lo, hi int
@@ -119,22 +120,33 @@ func (w *writer) set(x, y, z int, rid uint32, water bool) {
 // its own (the same block written again keeps it). Every structure writes a block before appending its
 // entity, so an entity outlives only its own block.
 func (w *writer) dropEntityAt(p [3]int, rid uint32) {
-	if w.beAt == nil {
-		w.beAt = map[[3]int]int{}
-	}
-	for ; w.beSeen < len(w.bes); w.beSeen++ {
-		if w.bes[w.beSeen].Data != nil {
-			w.beAt[w.bes[w.beSeen].Pos] = w.beSeen
-		}
-	}
+	w.indexEntities()
 	if i, ok := w.beAt[p]; ok && w.chunk().Block(uint8(p[0]&15), int16(p[1]), uint8(p[2]&15), 0) != rid {
 		w.bes[i].Data = nil
 		delete(w.beAt, p)
 	}
 }
 
+// indexEntities indexes the block entities made since the last call. A new entity at a cell that holds
+// one replaces it (two ocean ruin templates overlaid at one height put their chests in the same cell).
+func (w *writer) indexEntities() {
+	if w.beAt == nil {
+		w.beAt = map[[3]int]int{}
+	}
+	for ; w.beSeen < len(w.bes); w.beSeen++ {
+		if w.bes[w.beSeen].Data != nil {
+			p := w.bes[w.beSeen].Pos
+			if j, ok := w.beAt[p]; ok {
+				w.bes[j].Data = nil
+			}
+			w.beAt[p] = w.beSeen
+		}
+	}
+}
+
 // entities are the block entities left standing.
 func (w *writer) entities() []chunk.BlockEntity {
+	w.indexEntities()
 	out := w.bes[:0:0]
 	for _, be := range w.bes {
 		if be.Data != nil {
@@ -188,8 +200,7 @@ func (s *Structures) PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write 
 	return s.placeWith(cx, cz, nil, chunkOf, write).entities()
 }
 
-// place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
-// chest minecarts its mineshafts would spawn.
+// place writes the chunk's pieces and returns the writer, with the chunk's block entities.
 func (s *Structures) place(cx, cz int, c *chunk.Chunk, log func(x, y, z int, rid uint32, water bool)) *writer {
 	return s.placeWith(cx, cz, c, nil, log)
 }

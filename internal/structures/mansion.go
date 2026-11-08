@@ -11,7 +11,8 @@ import (
 
 // The woodland mansion (clean-room spec "mansion"): the start's region random lays out an 11 x 11
 // floor plan by corridor walks, splits it into rooms on each floor, and places the install's mansion
-// templates along it; each chunk writes the templates that reach it, then a cobblestone foundation.
+// templates along it; each chunk writes the templates that reach it, then a cobblestone foundation and
+// the entrance's two flights of stairs (mansion/ADDENDUM-1.md).
 // The templates themselves come from the install (Data.Template("mansion/...")), never from the repo.
 
 // wmReach is how many chunks from its start a mansion can reach.
@@ -32,6 +33,8 @@ type mansion struct {
 	pieces []*wmPiece
 	draws  int // Draws of the start's random after the rotation; only TestCleanroomMansionAssembly reads it.
 	all    box // The bounds of every piece box.
+	origin wmVec
+	rot    int
 }
 
 // Grid values and room flags.
@@ -787,7 +790,7 @@ third:
 		s.data.missingTemplate("mansion", "mansion/"+b.missing) // Logged once per template; the mansion is not placed.
 		return nil
 	}
-	m := &mansion{pieces: b.pieces, draws: r.n}
+	m := &mansion{pieces: b.pieces, draws: r.n, origin: O, rot: rot}
 	boxes := make([]box, len(m.pieces))
 	for i, p := range m.pieces {
 		boxes[i] = p.box
@@ -797,7 +800,7 @@ third:
 }
 
 // placeMansions writes every mansion that reaches the chunk: its pieces in list order, then its
-// foundation.
+// foundation, then its entrance stairs.
 func (s *Structures) placeMansions(w *writer) {
 	if s.data == nil {
 		return
@@ -820,6 +823,7 @@ func (s *Structures) placeMansions(w *writer) {
 				}
 			}
 			m.foundation(w)
+			m.stairs(w)
 		}
 	}
 }
@@ -955,6 +959,37 @@ func (m *mansion) foundation(w *writer) {
 					break
 				}
 				w.set(x, y, z, cobble, false)
+			}
+		}
+	}
+}
+
+// stairs lays the entrance's two flights of cobblestone stairs, after the foundation, with no draws
+// (mansion/ADDENDUM-1.md). Each flight is two columns wide; its top cells are one below the mansion's
+// floor, and it walks away from the other flight one block out and one down per step, from its top cell
+// only: a column stops at the first cell that is not air or not in the chunk, so a chunk never continues
+// a column another chunk began. Under each stair, cobblestone fills down through air and liquid.
+func (m *mansion) stairs(w *writer) {
+	air, cobble := airRID(), mustState("cobblestone")
+	F := wmTurn(wmVec{0, 0, 1}, m.rot)
+	for _, fl := range [2]struct{ f, step int }{{2, -1}, {12, 1}} {
+		// The stairs ascend toward the flight's top: against its step.
+		up := worldFacing(-fl.step*F[0], -fl.step*F[2])
+		stair := mustState("stone_stairs[minecraft:corner=none,upside_down_bit=0,weirdo_direction=" +
+			strconv.Itoa(int(weirdo[facingName(up)])) + "]")
+		for e := 9; e <= 10; e++ {
+			p := m.origin.off(fl.f, e, -1, m.rot)
+			for w.mainAt(p[0], p[1], p[2]) == air && w.in(p[0], p[1], p[2]) {
+				w.set(p[0], p[1], p[2], stair, false)
+				if p[1] >= 3 {
+					for y := p[1] - 1; y >= 2; y-- {
+						if w.mainAt(p[0], y, p[2]) != air && !w.liquidAt(p[0], y, p[2]) {
+							break
+						}
+						w.set(p[0], y, p[2], cobble, false)
+					}
+				}
+				p = p.off(fl.step, 0, -1, m.rot)
 			}
 		}
 	}

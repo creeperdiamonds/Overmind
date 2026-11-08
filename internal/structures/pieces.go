@@ -158,11 +158,21 @@ func moveBelowSea(all box, r *worldgen.BedrockRandom) int {
 }
 
 // ctx writes one piece into one chunk: local coordinates through p's frame, writes only inside the
-// chunk, random draws from r.
+// chunk, random draws from r. With keep set, set, box, maybeBox and maybe leave a cell alone when keep
+// says its block is protected (mineshafts, mineshaft/ADDENDUM-1.md rule F); their draws still happen.
 type ctx struct {
-	w *writer
-	p *opiece
-	r *worldgen.BedrockRandom
+	w    *writer
+	p    *opiece
+	r    *worldgen.BedrockRandom
+	keep func(rid uint32) bool
+}
+
+// put writes a world cell inside the chunk unless keep protects what it holds.
+func (c *ctx) put(wx, wy, wz int, rid uint32) {
+	if c.keep != nil && c.w.in(wx, wy, wz) && c.keep(c.w.mainAt(wx, wy, wz)) {
+		return
+	}
+	c.w.put(wx, wy, wz, rid)
 }
 
 func (c *ctx) in(x, y, z int) bool {
@@ -176,10 +186,11 @@ func (c *ctx) get(x, y, z int) uint32 {
 	return c.w.mainAt(wx, wy, wz)
 }
 
-// set writes a local cell; outside the chunk, or a block the registry lacks, nothing happens.
+// set writes a local cell; outside the chunk, a block the registry lacks, or a cell keep protects,
+// nothing happens.
 func (c *ctx) set(x, y, z int, rid uint32) {
 	wx, wy, wz := c.p.world(x, y, z)
-	c.w.put(wx, wy, wz, rid)
+	c.put(wx, wy, wz, rid)
 }
 
 // box fills a local box: edge on its shell, fill inside; with skipAir, cells that are air are left.
@@ -199,7 +210,7 @@ func (c *ctx) box(x0, y0, z0, x1, y1, z1 int, edge, fill uint32, skipAir bool) {
 				if x == x0 || x == x1 || y == y0 || y == y1 || z == z0 || z == z1 {
 					rid = edge
 				}
-				c.w.put(wx, wy, wz, rid)
+				c.put(wx, wy, wz, rid)
 			}
 		}
 	}
@@ -231,7 +242,7 @@ func (c *ctx) maybeBox(p float32, x0, y0, z0, x1, y1, z1 int, edge, fill uint32,
 				if x == x0 || x == x1 || y == y0 || y == y1 || z == z0 || z == z1 {
 					rid = edge
 				}
-				c.w.put(wx, wy, wz, rid)
+				c.put(wx, wy, wz, rid)
 			}
 		}
 	}

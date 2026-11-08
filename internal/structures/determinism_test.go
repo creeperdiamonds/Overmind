@@ -16,8 +16,9 @@ import (
 // seed and its position with structures attached: structured bases are built, dropped and rebuilt at any
 // time, and every decoration source reads its neighbours' structured bases. For chunks of a village, a
 // ruined portal (its plan reads the terrain through GenerateBase), a mineshaft's spider corridor (the
-// spawner mark replays the corridor's earlier chunks), trial chambers (the data-driven pass) and a Nether
-// fortress, each chunk is made alone on a fresh generator, and again after its 5 x 5 was made in reverse
+// spawner mark replays the corridor's earlier chunks), trial chambers (the data-driven pass), a Nether
+// fortress and seed 12345's (2, 28) ocean ruin cluster (piece heights read the terrain, overlaid templates
+// on top of each other), each chunk is made alone on a fresh generator, and again after its 5 x 5 was made in reverse
 // order by two racing workers on a generator with a 3 MB cache cap: both block layers and the block
 // entities must be equal.
 func TestStructuredChunksDoNotDependOnOrder(t *testing.T) {
@@ -27,11 +28,12 @@ func TestStructuredChunksDoNotDependOnOrder(t *testing.T) {
 		name   string
 		nether bool
 		chunks [][2]int
+		seed   int64 // 0: seed.
 	}
 	_, s := worldFor(t, seed)
 	var targets []target
 	pair := func(name string, nether bool, cx, cz int) {
-		targets = append(targets, target{name, nether, [][2]int{{cx, cz}, {cx + 1, cz + 1}}})
+		targets = append(targets, target{name, nether, [][2]int{{cx, cz}, {cx + 1, cz + 1}}, 0})
 	}
 	firstRegion := func(k Kind, ok func(Start) bool) (Start, bool) {
 		for r := 0; r <= 3; r++ {
@@ -88,7 +90,7 @@ func TestStructuredChunksDoNotDependOnOrder(t *testing.T) {
 						if last == c {
 							last = cs[0]
 						}
-						targets = append(targets, target{"mineshaft spider corridor", false, [][2]int{c, last}})
+						targets = append(targets, target{"mineshaft spider corridor", false, [][2]int{c, last}, 0})
 						break
 					}
 				}
@@ -114,10 +116,16 @@ func TestStructuredChunksDoNotDependOnOrder(t *testing.T) {
 	if !foundF {
 		t.Error("no fortress near the origin")
 	}
+	// The ruin2 pair of (2, 28)'s cluster (BDS's chests at y 33 and 34) is in chunk (2, 27).
+	targets = append(targets, target{"ocean ruin", false, [][2]int{{2, 27}, {2, 28}}, 12345})
 
-	mk := func(nether bool) *worldgen.Generator {
-		g := worldgen.NewWithData(seed, worldgen.ProfileBedrock, bd)
-		if nether {
+	mk := func(tg target) *worldgen.Generator {
+		sd := tg.seed
+		if sd == 0 {
+			sd = seed
+		}
+		g := worldgen.NewWithData(sd, worldgen.ProfileBedrock, bd)
+		if tg.nether {
 			g = g.Nether()
 		}
 		g.SetStructures(New(g, d))
@@ -126,8 +134,8 @@ func TestStructuredChunksDoNotDependOnOrder(t *testing.T) {
 	for _, tg := range targets {
 		t.Run(tg.name, func(t *testing.T) {
 			for _, k := range tg.chunks {
-				want := generate(mk(tg.nether), k[0], k[1])
-				busy := mk(tg.nether)
+				want := generate(mk(tg), k[0], k[1])
+				busy := mk(tg)
 				busy.SetCacheBytes(3 << 20)
 				var order [][2]int
 				for dx := 2; dx >= -2; dx-- {
@@ -202,11 +210,11 @@ func columnDiff(a, b *chunk.Column) string {
 }
 
 // corridorChunks are the chunks a corridor's box covers, in the order spiderPlacedBefore walks them
-// (x then z, each from high to low): the last one replays all the others for the "placed" mark.
+// (x then z, each from low to high): the last one replays all the others for the "placed" mark.
 func corridorChunks(b box) [][2]int {
 	var out [][2]int
-	for ax := b[3] >> 4; ax >= b[0]>>4; ax-- {
-		for az := b[5] >> 4; az >= b[2]>>4; az-- {
+	for ax := b[0] >> 4; ax <= b[3]>>4; ax++ {
+		for az := b[2] >> 4; az <= b[5]>>4; az++ {
 			out = append(out, [2]int{ax, az})
 		}
 	}

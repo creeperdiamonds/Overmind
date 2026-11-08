@@ -7,7 +7,8 @@ import (
 )
 
 // Buried treasure (N2 2.1, BuriedTreasurePiece::postProcess): one chest at the start chunk's middle
-// column, buried a draw's depth under the heightmap and moved down until it and its four sides are solid.
+// column, buried a draw's depth under the heightmap and moved down until the cell above it and its four
+// sides are solid, then on down until its own cell is (NOTES-leftovers L8).
 
 const treasureTable = "loot_tables/chests/buriedtreasure.json" // N2 2.1.
 
@@ -31,8 +32,10 @@ func (s *Structures) buriedTreasure(w *writer) {
 	}
 	n := int(w.rng.NextIntN(2))
 	y := h - n - 4
+	// The first search (NOTES-leftovers L8, read): the cell ABOVE the chest's and the chest cell's four
+	// sides must all be solid; the chest cell itself is left to the second search.
 	around := func(y int) bool {
-		if !solid(w.block(x, y, z)) {
+		if !solid(w.block(x, y+1, z)) {
 			return false
 		}
 		for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
