@@ -796,4 +796,4 @@ func (s *chunkScratch) startDecoration(g *Generator, cx, cz int) *decoration {
 // GeneratorVersion names what the generator makes. Change it with every change to what any profile
 // generates: the world folder records it (internal/app's provenance file), so a server started on a
 // world made by another version warns that new chunks will seam against saved ones.
-const GeneratorVersion = "2026-11-08.t9r14cr"
+const GeneratorVersion = "2026-11-08.t9r15cr"

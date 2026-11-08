@@ -54,6 +54,40 @@ func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
 	g.storeBiomes(c, s, cx, cz)
 }
 
+// BaseCells is an Overworld chunk's terrain before any structure piece is written: its carvers stage as
+// the shared cache keeps it (in the Bedrock order, what GenerateBase writes). A mineshaft corridor reads
+// a neighbour chunk's cells through it (mineshaft addendum 1, rule B). It never changes.
+type BaseCells struct{ b *compactBase }
+
+// BaseCells gives chunk (cx, cz)'s terrain before structures, from the shared cache, built there if no
+// worker has it yet. Reading single cells costs no copy of the chunk. Overworld generators only, like
+// GenerateBase.
+func (g *Generator) BaseCells(cx, cz int) BaseCells {
+	g.cache.begin()
+	defer g.cache.end()
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	return BaseCells{g.cachedBase(s, cx, cz)}
+}
+
+// Air says whether the block at (x, y, z), a cell of the chunk, is air (any air state: each is written
+// into a chunk as air). Cells above or below the world are air.
+func (b BaseCells) Air(x, y, z int) bool {
+	if y < minY || y > maxY {
+		return true
+	}
+	i := cellIndex(x&15, y, z&15)
+	sec := &b.b.secs[i/sectionCells]
+	j := i % sectionCells
+	switch {
+	case sec.raw != nil:
+		return sec.raw[j].isAir()
+	case sec.index != nil:
+		return sec.palette[sec.index[j]].isAir()
+	}
+	return sec.uniform.isAir()
+}
+
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.
 // In the Bedrock order the blocks are already in the chunk's cells (structures_base.go): only the
 // block entities whose block the decoration left are added.

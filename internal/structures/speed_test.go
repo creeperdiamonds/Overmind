@@ -77,6 +77,26 @@ func BenchmarkGenerateWithStructures(b *testing.B) {
 	}
 }
 
+// BenchmarkGenerateMineshaft is whole-chunk generation, structures attached, of the 10 x 10 chunks over
+// seed 5's (-12,-52) mineshaft (205 pieces; its corridors read their neighbour chunks' terrain). Each run
+// uses a fresh generator, so the shared cache starts empty.
+func BenchmarkGenerateMineshaft(b *testing.B) {
+	bd, d := installData(b)
+	n := 0
+	for b.Loop() {
+		g := worldgen.NewWithData(5, worldgen.ProfileBedrock, bd)
+		g.SetStructures(New(g, d))
+		for i := range 10 {
+			for j := range 10 {
+				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+				g.GenerateChunk(world.ChunkPos{int32(-17 + i), int32(-57 + j)}, c)
+				n++
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(n), "ms/chunk")
+}
+
 // BenchmarkPlaceNetherChunk is PlaceChunk on finished Nether chunks of seed 100: over the (4,19)
 // fortress, the (-13,-20) bastion, and open Nether away from both. Each area takes a fresh Structures,
 // so the first chunk also assembles the structure.

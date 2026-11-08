@@ -32,13 +32,14 @@ type writer struct {
 	rng    *worldgen.BedrockRandom
 	seed   uint32 // The chunk's post-process seed, which rng starts from for each structure type.
 	bes    []chunk.BlockEntity
-	carts  []minecartIntent
+	// bases are the neighbour chunks' terrain a mineshaft has read (mineshaft.go msAirAt).
+	bases map[[2]int]worldgen.BaseCells
 	// spawned are the spider corridors that placed their spawner in this chunk.
 	spawned map[spiderKey]bool
 	// spawns are the mobs the structures would spawn here (elder guardians, piglins, hoglins, shulkers,
-	// illagers, allays), and carts the mineshafts' chest minecarts: worked out, then dropped with the
-	// writer (PlaceChunk and PlaceLogged return block entities only), until entities in new chunks exist
-	// (stage 4 needs a path out for them; docs/stage-2-known-gaps.md).
+	// illagers, allays): worked out, then dropped with the writer (PlaceChunk and PlaceLogged return
+	// block entities only), until entities in new chunks exist (stage 4 needs a path out for them;
+	// docs/stage-2-known-gaps.md).
 	spawns []spawnIntent
 	// lo, hi are the dimension's block range: the Overworld's -64..319 or the Nether's 0..127.
 	lo, hi int
@@ -188,8 +189,7 @@ func (s *Structures) PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write 
 	return s.placeWith(cx, cz, nil, chunkOf, write).entities()
 }
 
-// place writes the chunk's pieces and returns the writer, with the chunk's block entities and the
-// chest minecarts its mineshafts would spawn.
+// place writes the chunk's pieces and returns the writer, with the chunk's block entities.
 func (s *Structures) place(cx, cz int, c *chunk.Chunk, log func(x, y, z int, rid uint32, water bool)) *writer {
 	return s.placeWith(cx, cz, c, nil, log)
 }

@@ -202,11 +202,11 @@ func columnDiff(a, b *chunk.Column) string {
 }
 
 // corridorChunks are the chunks a corridor's box covers, in the order spiderPlacedBefore walks them
-// (x then z, each from high to low): the last one replays all the others for the "placed" mark.
+// (x then z, each from low to high): the last one replays all the others for the "placed" mark.
 func corridorChunks(b box) [][2]int {
 	var out [][2]int
-	for ax := b[3] >> 4; ax >= b[0]>>4; ax-- {
-		for az := b[5] >> 4; az >= b[2]>>4; az-- {
+	for ax := b[0] >> 4; ax <= b[3]>>4; ax++ {
+		for az := b[2] >> 4; az <= b[5]>>4; az++ {
 			out = append(out, [2]int{ax, az})
 		}
 	}

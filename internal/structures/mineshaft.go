@@ -1,6 +1,9 @@
 package structures
 
 import (
+	"strings"
+	"sync"
+
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
 
@@ -21,7 +24,6 @@ const (
 
 	msMaxDepth   = 8
 	msMaxFoot    = 80
-	msCartTable  = "loot_tables/chests/abandoned_mineshaft.json"
 	msDeepDarkID = 190
 )
 
@@ -60,13 +62,6 @@ type mineshaft struct {
 	pieces    []*msPiece
 	entrances []box
 	mesa      bool
-}
-
-// minecartIntent is a chest minecart a corridor would spawn (worked out, not spawned).
-type minecartIntent struct {
-	Pos       [3]int
-	LootTable string
-	Seed      int32
 }
 
 // spiderKey names a spider corridor (start chunk, piece index) in one chunk.
@@ -353,7 +348,7 @@ func (l *msLayout) stairsExit(p *msPiece) {
 	}
 }
 
-// Building.
+// Building (mineshaft/SPEC.md section 5 with ADDENDUM-1.md).
 
 // placeMineshafts builds every mineshaft piece touching the chunk, with the chunk's mineshaft stream.
 func (s *Structures) placeMineshafts(w *writer) {
@@ -375,16 +370,45 @@ func (s *Structures) placeMineshafts(w *writer) {
 	}
 }
 
-// msBlocks are a mineshaft type's wood.
-type msBlocks struct{ planks, log, fence uint32 }
+// msBlocks are a mineshaft type's wood, and the blocks its pieces leave alone (addendum rule F): any
+// state of the type's planks, log and fence, and of iron_chain.
+type msBlocks struct {
+	planks, log, fence, chain uint32
+	protected, chains         map[uint32]bool
+}
 
-func mineshaftBlocks(mesa bool) msBlocks {
+// keep says whether a cell holding rid is protected from the piece writes rule F covers.
+func (b *msBlocks) keep(rid uint32) bool { return b.protected[rid] }
+
+// msWoods are the normal and the mesa mineshaft's blocks.
+var msWoods = sync.OnceValue(func() (out [2]*msBlocks) {
 	t := pieceData().msStates
-	kind := " normal"
-	if mesa {
-		kind = " mesa"
+	registry.load()
+	statesOf := func(rid uint32, into map[uint32]bool) {
+		if rid == noBlock {
+			return
+		}
+		for _, st := range registry.byName[ridName(rid)] {
+			into[st.rid] = true
+		}
 	}
-	return msBlocks{specState(t["planks"+kind]), specState(t["log"+kind]), specState(t["fence"+kind])}
+	for i, kind := range [2]string{" normal", " mesa"} {
+		b := &msBlocks{planks: specState(t["planks"+kind]), log: specState(t["log"+kind]), fence: specState(t["fence"+kind]),
+			chain: specState(t["chain"]), protected: map[uint32]bool{}, chains: map[uint32]bool{}}
+		for _, rid := range [4]uint32{b.planks, b.log, b.fence, b.chain} {
+			statesOf(rid, b.protected)
+		}
+		statesOf(b.chain, b.chains)
+		out[i] = b
+	}
+	return out
+})
+
+func mineshaftBlocks(mesa bool) *msBlocks {
+	if mesa {
+		return msWoods()[1]
+	}
+	return msWoods()[0]
 }
 
 func (s *Structures) buildMsPiece(w *writer, m *mineshaft, idx int, p *msPiece) {
@@ -394,11 +418,11 @@ func (s *Structures) buildMsPiece(w *writer, m *mineshaft, idx int, p *msPiece) 
 	wood := mineshaftBlocks(m.mesa)
 	switch p.kind {
 	case msRoom:
-		buildMsRoom(w, p.b, m.entrances)
+		buildMsRoom(w, p.b, m.entrances, wood)
 	case msCrossing:
 		buildMsCrossing(w, p.b, wood)
 	case msStairs:
-		c := &ctx{w: w, p: &opiece{p.b, p.dir}, r: w.rng}
+		c := &ctx{w: w, p: &opiece{p.b, p.dir}, r: w.rng, keep: wood.keep}
 		runOps(c, pieceData().msStairs, nil, nil)
 	case msCorridor:
 		s.buildMsCorridor(w, m, idx, p, wood)
@@ -440,22 +464,24 @@ func (s *Structures) msSkipped(w *writer, b box) bool {
 	return false
 }
 
-// airBox empties a world box inside the chunk.
-func airBox(w *writer, x0, y0, z0, x1, y1, z1 int) {
+// airBox empties a world box inside the chunk, leaving the cells wood protects.
+func airBox(w *writer, wood *msBlocks, x0, y0, z0, x1, y1, z1 int) {
 	air := airRID()
 	for x := max(x0, w.cx*16); x <= min(x1, w.cx*16+15); x++ {
 		for z := max(z0, w.cz*16); z <= min(z1, w.cz*16+15); z++ {
 			for y := max(y0, w.lo); y <= min(y1, w.hi); y++ {
-				w.set(x, y, z, air, false)
+				if !wood.keep(w.mainAt(x, y, z)) {
+					w.set(x, y, z, air, false)
+				}
 			}
 		}
 	}
 }
 
-func buildMsRoom(w *writer, b box, entrances []box) {
-	airBox(w, b[0], b[1]+1, b[2], b[3], min(b[1]+3, b[4]), b[5])
+func buildMsRoom(w *writer, b box, entrances []box, wood *msBlocks) {
+	airBox(w, wood, b[0], b[1]+1, b[2], b[3], min(b[1]+3, b[4]), b[5])
 	for _, e := range entrances {
-		airBox(w, e[0], e[4]-2, e[2], e[3], e[4], e[5])
+		airBox(w, wood, e[0], e[4]-2, e[2], e[3], e[4], e[5])
 	}
 	base := b[1] + 4
 	if base > b[4] {
@@ -476,7 +502,7 @@ func buildMsRoom(w *writer, b box, entrances []box) {
 				c := float32(float32(z)-mz) / hz
 				sum := float32(float32(a*a) + float32(v*v))
 				sum = float32(sum + float32(c*c))
-				if sum <= 1.05 {
+				if sum <= 1.05 && !wood.keep(w.mainAt(x, y, z)) {
 					w.set(x, y, z, air, false)
 				}
 			}
@@ -484,25 +510,28 @@ func buildMsRoom(w *writer, b box, entrances []box) {
 	}
 }
 
-func buildMsCrossing(w *writer, b box, wood msBlocks) {
+func buildMsCrossing(w *writer, b box, wood *msBlocks) {
 	x0, y0, z0, x1, y1, z1 := b[0], b[1], b[2], b[3], b[4], b[5]
 	if y1-y0+1 > 3 {
-		airBox(w, x0+1, y0, z0, x1-1, y0+2, z1)
-		airBox(w, x0, y0, z0+1, x1, y0+2, z1-1)
-		airBox(w, x0+1, y1-2, z0, x1-1, y1, z1)
-		airBox(w, x0, y1-2, z0+1, x1, y1, z1-1)
-		airBox(w, x0+1, y0+3, z0+1, x1-1, y0+3, z1-1)
+		airBox(w, wood, x0+1, y0, z0, x1-1, y0+2, z1)
+		airBox(w, wood, x0, y0, z0+1, x1, y0+2, z1-1)
+		airBox(w, wood, x0+1, y1-2, z0, x1-1, y1, z1)
+		airBox(w, wood, x0, y1-2, z0+1, x1, y1, z1-1)
+		airBox(w, wood, x0+1, y0+3, z0+1, x1-1, y0+3, z1-1)
 	} else {
-		airBox(w, x0+1, y0, z0, x1-1, y1, z1)
-		airBox(w, x0, y0, z0+1, x1, y1, z1-1)
+		airBox(w, wood, x0+1, y0, z0, x1-1, y1, z1)
+		airBox(w, wood, x0, y0, z0+1, x1, y1, z1-1)
 	}
 	for _, c := range [4][2]int{{x0 + 1, z0 + 1}, {x0 + 1, z1 - 1}, {x1 - 1, z0 + 1}, {x1 - 1, z1 - 1}} {
 		if w.mainAt(c[0], y1+1, c[1]) != airRID() {
 			for y := y0; y <= y1; y++ {
-				w.put(c[0], y, c[1], wood.planks)
+				if !wood.keep(w.mainAt(c[0], y, c[1])) {
+					w.put(c[0], y, c[1], wood.planks)
+				}
 			}
 		}
 	}
+	// The floor is not among the writes rule F lists (as the corridor's floor, rule D, is exempt).
 	for x := x0; x <= x1; x++ {
 		for z := z0; z <= z1; z++ {
 			if w.interior(x, y0-1, z) && !w.solidAt(x, y0-1, z) {
@@ -512,20 +541,26 @@ func buildMsCrossing(w *writer, b box, wood msBlocks) {
 	}
 }
 
-// msWebChances are the cobwebs by each support: cell offsets (x, z from the support) and chances.
+// msWebChances are the cobwebs by each support, in the order they draw (addendum rule C): local x, the
+// offset along local z from the section's centre, and the chance.
 var msWebChances = [8]struct {
 	x, dz int
 	p     float32
-}{{0, -1, 0.1}, {2, -1, 0.1}, {0, 1, 0.1}, {2, 1, 0.1}, {0, -2, 0.05}, {2, -2, 0.05}, {0, 2, 0.05}, {2, 2, 0.05}}
+}{{0, -1, 0.1}, {2, -2, 0.1}, {0, 0, 0.1}, {2, 0, 0.1}, {0, -3, 0.05}, {2, -3, 0.05}, {0, 1, 0.05}, {2, 1, 0.05}}
 
-func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiece, wood msBlocks) {
-	c := &ctx{w: w, p: &opiece{p.b, p.dir}, r: w.rng}
+func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiece, wood *msBlocks) {
+	c := &ctx{w: w, p: &opiece{p.b, p.dir}, r: w.rng, keep: wood.keep}
 	r := w.rng
 	L := 5*p.sections - 1
 	air := airRID()
 	web := specState(pieceData().msStates["cobweb"])
 	key := spiderKey{m.start, idx, [2]int{w.cx, w.cz}}
 	placed := p.spider && s.spiderPlacedBefore(key, p.b)
+	// filled reads a local cell as it really is, in the chunk or in a neighbour's terrain (rule B).
+	filled := func(x, y, z int) bool {
+		wx, wy, wz := c.p.world(x, y, z)
+		return !s.msAirAt(w, wx, wy, wz)
+	}
 
 	c.box(0, 0, 0, 2, 1, L, air, air, false)
 	c.maybeBox(0.8, 0, 2, 0, 2, 2, L, air, air, false, false)
@@ -534,7 +569,7 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 	}
 	for sec := range p.sections {
 		z := 2 + 5*sec
-		if c.get(0, 3, z) != air && c.get(1, 3, z) != air && c.get(2, 3, z) != air {
+		if filled(0, 3, z) && filled(1, 3, z) && filled(2, 3, z) {
 			c.set(0, 0, z, wood.fence)
 			c.set(0, 1, z, wood.fence)
 			c.set(2, 0, z, wood.fence)
@@ -550,13 +585,19 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 		}
 		for _, wc := range msWebChances {
 			lz := z + wc.dz
-			if !c.interior(wc.x, 2, lz) {
+			// The test column, one cell further along local +z: more than a chunk away it draws nothing;
+			// in the chunk it must be interior at local y 3; in a neighbour it counts as interior.
+			tx, ty, tz := c.p.world(wc.x, 3, lz+1)
+			if abs(tx>>4-w.cx) > 1 || abs(tz>>4-w.cz) > 1 {
+				continue
+			}
+			if tx>>4 == w.cx && tz>>4 == w.cz && !w.interior(tx, ty, tz) {
 				continue
 			}
 			if r.NextFloat() < wc.p {
 				wx, wy, wz := c.p.world(wc.x, 2, lz)
-				if solidNeighbours(w, wx, wy, wz) >= 2 {
-					w.put(wx, wy, wz, web)
+				if w.in(wx, wy, wz) && filledNeighbours(w, wx, wy, wz) >= 2 {
+					c.put(wx, wy, wz, web)
 				}
 			}
 		}
@@ -571,10 +612,15 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 			}
 		}
 	}
+	// The floor (rule D): planks over air or a chain, where the corridor's own floor level is interior.
 	for x := 0; x <= 2; x++ {
 		for z := 0; z <= L; z++ {
-			if c.interior(x, -1, z) && !c.solid(x, -1, z) {
-				c.set(x, -1, z, wood.planks)
+			if !c.interior(x, 0, z) {
+				continue
+			}
+			if cur := c.get(x, -1, z); cur == air || wood.chains[cur] {
+				wx, wy, wz := c.p.world(x, -1, z)
+				w.put(wx, wy, wz, wood.planks)
 			}
 		}
 	}
@@ -590,9 +636,8 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 			}
 		}
 	}
-	alongWorldZ := p.dir == oN || p.dir == oS
 	if p.rails {
-		rail := railRID(alongWorldZ)
+		rail := railRID(p.dir == oN || p.dir == oS)
 		for z := 0; z <= L; z++ {
 			if c.get(1, -1, z) != air && c.solid(1, -1, z) {
 				f := r.NextFloat()
@@ -606,39 +651,45 @@ func (s *Structures) buildMsCorridor(w *writer, m *mineshaft, idx int, p *msPiec
 			}
 		}
 	}
-	cart := func(x, y, z int) {
-		wx, wy, wz := c.p.world(x, y, z)
-		if !w.in(wx, wy, wz) || w.mainAt(wx, wy, wz) != air || w.mainAt(wx, wy-1, wz) == air {
-			return
-		}
-		localZ := r.NextBool()
-		w.put(wx, wy, wz, railRID(localZ == alongWorldZ))
-		w.carts = append(w.carts, minecartIntent{Pos: [3]int{wx, wy, wz}, LootTable: msCartTable, Seed: r.NextInt()})
-	}
-	for sec := range p.sections {
-		z := 2 + 5*sec
-		if r.NextIntN(100) == 0 {
-			cart(2, 0, z-1)
-		}
-		if r.NextIntN(100) == 0 {
-			cart(0, 0, z+1)
-		}
-	}
+	// No chest minecarts: BDS picks them in a later pass with a random of its own (rule A), so nothing
+	// here draws for them.
 }
 
-func solidNeighbours(w *writer, x, y, z int) int {
-	n := 0
+// msAirAt says whether a world cell is air: in the chunk as it stands, elsewhere in the terrain of the
+// chunk holding it before any structure (the addendum's stand-in for BDS's live neighbour, rule B). The
+// neighbours' terrain comes from the generator's shared cache, so a chunk never depends on the order
+// chunks are made in.
+func (s *Structures) msAirAt(w *writer, x, y, z int) bool {
+	if x>>4 == w.cx && z>>4 == w.cz {
+		return w.mainAt(x, y, z) == airRID()
+	}
+	k := [2]int{x >> 4, z >> 4}
+	b, ok := w.bases[k]
+	if !ok {
+		if w.bases == nil {
+			w.bases = map[[2]int]worldgen.BaseCells{}
+		}
+		b = s.g.BaseCells(k[0], k[1])
+		w.bases[k] = b
+	}
+	return b.Air(x, y, z)
+}
+
+// filledNeighbours counts the face neighbours of a cell that are in the chunk and not air.
+func filledNeighbours(w *writer, x, y, z int) int {
+	n, air := 0, airRID()
 	for _, d := range faceStep {
-		if w.solidAt(x+d[0], y+d[1], z+d[2]) {
+		if nx, ny, nz := x+d[0], y+d[1], z+d[2]; w.in(nx, ny, nz) && w.mainAt(nx, ny, nz) != air {
 			n++
 		}
 	}
 	return n
 }
 
-// msPillar props a corridor's floor plank at (x, y, z): a log down to the first solid block within
-// reach, or else a fence and chain up to the first solid block above that does not fall.
-func msPillar(w *writer, x, y, z int, wood msBlocks) {
+// msPillar props a corridor's floor plank at (x, y, z) (SPEC 5.7 with addendum rule G): a log down to
+// the first cell within 11 below that is neither replaceable nor lava, unless that cell is a rail; or
+// else a fence and chain up to the first solid block within 21 above that does not fall.
+func msPillar(w *writer, x, y, z int, wood *msBlocks) {
 	if !w.in(x, y, z) {
 		return
 	}
@@ -646,29 +697,40 @@ func msPillar(w *writer, x, y, z int, wood msBlocks) {
 	for d := 1; down || up; d++ {
 		if down {
 			yy := y - d
-			ok := yy >= w.lo && w.replaceable(x, yy, z) && !w.isLava(x, yy, z)
-			if yy >= w.lo && !ok && w.solidAt(x, yy, z) {
-				for ly := yy + 1; ly <= y-1; ly++ {
-					w.put(x, ly, z, wood.log)
+			switch {
+			case yy < w.lo:
+				down = false
+			case !w.replaceable(x, yy, z) || w.isLava(x, yy, z):
+				if !w.isLava(x, yy, z) && !isRail(w.mainAt(x, yy, z)) {
+					for ly := yy + 1; ly <= y-1; ly++ {
+						w.put(x, ly, z, wood.log)
+					}
+					return
 				}
-				return
+				down = false
+			default:
+				down = d < 11 && yy > w.lo+1
 			}
-			down = d <= 20 && ok && yy > w.lo+1
 		}
 		if up {
 			yy := y + d
 			ok := yy <= w.hi && w.replaceable(x, yy, z)
 			if yy <= w.hi && !ok && w.solidAt(x, yy, z) && !w.falling(x, yy, z) {
 				w.put(x, y+1, z, wood.fence)
-				chain := specState(pieceData().msStates["chain"])
 				for cy := y + 2; cy <= yy-1; cy++ {
-					w.put(x, cy, z, chain)
+					w.put(x, cy, z, wood.chain)
 				}
 				return
 			}
-			up = d <= 50 && ok && yy < w.hi
+			up = d < 21 && ok && yy < w.hi
 		}
 	}
+}
+
+// isRail says whether a block is a rail of any kind.
+func isRail(rid uint32) bool {
+	n := ridName(rid)
+	return n == "rail" || strings.HasSuffix(n, "_rail")
 }
 
 // The spawner mark: whether a spider corridor already placed its spawner in a chunk built before this
@@ -677,10 +739,12 @@ func msPillar(w *writer, x, y, z int, wood msBlocks) {
 // BDS keeps a "spawner placed" mark on the corridor while it builds the corridor's chunks, so a corridor
 // gets one spawner however many chunks it crosses. Our chunks are made from the seed and their position
 // alone, in any order and on any thread, with nothing shared between them, so a chunk cannot see a mark
-// a neighbour left. Instead the spec fixes an order of a corridor's chunks, chunk x descending, then chunk
-// z descending (the same order for every corridor), and a chunk works the mark out by replaying the
-// chunks before it in that order: a chunk counts as having placed the spawner when, made on its own (its
-// base terrain, then the structure types before mineshafts, then its mineshaft pass), it places it.
+// a neighbour left. Instead the spec fixes an order of a corridor's chunks, chunk x ascending, then chunk
+// z ascending (ADDENDUM-1.md rule E, fitted; the same order for every corridor), and a chunk works the
+// mark out by replaying the chunks before it in that order: a chunk counts as having placed the spawner
+// when, made on its own (its base terrain, then the structure types before mineshafts, then its
+// mineshaft pass), it places it. BDS's real order is the order its chunks happen to be built, which
+// differs between runs; this one puts every spawner of the two reference mineshafts at BDS's cell.
 //
 // The replay ends: replaying chunk A asks, for each spider corridor in A, only about chunks strictly
 // before A in that one global order, and only within that corridor's box, so every chain of replays moves
@@ -692,8 +756,8 @@ const spiderCacheMax = 1 << 14
 
 // spiderPlacedBefore says whether a chunk before key.chunk, in the corridor's order, placed its spawner.
 func (s *Structures) spiderPlacedBefore(key spiderKey, b box) bool {
-	for ax := b[3] >> 4; ax >= b[0]>>4; ax-- {
-		for az := b[5] >> 4; az >= b[2]>>4; az-- {
+	for ax := b[0] >> 4; ax <= b[3]>>4; ax++ {
+		for az := b[2] >> 4; az <= b[5]>>4; az++ {
 			if ax == key.chunk[0] && az == key.chunk[1] {
 				return false
 			}
