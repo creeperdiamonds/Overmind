@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sync"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Bedrock's feature data (features, feature rules, biomes) is read at startup from a local Bedrock
@@ -65,9 +65,11 @@ type BedrockData struct {
 	// Warnings says what the install lacks for an exact world (a game's packs with no definitions).
 	Warnings []string
 	// fossils are the fossil feature's templates (bedrock_fossil.go), read once at load.
-	fossilOnce sync.Once
+	fossilOnce    sync.Once
 	fossils       [8]*fossilTemplate
 	netherFossils [14]*fossilTemplate
+	// crust is the coral crust's templates (bedrock_coralcrust.go), read on first use.
+	crust crustData
 }
 
 type packRule struct {

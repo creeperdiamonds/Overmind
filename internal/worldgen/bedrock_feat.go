@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,7 +67,12 @@ func bname(s bs) uint16 {
 	return i
 }
 
-func bnameString(s bs) string { i := bname(s); bnameLock.Lock(); defer bnameLock.Unlock(); return bnameList[i] }
+func bnameString(s bs) string {
+	i := bname(s)
+	bnameLock.Lock()
+	defer bnameLock.Unlock()
+	return bnameList[i]
+}
 
 // bnameSet is a set of interned Bedrock names.
 type bnameSet []uint64
@@ -184,6 +190,24 @@ func javaStateFor(b bdesc) (bs, error) {
 		java = "rooted_dirt"
 	case "hardened_clay":
 		java = "terracotta"
+	case "magma":
+		java = "magma_block"
+	case "sulfur_spike":
+		// Bedrock's dripstone states (the sulfur spring templates' spikes, round 18): hanging 1 points
+		// down; Bedrock's "merge" is our tip_merge.
+		th, _ := st("dripstone_thickness").(string)
+		switch th {
+		case "merge":
+			th = "tip_merge"
+		case "tip", "frustum", "middle", "base":
+		default:
+			th = "tip"
+		}
+		vd := "up"
+		if h, _ := st("hanging").(bool); h {
+			vd = "down"
+		}
+		java = b.name + "[thickness=" + th + ",vertical_direction=" + vd + ",waterlogged=false]"
 	case "waterlily":
 		java = "lily_pad"
 	case "reeds":
@@ -261,7 +285,7 @@ func javaStateFor(b bdesc) (bs, error) {
 		java = "creaking_heart[axis=y,creaking_heart_state=dormant,natural=true]"
 	case "potent_sulfur":
 		w, _ := st("potent_sulfur_state").(string)
-		if w != "wet" {
+		if !slices.Contains(potentSulfurStates[:], w) {
 			w = "dry"
 		}
 		java = "potent_sulfur[potent_sulfur_state=" + w + "]"
@@ -288,6 +312,9 @@ func javaStateFor(b bdesc) (bs, error) {
 
 // bedrockDirection names Bedrock's direction state 0..3: south, west, north, east.
 func bedrockDirection(d int) string { return [4]string{"south", "west", "north", "east"}[d&3] }
+
+// potentSulfurStates are potent_sulfur's potent_sulfur_state values in the 1.26.60 block palette.
+var potentSulfurStates = [5]string{"dry", "wet", "dormant", "erupting", "continuous"}
 
 // safeState makes a state and checks the client has a block for it.
 func safeState(java string) (s bs, err error) {

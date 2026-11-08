@@ -80,6 +80,8 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.tree(v)
 	case "minecraft:fossil_feature":
 		f, err = fc.fossil(v)
+	case "minecraft:structure_template_feature":
+		f, err = fc.structureTemplate(v)
 	default:
 		return nil, unimpl("%s", pf.kind)
 	}
@@ -323,6 +325,9 @@ type bScatter struct {
 	chanceExpr mexpr
 	order      [3]int
 	axes       [3]bCoord
+	// floor is project_input_to_floor (+0x100, NOTES-leftovers L11.4): the input drops through air to
+	// the block under it before the scatter.
+	floor bool
 }
 
 // molangRound turns an expression's value into a block coordinate or a count.
@@ -490,11 +495,7 @@ func parseScatterParams(d map[string]json.RawMessage, bd *BedrockData) (*bScatte
 		sc.order = evalOrder(s)
 	}
 	if raw, ok := d["project_input_to_floor"]; ok {
-		var b bool
-		json.Unmarshal(raw, &b)
-		if b {
-			return nil, unimpl("project_input_to_floor")
-		}
+		json.Unmarshal(raw, &sc.floor)
 	}
 	for i, k := range []string{"x", "y", "z"} {
 		raw, ok := d[k]
@@ -563,6 +564,13 @@ type scatterFeat struct {
 }
 
 func (f *scatterFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
+	if f.sc.floor && p.y > minY && d.block(p.x, p.y-1, p.z).isAir() {
+		// L11.4 (READ): from an input over air, down while the block below is air and y - 1 is above the
+		// world's floor; only air (water or any block under the input leaves it). No draws.
+		for d.block(p.x, p.y-1, p.z).isAir() && p.y-1 > minY {
+			p.y--
+		}
+	}
 	// The copied context shares the run's variable map (0x5525c10 copies its pointer), and
 	// MolangCtx_init moves variable.origin* to the input position for this and every later rule (T3b).
 	e := &d.menv
