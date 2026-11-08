@@ -42,6 +42,7 @@ Values the study fitted to BDS worlds instead of reading them from the code. Eac
 
 ## Fixed on the way
 
+- **One buried treasure chest a block too high (Task 9 round 15).** The first downward search tested the chest's own cell where BDS tests the cell above it (NOTES-leftovers L8); seed 12345's (-184, 456) chest sat at y 32 instead of 31. Now 27 of 27 measured chests are at BDS's position with its loot seed (`TestBuriedTreasureMatchesBDS`).
 - **Spawn inside a tree, flower or snow layer.** `DefaultSpawn` read heights only; seed 100's spawn was inside an oak trunk and seed 12345's inside a snow layer. It now checks the finished chunk (`spawnClear`).
 
 ## Bedrock profile, until Task 4e
