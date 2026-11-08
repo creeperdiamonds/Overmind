@@ -171,6 +171,7 @@ func TestSulfurCavesMatchBDS(t *testing.T) {
 	files = append(files, w2...)
 	sid := uint16(biome.SulfurCaves{}.EncodeBiome())
 	names := []string{"sulfur", "cinnabar", "water", "tuff", "potent_sulfur", "sulfur_spike", "air"}
+	mostPlacements.Store(0) // The pools' potent sulfur searches spend placements: logged below.
 	type tally struct{ bds, ours, both int }
 	all := map[string]*tally{}
 	var cells, same int
@@ -237,7 +238,11 @@ func TestSulfurCavesMatchBDS(t *testing.T) {
 			len(pos), 100*float64(ws)/float64(max(wc, 1)), strings.Join(parts, ", "))
 		bdsWorlds.Delete(f)
 	}
-	t.Logf("all sulfur chunks: same %.4f%% of %d stable cells", 100*float64(same)/float64(max(cells, 1)), cells)
+	t.Logf("all sulfur chunks: same %.4f%% of %d stable cells; most scatter placements by one source %d (budget %d)",
+		100*float64(same)/float64(max(cells, 1)), cells, mostPlacements.Load(), placementBudget)
+	if m := mostPlacements.Load(); m > placementBudget/8 {
+		t.Errorf("a sulfur caves source made %d placements, within 8x of the budget %d", m, placementBudget)
+	}
 	for _, n := range names {
 		if c := all[n]; c != nil {
 			t.Logf("  %-14s BDS %7d ours %7d both %7d: recall %.2f%%, precision %.2f%%", n, c.bds, c.ours, c.both,

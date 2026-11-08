@@ -355,6 +355,9 @@ func (sc *bedrockScore) report(t testing.TB) {
 func TestBedrockWorldsMatchBDS(t *testing.T) {
 	dir := goldenBedrockDir(t)
 	testBedrockData(t)
+	// The most is kept per process: TestNestedScattersFinish spends a whole budget on purpose, so count
+	// from here, this test's own sources only.
+	mostPlacements.Store(0)
 	defer func() {
 		// The placement budget (bedrock_limits.go) must never touch vanilla data.
 		m := mostPlacements.Load()
