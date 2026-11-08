@@ -234,16 +234,33 @@ type searchFeat struct {
 	f        bfeat
 	min, max [3]int
 	need     int
+	down     bool // search_axis -y: from the top layer down.
 }
 
 // place tries the volume along +y; across x and z (the creaking heart's 3 x 3 columns) the order is not
-// read: y outer, then x, then z, the study's approximation (T17). Every try costs one placement of the
-// source's budget, so no volume the limits allow can stall a worker.
+// read: y outer, then x, then z, the study's approximation (T17). The -y axis (the sulfur pool's potent
+// sulfur, round 16) is not read either; its order is fitted (ruling 41): y from the top down, then z
+// ascending, then x descending puts 15 of 15 potent sulfur blocks at BDS's cell where our pool is BDS's
+// (extreme_hills_5, flower_forest_20, frozen_ocean_4); y down then x then z put none there. Every try
+// costs one placement of the source's budget, so no volume the limits allow can stall a worker.
 func (f *searchFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	got := 0
-	for dy := f.min[1]; dy <= f.max[1]; dy++ {
-		for dx := f.min[0]; dx <= f.max[0]; dx++ {
-			for dz := f.min[2]; dz <= f.max[2]; dz++ {
+	for i := 0; i <= f.max[1]-f.min[1]; i++ {
+		dy := f.min[1] + i
+		if f.down {
+			dy = f.max[1] - i
+		}
+		// Across: x outer then z, or for the -y search z outer then x descending (fitted, above).
+		ou, iu := 0, 2
+		if f.down {
+			ou, iu = 2, 0
+		}
+		for a := f.min[ou]; a <= f.max[ou]; a++ {
+			for b := f.min[iu]; b <= f.max[iu]; b++ {
+				dx, dz := a, b
+				if f.down {
+					dx, dz = f.max[0]+f.min[0]-b, a
+				}
 				if !d.spend() {
 					return p, false
 				}
@@ -269,7 +286,7 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 	json.Unmarshal(v["search_volume"], &vol)
 	json.Unmarshal(v["search_axis"], &axis)
 	json.Unmarshal(v["required_successes"], &need)
-	if axis != "+y" || vol.Min[0] > vol.Max[0] || vol.Min[1] > vol.Max[1] || vol.Min[2] > vol.Max[2] {
+	if axis != "+y" && axis != "-y" || vol.Min[0] > vol.Max[0] || vol.Min[1] > vol.Max[1] || vol.Min[2] > vol.Max[2] {
 		return nil, unimpl("search %s %v", axis, vol)
 	}
 	for _, a := range [2]int{0, 2} {
@@ -282,7 +299,7 @@ func (fc *featCompiler) search(v map[string]json.RawMessage) (bfeat, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &searchFeat{c, vol.Min, vol.Max, max(need, 1)}, nil
+	return &searchFeat{c, vol.Min, vol.Max, max(need, 1), axis == "-y"}, nil
 }
 
 // bCoord is one coordinate of a scatter: a number, a distribution over an extent (numbers or

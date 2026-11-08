@@ -50,6 +50,37 @@ func sweepBench(b *testing.B, cache int64, workers int) {
 func BenchmarkSweepCache(b *testing.B)        { sweepBench(b, DefaultCacheBytes, 1) }
 func BenchmarkSweepCacheWorkers(b *testing.B) { sweepBench(b, DefaultCacheBytes, runtime.NumCPU()) }
 
+// BenchmarkSulfurArea generates the study's sulfur caves window (extreme_hills_5: seed 5, chunks x -15..-7,
+// z -24..-16, NOTES-bedrock-exact T42) on one worker with a fresh generator each round, so the sulfur
+// features' cost shows per chunk. With OVERMIND_BEDROCK_DATA the Bedrock profile runs BDS's rules.
+func BenchmarkSulfurArea(b *testing.B) {
+	for b.Loop() {
+		g := New(5)
+		for cz := int32(-24); cz <= -16; cz++ {
+			for cx := int32(-15); cx <= -7; cx++ {
+				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+				g.GenerateChunk(world.ChunkPos{cx, cz}, c)
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
+}
+
+// BenchmarkMangroveArea generates the study's mangrove swamp window (mangrove_swamp_20: seed 20, chunks
+// x -34..-26, z 28..36, NOTES-bedrock-exact T17) the same way, so the mangrove trees' cost shows per chunk.
+func BenchmarkMangroveArea(b *testing.B) {
+	for b.Loop() {
+		g := New(20)
+		for cz := int32(28); cz <= 36; cz++ {
+			for cx := int32(-34); cx <= -26; cx++ {
+				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+				g.GenerateChunk(world.ChunkPos{cx, cz}, c)
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
+}
+
 // Sweeps at other caps, to find where the cache stops rebuilding bases (ruling 31).
 func BenchmarkSweepCap(b *testing.B) {
 	for _, mb := range []int64{26, 28, 30, 32} {

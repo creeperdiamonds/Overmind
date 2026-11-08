@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/df-mc/dragonfly/server/item/inventory"
 )
 
 // TestDataJigsawContainersMatchBDS: every loot container of the data-driven jigsaw structures (trial
@@ -47,6 +49,31 @@ func TestDataJigsawContainersMatchBDS(t *testing.T) {
 			}()
 		}
 		wg.Wait()
+		// Every container's table is one the server can roll (round 16: barrels and pots roll theirs
+		// through the same filler as chests; dispensers keep theirs, Dragonfly has no dispenser).
+		_, data := installData(t)
+		rolled := map[string][2]int{}
+		for p, d := range got {
+			table, _ := d["LootTable"].(string)
+			id, _ := d["id"].(string)
+			if table == "" {
+				continue
+			}
+			size := map[string]int{"DecoratedPot": 1, "Dispenser": 9, "Dropper": 9, "Hopper": 5}[id]
+			if size == 0 {
+				size = 27
+			}
+			inv := inventory.New(size, nil)
+			r := rolled[id]
+			r[0]++
+			if data.Fill(table, 7, inv) {
+				r[1]++
+			} else {
+				t.Errorf("seed %d: %s at %v: table %s not found", seed, id, p, table)
+			}
+			rolled[id] = r
+		}
+		t.Logf("seed %d: loot tables rolled by container (rolled/held): %v", seed, rolled)
 		type tally struct{ n, pos, table, seed int }
 		kinds := map[string]*tally{}
 		var miss []string
