@@ -124,9 +124,9 @@ func TestBedrockValuesFromData(t *testing.T) {
 
 // TestBedrockMangroveRates: the Bedrock profile is to run BDS's own mangrove swamp rules, 25 trees and 2
 // with a bee nest and 2 tall ones with a bee nest a chunk (BEDROCK-NOTES row 9's "25 + 2 + 2"), and
-// not Java's trees_mangrove (25), which stands in only while a rule is not written. Today the tree
+// not Java's trees_mangrove (25), which stands in only while a rule is not written. The tree
 // feature's mangrove parts (mangrove_roots, mangrove_trunk, mangrove_canopy; NOTES-bedrock-exact T17,
-// T27) are not written, so the rules are skipped and the test says so instead of failing.
+// T27) are written since Task 9 round 17 (bedrock_mangrove.go); the skip stays for a pack without them.
 func TestBedrockMangroveRates(t *testing.T) {
 	bd := testBedrockData(t)
 	var kept []string

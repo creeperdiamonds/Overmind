@@ -307,6 +307,7 @@ type bCanopy interface {
 // which calls the canopy.
 type bTreeFeat struct {
 	t      treeCtx
+	roots  *mangroveRootsB // mangrove_roots: placed after the height, before the trunk (T27)
 	trunk  bTrunk
 	canopy bCanopy
 }
@@ -315,6 +316,12 @@ type bTreeFeat struct {
 // which a sequence hands on (NOTES-bedrock-exact T31: the jungle tree's cocoa sits 4 and 5 under it).
 func (f *bTreeFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 	h := f.trunk.height(r)
+	if f.roots != nil {
+		var ok bool
+		if p, ok = f.roots.place(d, &f.t, r, p, h); !ok {
+			return p, false
+		}
+	}
 	if !f.trunk.place(d, &f.t, r, p, h, f.canopy) {
 		return p, false
 	}
@@ -371,8 +378,14 @@ func (fc *featCompiler) tree(v map[string]json.RawMessage) (bfeat, error) {
 		}
 	}
 	for k, raw := range v {
-		if k == "roots" || k == "mangrove_roots" {
+		if k == "roots" {
 			return nil, unimpl("tree roots %s", k)
+		}
+		if k == "mangrove_roots" {
+			if f.roots, err = fc.mangroveRoots(raw); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		var body map[string]json.RawMessage
 		if strings.HasSuffix(k, "trunk") {
@@ -477,6 +490,8 @@ func (fc *featCompiler) trunk(kind string, v map[string]json.RawMessage) (bTrunk
 		return fc.megaTrunk(v, log, deco)
 	case "cherry_trunk":
 		return fc.bCherryTrunk(v, log)
+	case "mangrove_trunk":
+		return fc.mangroveTrunk(v, log, deco)
 	}
 	return nil, unimpl("trunk %s", kind)
 }
@@ -625,6 +640,8 @@ func (fc *featCompiler) canopy(kind string, v map[string]json.RawMessage) (bCano
 		return megaPineCanopyOf(v)
 	case "cherry_canopy":
 		return cherryCanopyOf(v)
+	case "mangrove_canopy":
+		return mangroveCanopyOf(v)
 	}
 	return nil, unimpl("canopy %s", kind)
 }
