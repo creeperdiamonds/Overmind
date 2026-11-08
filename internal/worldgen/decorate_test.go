@@ -224,7 +224,7 @@ func TestTreesWholeAcrossEdgesQuick(t *testing.T) {
 
 func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 	g := New(41)
-	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops, ownOrphans int
+	var crossings, tops, edgeTops, leaves, cutLeaves, bareTops, ownOrphans, branchTops int
 	seeds := biomeChunks(g, mixed, "forest", "roofed_forest", "jungle", "savanna", "taiga", "birch_forest")
 	seeds = append(seeds, biomeChunks(g, each, "roofed_forest")...)
 	seeds = append(seeds, biomeChunks(g, each, "savanna")...)
@@ -289,6 +289,15 @@ func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 											}
 										}
 										if !covered {
+											if g.bedrockDeco() && branchStep(w, x, y, z) {
+												// Bedrock's mega jungle branch (megaTrunk, read from the code; jungle
+												// trees run it since 7a84618) steps diagonally, so a branch log can
+												// meet the one before it only at an edge. BDS's own worlds have such
+												// tops: jungle_22 11 of 1008, bamboo_jungle_3 38 of 554, each with a
+												// log diagonally below, as every one here has.
+												branchTops++
+												break
+											}
 											if !neighbourStoodBeside(g, pos{x, y, z}, d) {
 												t.Fatalf("chunk %v: trunk top at %d %d %d has nothing beside it towards %v", p, x, y, z, d)
 											}
@@ -306,11 +315,15 @@ func checkTreesWholeAcrossEdges(t *testing.T, mixed, each int) {
 			}
 		}
 	}
-	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge; allowed: %d leaves cut only by a missing neighbour level, %d trunk tops bare only beside one, %d Bedrock leaves their own tree left with no log within 6", leaves, tops, edgeTops, crossings, cutLeaves, bareTops, ownOrphans)
+	t.Logf("%d leaves, %d trunk tops (%d on chunk edges), %d edge logs joined across an edge; allowed: %d leaves cut only by a missing neighbour level, %d trunk tops bare only beside one, %d Bedrock leaves their own tree left with no log within 6, %d Bedrock branch steps", leaves, tops, edgeTops, crossings, cutLeaves, bareTops, ownOrphans, branchTops)
 	// Bounds from fix round 2's measure, 63 of 52,987 leaves and 2 of 964 tops, with a small margin:
 	// the allowance covers what two levels of neighbours leave out, and must stay that rare.
 	if ownOrphans*200 > leaves {
 		t.Errorf("%d of %d leaves left with no log by their own tree; at most 0.5%%", ownOrphans, leaves)
+	}
+	// BDS's branch steps: 1.1% of jungle_22's tops and 6.9% of bamboo_jungle_3's.
+	if branchTops*10 > tops {
+		t.Errorf("%d of %d trunk tops are bare branch steps; at most 10%%", branchTops, tops)
 	}
 	if cutLeaves > 80 || bareTops > 4 {
 		t.Errorf("%d leaves cut and %d bare trunk tops allowed; at most 80 and 4", cutLeaves, bareTops)
@@ -405,6 +418,19 @@ func neighbourStoodBeside(g *Generator, top pos, d [2]int) bool {
 						}
 					}
 				}
+			}
+		}
+	}
+	return false
+}
+
+// branchStep says whether a log has another log diagonally below it (one down, at least one step
+// across): a branch that rose to it diagonally.
+func branchStep(w world3, x, y, z int) bool {
+	for dx := -1; dx <= 1; dx++ {
+		for dz := -1; dz <= 1; dz++ {
+			if b, ok := w.at(x+dx, y-1, z+dz); ok && (dx != 0 || dz != 0) && isLogID(b) {
+				return true
 			}
 		}
 	}
@@ -931,6 +957,16 @@ func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
 			}
 			if above := final[c+256]; !above.isAir() && above != sSnowLayer {
 				continue // Decoration covered it (an iceberg): the freeze pass works on the column's top.
+			}
+			// So does an iceberg's overhang higher up: its cut-out (T26) leaves air and water under ice, and
+			// the pass stops at the ice. BDS has such open water too: 132 columns of frozen_ocean_4 and 154 of
+			// deep_frozen_ocean_4 hold water at Y 62 and air at 63 under packed ice or snow.
+			covered := false
+			for y := waterTop + 2; y <= maxY && !covered; y++ {
+				covered = !final[cellIndex(x, y, z)].isAir()
+			}
+			if covered {
+				continue
 			}
 			wx, wz := cx*16+x, cz*16+z
 			// Java's freeze reads the biome at the open block above and the temperature at the water.
