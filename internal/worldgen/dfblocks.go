@@ -225,6 +225,10 @@ func lushOwnBlocks() {
 			}
 		}
 	}
+	// The sulfur pool's potent sulfur (round 16): Bedrock's states, Dragonfly has no Go type.
+	for _, w := range [2]string{"dry", "wet"} {
+		addOwn("potent_sulfur[potent_sulfur_state="+w+"]", "potent_sulfur", map[string]any{"potent_sulfur_state": w}, true)
+	}
 	coralDir := map[string]int32{"west": 0, "east": 1, "north": 2, "south": 3}
 	for _, k := range [5]string{"tube", "brain", "bubble", "fire", "horn"} {
 		addOwn(k+"_coral_fan[waterlogged=true]", k+"_coral_fan", map[string]any{"coral_fan_direction": int32(0)}, false)

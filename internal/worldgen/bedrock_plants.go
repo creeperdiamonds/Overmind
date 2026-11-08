@@ -67,6 +67,8 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return codeFeat(sulfurCfg.pointed), true, nil
 	case "minecraft:sulfur_spike_cluster_feature":
 		return codeFeat(sulfurCfg.cluster), true, nil
+	case "minecraft:sulfur_pool":
+		return codeFeat(sulfurPoolCfg.place), true, nil
 	case "minecraft:large_dripstone_feature":
 		return codeFeat(bedrockLargeDripstone), true, nil
 	case "minecraft:dirt_feature":
@@ -726,6 +728,12 @@ type snapFeat struct {
 	rng                            int
 	allowAir, allowNonAir, allowUW bool
 	surface                        *bmatch
+	// embed is embed_in_surface, taken to be the flag the study saw at +0x4b (LUSH-pseudocode: the
+	// offset is k + ((start open ? 0 : 1) xor +0x4b)): from an open start the feature goes into the
+	// surface block itself. Assumed, not read: the study's version had no schema key for +0x4b. The
+	// sulfur caves' features are the only vanilla ones that set it, and their tuff (may replace stone,
+	// not air) could never place without it.
+	embed bool
 }
 
 func (fc *featCompiler) snap(v map[string]json.RawMessage) (bfeat, error) {
@@ -749,6 +757,7 @@ func (fc *featCompiler) snap(v map[string]json.RawMessage) (bfeat, error) {
 	}
 	json.Unmarshal(v["allow_non_air_placement"], &f.allowNonAir)
 	json.Unmarshal(v["allow_underwater_placement"], &f.allowUW)
+	json.Unmarshal(v["embed_in_surface"], &f.embed)
 	var err error
 	if f.surface, err = optMatch(v["allowed_surface_blocks"]); err != nil {
 		return nil, err
@@ -814,7 +823,7 @@ func (f *snapFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 		return p, false
 	}
 	off := k
-	if !open {
+	if open == f.embed { // (start open ? 0 : 1) xor embed.
 		off++
 	}
 	return f.f.place(d, r, pos{p.x, p.y + dy*off, p.z})
@@ -872,7 +881,7 @@ func (f *snapFeat) placeWall(d *decoration, r *bmt, p pos) (pos, bool) {
 			continue
 		}
 		off := k
-		if !open {
+		if open == f.embed {
 			off++
 		}
 		return f.f.place(d, r, pos{p.x + v.x*off, p.y + v.y*off, p.z + v.z*off})
