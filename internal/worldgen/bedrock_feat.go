@@ -259,6 +259,12 @@ func javaStateFor(b bdesc) (bs, error) {
 		}
 	case "creaking_heart":
 		java = "creaking_heart[axis=y,creaking_heart_state=dormant,natural=true]"
+	case "potent_sulfur":
+		w, _ := st("potent_sulfur_state").(string)
+		if w != "wet" {
+			w = "dry"
+		}
+		java = "potent_sulfur[potent_sulfur_state=" + w + "]"
 	case "glow_lichen", "sculk_vein", "cactus_flower":
 		return 0, fmt.Errorf("no state for %s", b.name)
 	default:

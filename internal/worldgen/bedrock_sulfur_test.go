@@ -2,7 +2,9 @@ package worldgen
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -150,6 +152,102 @@ func TestBedrockSulfurBuilderOnBDSBiomes(t *testing.T) {
 	t.Logf("cinnabar %d/%d, sulfur %d/%d, rock BDS left %d/%d left", cinOK, cinN, sulOK, sulN, keptOK, keptN)
 	if cinN == 0 || float64(cinOK) < 0.999*float64(cinN) {
 		t.Errorf("cinnabar: %d of %d match BDS", cinOK, cinN)
+	}
+}
+
+// TestSulfurCavesMatchBDS scores the sulfur caves' blocks against BDS: in every test seed and biome
+// window, the chunks whose BDS biomes hold sulfur caves, on the stable mask. For the blocks the sulfur
+// features place or remove it logs BDS's count inside sulfur caves cells, ours, and how many agree
+// (recall and precision), with the whole of those chunks. Nothing is held: the figures are the
+// measure of the sulfur features (pools, springs, spikes).
+func TestSulfurCavesMatchBDS(t *testing.T) {
+	dir := goldenBedrockDir(t)
+	testBedrockData(t)
+	files := []string{}
+	for _, s := range bedrockTestSeeds {
+		files = append(files, filepath.Join(dir, "whole", "seed"+strconv.FormatInt(s, 10)+".bin.gz"))
+	}
+	w2, _ := filepath.Glob(filepath.Join(dir, "whole", "windows", "*.bin.gz"))
+	files = append(files, w2...)
+	sid := uint16(biome.SulfurCaves{}.EncodeBiome())
+	names := []string{"sulfur", "cinnabar", "water", "tuff", "potent_sulfur", "sulfur_spike", "air"}
+	mostPlacements.Store(0) // The pools' potent sulfur searches spend placements: logged below.
+	type tally struct{ bds, ours, both int }
+	all := map[string]*tally{}
+	var cells, same int
+	for _, f := range files {
+		w := loadBDSFile(t, f)
+		var pos [][2]int32
+		for k, c := range w.chunks {
+			if slices.Contains(c.biomes, sid) {
+				pos = append(pos, [2]int32{int32(k[0]), int32(k[1])})
+			}
+		}
+		if len(pos) == 0 {
+			bdsWorlds.Delete(f) // Keep memory down: a world is read for one test only.
+			continue
+		}
+		got := generateNames(NewWithProfile(w.seed, ProfileBedrock), pos)
+		per := map[string]*tally{}
+		var wc, ws int
+		for _, p := range pos {
+			k := [2]int{int(p[0]), int(p[1])}
+			bc, ours := w.chunks[k], got[k]
+			for cell := range chunkCells - 256 { // Y 319 holds the study's loading marker.
+				if bc.masked(cell) {
+					continue
+				}
+				real, mine := w.names[bc.ids[cell]], ours.names[cell]
+				wc++
+				if real == mine {
+					ws++
+				}
+				if bc.biomes[cell] != sid {
+					continue
+				}
+				for _, n := range names {
+					a, b := real == n, mine == n
+					if !a && !b {
+						continue
+					}
+					for _, m := range []map[string]*tally{per, all} {
+						if m[n] == nil {
+							m[n] = &tally{}
+						}
+						if a {
+							m[n].bds++
+						}
+						if b {
+							m[n].ours++
+						}
+						if a && b {
+							m[n].both++
+						}
+					}
+				}
+			}
+		}
+		cells, same = cells+wc, same+ws
+		var parts []string
+		for _, n := range names {
+			if c := per[n]; c != nil {
+				parts = append(parts, fmt.Sprintf("%s %d/%d/%d", n, c.bds, c.ours, c.both))
+			}
+		}
+		t.Logf("%-26s %3d chunks, same %.4f%%; in sulfur caves (bds/ours/both): %s", strings.TrimSuffix(filepath.Base(f), ".bin.gz"),
+			len(pos), 100*float64(ws)/float64(max(wc, 1)), strings.Join(parts, ", "))
+		bdsWorlds.Delete(f)
+	}
+	t.Logf("all sulfur chunks: same %.4f%% of %d stable cells; most scatter placements by one source %d (budget %d)",
+		100*float64(same)/float64(max(cells, 1)), cells, mostPlacements.Load(), placementBudget)
+	if m := mostPlacements.Load(); m > placementBudget/8 {
+		t.Errorf("a sulfur caves source made %d placements, within 8x of the budget %d", m, placementBudget)
+	}
+	for _, n := range names {
+		if c := all[n]; c != nil {
+			t.Logf("  %-14s BDS %7d ours %7d both %7d: recall %.2f%%, precision %.2f%%", n, c.bds, c.ours, c.both,
+				100*float64(c.both)/float64(max(c.bds, 1)), 100*float64(c.both)/float64(max(c.ours, 1)))
+		}
 	}
 }
 
