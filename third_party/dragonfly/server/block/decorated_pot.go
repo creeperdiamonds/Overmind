@@ -6,6 +6,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/internal/nbtconv"
 	"github.com/df-mc/dragonfly/server/item"
+	"github.com/df-mc/dragonfly/server/item/inventory"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/particle"
 	"github.com/df-mc/dragonfly/server/world/sound"
@@ -31,6 +32,25 @@ type DecoratedPot struct {
 	// Decorations are the four decorations displayed on the sides of the pot. If a decoration is a brick or nil,
 	// the side will appear to be empty.
 	Decorations [4]PotDecoration
+	// LootTable and LootTableSeed are the loot a generated pot rolls into its item the first time the item
+	// is used: inserted into, taken by a hopper, dropped when broken or hit (Overmind fork). Empty once rolled.
+	LootTable     string
+	LootTableSeed int32
+}
+
+// unpackLoot rolls the pot's loot table into its item and clears the table (Overmind fork, as a chest's
+// unpackLoot): the pot holds one stack, so the roll fills a container of one slot. The caller writes the
+// pot back or breaks it.
+func (p DecoratedPot) unpackLoot() DecoratedPot {
+	if p.LootTable == "" || LootFiller == nil {
+		return p
+	}
+	inv := inventory.New(1, nil)
+	_ = inv.SetItem(0, p.Item)
+	LootFiller(p.LootTable, p.LootTableSeed, inv)
+	p.LootTable, p.LootTableSeed = "", 0
+	p.Item, _ = inv.Item(0)
+	return p
 }
 
 func (DecoratedPot) ContainerSize() int { return 1 }
@@ -42,6 +62,7 @@ func (p DecoratedPot) SideClosed(cube.Pos, cube.Pos, *world.Tx) bool {
 
 // ProjectileHit ...
 func (p DecoratedPot) ProjectileHit(pos cube.Pos, tx *world.Tx, _ world.Entity, _ cube.Face) {
+	p = p.unpackLoot() // Overmind fork: the break handler below drops the rolled item.
 	for _, d := range p.Decorations {
 		if d == nil {
 			dropItem(tx, item.NewStack(item.Brick{}, 1), pos.Vec3Centre())
@@ -59,6 +80,7 @@ func (p DecoratedPot) Pick() item.Stack {
 
 // ExtractItem ...
 func (p DecoratedPot) ExtractItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
+	p = p.unpackLoot() // Overmind fork.
 	if p.Item.Empty() {
 		return false
 	}
@@ -72,6 +94,10 @@ func (p DecoratedPot) ExtractItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
 
 // InsertItem ...
 func (p DecoratedPot) InsertItem(h Hopper, pos cube.Pos, tx *world.Tx) bool {
+	if p.LootTable != "" { // Overmind fork: roll the loot before anything goes in.
+		p = p.unpackLoot()
+		tx.SetBlock(pos, p, nil)
+	}
 	for sourceSlot, sourceStack := range h.inventory.Slots() {
 		if !sourceStack.Empty() && sourceStack.Comparable(p.Item) && p.Item.Count() < p.Item.MaxCount() {
 			if p.Item.Empty() {
@@ -103,6 +129,10 @@ func (p DecoratedPot) wobble(pos cube.Pos, tx *world.Tx, success bool) {
 
 // Activate ...
 func (p DecoratedPot) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.User, ctx *item.UseContext) bool {
+	if p.LootTable != "" { // Overmind fork: roll the loot before the held item is compared with it.
+		p = p.unpackLoot()
+		tx.SetBlock(pos, p, nil)
+	}
 	held, _ := u.HeldItems()
 	if held.Empty() || !p.Item.Comparable(held) || p.Item.Count() == p.Item.MaxCount() {
 		p.wobble(pos, tx, false)
@@ -123,6 +153,7 @@ func (p DecoratedPot) Activate(pos cube.Pos, _ cube.Face, tx *world.Tx, u item.U
 // BreakInfo ...
 func (p DecoratedPot) BreakInfo() BreakInfo {
 	return newBreakInfo(0, alwaysHarvestable, nothingEffective, oneOf(DecoratedPot{Decorations: p.Decorations})).withBreakHandler(func(pos cube.Pos, tx *world.Tx, u item.User) {
+		p := p.unpackLoot() // Overmind fork.
 		if !p.Item.Empty() {
 			dropItem(tx, p.Item, pos.Vec3Centre())
 		}
@@ -175,12 +206,17 @@ func (p DecoratedPot) EncodeNBT() map[string]any {
 	if !p.Item.Empty() {
 		m["item"] = item.WriteNBT(p.Item, true)
 	}
+	if p.LootTable != "" { // Overmind fork.
+		m["LootTable"], m["LootTableSeed"] = p.LootTable, p.LootTableSeed
+	}
 	return m
 }
 
 // DecodeNBT ...
 func (p DecoratedPot) DecodeNBT(data map[string]any) any {
 	p.Item = item.MapNBT(data, "item")
+	p.LootTable = nbtconv.String(data, "LootTable") // Overmind fork.
+	p.LootTableSeed = nbtconv.Int32(data, "LootTableSeed")
 	p.Decorations = [4]PotDecoration{}
 	if sherds := nbtconv.Slice(data, "sherds"); sherds != nil {
 		for i, name := range sherds {
