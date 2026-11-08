@@ -932,6 +932,16 @@ func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
 			if above := final[c+256]; !above.isAir() && above != sSnowLayer {
 				continue // Decoration covered it (an iceberg): the freeze pass works on the column's top.
 			}
+			// So does an iceberg's overhang higher up: its cut-out (T26) leaves air and water under ice, and
+			// the pass stops at the ice. BDS has such open water too: 132 columns of frozen_ocean_4 and 154 of
+			// deep_frozen_ocean_4 hold water at Y 62 and air at 63 under packed ice or snow.
+			covered := false
+			for y := waterTop + 2; y <= maxY && !covered; y++ {
+				covered = !final[cellIndex(x, y, z)].isAir()
+			}
+			if covered {
+				continue
+			}
 			wx, wz := cx*16+x, cz*16+z
 			// Java's freeze reads the biome at the open block above and the temperature at the water.
 			cold := g.coldEnough(s.blockBiome(g, wx, waterTop+1, wz), wx, waterTop, wz)
