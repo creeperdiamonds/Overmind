@@ -8,7 +8,7 @@ import (
 )
 
 // TestOceanRuinsMatchBDS: the ocean ruin chests of the measured worlds (seeds 1 and 12345 hold them):
-// position (and x/z only) and loot seed.
+// position (and x/z only) and loot seed. All 20 must be exact.
 func TestOceanRuinsMatchBDS(t *testing.T) {
 	ev := loadEvidence(t)
 	for _, seed := range []int64{1, 12345} {
@@ -69,6 +69,10 @@ func TestOceanRuinsMatchBDS(t *testing.T) {
 		}
 		t.Logf("seed %d ocean ruin chests: %d in BDS; ours in those chunks %d; %d at BDS's x/z, %d at its position, %d with its table, %d with its seed",
 			seed, len(want), len(got), xz, pos, table, sd)
+		// Round 15 (NOTES-leftovers L9): every measured chest at BDS's position with its table and seed.
+		if n := len(want); pos != n || table != n || sd != n || len(got) != n {
+			t.Errorf("seed %d: want all %d chests exact and no others, got %d at the position, %d tables, %d seeds, %d chests", seed, n, pos, table, sd, len(got))
+		}
 	}
 }
 

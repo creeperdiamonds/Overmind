@@ -119,22 +119,33 @@ func (w *writer) set(x, y, z int, rid uint32, water bool) {
 // its own (the same block written again keeps it). Every structure writes a block before appending its
 // entity, so an entity outlives only its own block.
 func (w *writer) dropEntityAt(p [3]int, rid uint32) {
-	if w.beAt == nil {
-		w.beAt = map[[3]int]int{}
-	}
-	for ; w.beSeen < len(w.bes); w.beSeen++ {
-		if w.bes[w.beSeen].Data != nil {
-			w.beAt[w.bes[w.beSeen].Pos] = w.beSeen
-		}
-	}
+	w.indexEntities()
 	if i, ok := w.beAt[p]; ok && w.chunk().Block(uint8(p[0]&15), int16(p[1]), uint8(p[2]&15), 0) != rid {
 		w.bes[i].Data = nil
 		delete(w.beAt, p)
 	}
 }
 
+// indexEntities indexes the block entities made since the last call. A new entity at a cell that holds
+// one replaces it (two ocean ruin templates overlaid at one height put their chests in the same cell).
+func (w *writer) indexEntities() {
+	if w.beAt == nil {
+		w.beAt = map[[3]int]int{}
+	}
+	for ; w.beSeen < len(w.bes); w.beSeen++ {
+		if w.bes[w.beSeen].Data != nil {
+			p := w.bes[w.beSeen].Pos
+			if j, ok := w.beAt[p]; ok {
+				w.bes[j].Data = nil
+			}
+			w.beAt[p] = w.beSeen
+		}
+	}
+}
+
 // entities are the block entities left standing.
 func (w *writer) entities() []chunk.BlockEntity {
+	w.indexEntities()
 	out := w.bes[:0:0]
 	for _, be := range w.bes {
 		if be.Data != nil {
