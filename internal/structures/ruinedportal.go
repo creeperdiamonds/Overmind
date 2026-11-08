@@ -505,12 +505,18 @@ func nameSet(names string) map[string]bool {
 }
 
 // placeRuinedPortals writes the part inside the chunk of every portal whose start chunk is near.
+// The starts are found by region (at most 2 x 2 regions reach a chunk), not chunk by chunk: one region
+// random each instead of 49.
 func (s *Structures) placeRuinedPortals(w *writer) {
-	for cx := w.cx - portalReach; cx <= w.cx+portalReach; cx++ {
-		for cz := w.cz - portalReach; cz <= w.cz+portalReach; cz++ {
-			if _, ok := s.StartIn(s.portalKind(), cx, cz); !ok {
+	k := s.portalKind()
+	sp := spreads[k]
+	for rx := floorDiv(w.cx-portalReach, sp.spacing); rx <= floorDiv(w.cx+portalReach, sp.spacing); rx++ {
+		for rz := floorDiv(w.cz-portalReach, sp.spacing); rz <= floorDiv(w.cz+portalReach, sp.spacing); rz++ {
+			st, ok := s.regionStart(k, rx, rz)
+			if !ok || abs(st.CX-w.cx) > portalReach || abs(st.CZ-w.cz) > portalReach {
 				continue
 			}
+			cx, cz := st.CX, st.CZ
 			p, _ := s.portals.get([2]int{cx, cz}, func() any { return s.ruinedPortalAt(cx, cz) }).(*rpPlan)
 			if p == nil {
 				continue
