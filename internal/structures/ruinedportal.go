@@ -486,8 +486,12 @@ var (
 	portalBricks = nameSet("stone_bricks mossy_stone_bricks cracked_stone_bricks chiseled_stone_bricks stone smooth_stone_double_slab " +
 		"sandstone_double_slab petrified_oak_double_slab cobblestone_double_slab brick_double_slab stone_brick_double_slab " +
 		"quartz_double_slab nether_brick_double_slab oak_double_slab")
-	portalSlabs = nameSet("smooth_stone_slab sandstone_slab petrified_oak_slab cobblestone_slab brick_slab stone_brick_slab quartz_slab " +
-		"nether_brick_slab oak_slab")
+	// normal_stone_slab is our conversion of the templates' plain stone slab: MEASURED (round 18, the
+	// Nether portal (13,12) of seed 100's fort_100 world) BDS's pass turns it to a blackstone slab, so BDS
+	// takes it for one of R1's slabs (its smooth stone slab, assumed: BDS's Java-name mapping of
+	// "stone_slab" was not read). The list is one for both dimensions in R1.
+	portalSlabs = nameSet("smooth_stone_slab normal_stone_slab sandstone_slab petrified_oak_slab cobblestone_slab brick_slab stone_brick_slab " +
+		"quartz_slab nether_brick_slab oak_slab")
 	portalWalls = nameSet("granite_wall diorite_wall andesite_wall sandstone_wall brick_wall stone_brick_wall mossy_stone_brick_wall " +
 		"nether_brick_wall end_stone_brick_wall prismarine_wall red_sandstone_wall red_nether_brick_wall")
 )
