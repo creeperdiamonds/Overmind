@@ -66,6 +66,21 @@ func BenchmarkSulfurArea(b *testing.B) {
 	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
 }
 
+// BenchmarkMangroveArea generates the study's mangrove swamp window (mangrove_swamp_20: seed 20, chunks
+// x -34..-26, z 28..36, NOTES-bedrock-exact T17) the same way, so the mangrove trees' cost shows per chunk.
+func BenchmarkMangroveArea(b *testing.B) {
+	for b.Loop() {
+		g := New(20)
+		for cz := int32(28); cz <= 36; cz++ {
+			for cx := int32(-34); cx <= -26; cx++ {
+				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+				g.GenerateChunk(world.ChunkPos{cx, cz}, c)
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
+}
+
 // Sweeps at other caps, to find where the cache stops rebuilding bases (ruling 31).
 func BenchmarkSweepCap(b *testing.B) {
 	for _, mb := range []int64{26, 28, 30, 32} {
