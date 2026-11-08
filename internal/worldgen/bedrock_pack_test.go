@@ -2,6 +2,7 @@ package worldgen
 
 import (
 	"os"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -118,5 +119,42 @@ func TestBedrockValuesFromData(t *testing.T) {
 	}
 	if NewWithData(1, ProfileBedrock, nil).climateT != ProfileBedrock.climate {
 		t.Error("with no data the profile's table is not the fallback")
+	}
+}
+
+// TestBedrockMangroveRates: the Bedrock profile is to run BDS's own mangrove swamp rules, 25 trees and 2
+// with a bee nest and 2 tall ones with a bee nest a chunk (BEDROCK-NOTES row 9's "25 + 2 + 2"), and
+// not Java's trees_mangrove (25), which stands in only while a rule is not written. Today the tree
+// feature's mangrove parts (mangrove_roots, mangrove_trunk, mangrove_canopy; NOTES-bedrock-exact T17,
+// T27) are not written, so the rules are skipped and the test says so instead of failing.
+func TestBedrockMangroveRates(t *testing.T) {
+	bd := testBedrockData(t)
+	var kept []string
+	for n := range bd.javaKeep {
+		kept = append(kept, n)
+	}
+	slices.Sort(kept)
+	t.Logf("Java placements kept for Bedrock rules not written: %v", kept)
+	want := map[string]int{"minecraft:mangrove_swamp_mangrove_tree_feature": 25, "minecraft:mangrove_swamp_mangrove_tree_with_beenest_feature": 2,
+		"minecraft:mangrove_swamp_tall_mangrove_tree_with_beenest_feature": 2}
+	for _, r := range bd.surface {
+		if n, ok := want[r.ident]; ok {
+			if r.feat == nil || r.iterations() != n {
+				t.Errorf("%s: feature %v, %d iterations, want %d placed", r.ident, r.feat != nil, r.iterations(), n)
+			}
+			delete(want, r.ident)
+		}
+	}
+	if len(want) == 3 && bd.javaKeep["trees_mangrove"] {
+		t.Skip("Bedrock's mangrove tree is not written: its rules are skipped and Java's trees_mangrove (25 a chunk) stands in")
+	}
+	for id := range want {
+		t.Errorf("%s: not a live surface rule", id)
+	}
+	if bd.javaKeep["trees_mangrove"] {
+		t.Error("Java's trees_mangrove is kept beside Bedrock's rules")
+	}
+	if !bd.javaReplaced(ProfileBedrock, &placement{name: "trees_mangrove", step: vegetationStep}) {
+		t.Error("Java's trees_mangrove still runs in the Bedrock profile")
 	}
 }
