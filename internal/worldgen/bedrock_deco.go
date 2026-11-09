@@ -245,6 +245,8 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	switch pl.name {
 	case "glow_lichen":
 		return false
+	case "underwater_magma":
+		return bd.magmaLive
 	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode", "large_dripstone", "dripstone_cluster", "pointed_dripstone":
 		return true
 	}

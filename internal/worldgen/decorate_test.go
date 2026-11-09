@@ -972,9 +972,9 @@ func checkFrozenOcean(t *testing.T, frozenChunks, warmChunks int) {
 			// Java's freeze reads the biome at the open block above and the temperature at the water.
 			cold := g.coldEnough(s.blockBiome(g, wx, waterTop+1, wz), wx, waterTop, wz)
 			if g.bedrockDeco() {
-				// Bedrock's (S4, bedrock_freeze.go): the stored biome and its temperature at the cell above
-				// the water, under 0.15.
-				cold = g.bdata.surfaceBiomes[s.bedrockStoredBiome(g, wx, waterTop+1, wz)].temp < 0.15
+				// Bedrock's (L17, bedrock_freeze.go): the stored biome at the water cell itself and its
+				// temperature there with the frozen-ocean modifier, at most 0.15.
+				cold = g.bedrockFreezeTemperature(s.bedrockStoredBiome(g, wx, waterTop, wz), wx, waterTop, wz) <= 0.15
 			}
 			switch got := final[c]; {
 			case got == sIce:

@@ -68,6 +68,10 @@ func (fc *featCompiler) build(id string) (bfeat, error) {
 		f, err = fc.singleBlock(v)
 	case "minecraft:search_feature":
 		f, err = fc.search(v)
+	case "minecraft:surface_relative_threshold_feature":
+		f, err = fc.threshold(v)
+	case "minecraft:partially_exposed_blob_feature":
+		f, err = fc.blob(v)
 	case "minecraft:snap_to_surface_feature":
 		f, err = fc.snap(v)
 	case "minecraft:vegetation_patch_feature":
@@ -606,8 +610,9 @@ func (fc *featCompiler) scatterFeature(v map[string]json.RawMessage) (bfeat, err
 	return &scatterFeat{sc, c}, nil
 }
 
-// singleBlockFeat is single_block_feature (0xd8e03b0): the attach tests first, then ONE draw of the
-// weighted pick even for one block, then may_replace, survival and placement.
+// singleBlockFeat is single_block_feature (SingleBlockFeature::place 0xd8e03b0, NOTES-leftovers L18):
+// may_not_attach_to first, then ONE draw of the weighted pick even for one block (before may_attach_to,
+// so a failed attachment has drawn it), then may_attach_to, then placement, survival and may_replace.
 type singleBlockFeat struct {
 	blocks     []bs
 	names      []uint16
@@ -615,18 +620,97 @@ type singleBlockFeat struct {
 	mayReplace *bmatch // nil: air only.
 	survive    bool
 	placement  bool
-	attach     [6]*bmatch // down, up, north, south, west, east
+	rules      bool // may_attach_to or may_not_attach_to is given (the code's +0x1f8).
+	attach     attachRules
 	attachMin  int
-	notAttach  [6]*bmatch
+	notAttach  attachRules
+}
+
+// attachRules are one attach list set: per face (in dir order: down, up, north, south, west, east)
+// and the "sides", "diagonal" and "all" lists. nil is an empty list.
+type attachRules struct {
+	face                 [6]*bmatch
+	sides, diagonal, all *bmatch
+}
+
+// list is the list a cell is tested against: its own list, else (for the 4 horizontal faces) sides,
+// else all (0xd8e1b20 / 0xd8e1a00); diag picks diagonal, else all.
+func (a *attachRules) list(i int, diag bool) *bmatch {
+	if diag {
+		if a.diagonal != nil && !a.diagonal.empty {
+			return a.diagonal
+		}
+	} else {
+		if m := a.face[i]; m != nil && !m.empty {
+			return m
+		}
+		if i >= 2 && a.sides != nil && !a.sides.empty {
+			return a.sides
+		}
+	}
+	if a.all != nil && !a.all.empty {
+		return a.all
+	}
+	return nil
 }
 
 var faceKeys = map[string]int{"bottom": 0, "top": 1, "north": 2, "south": 3, "west": 4, "east": 5}
 
+// The 4 diagonal cells (x +-1, z +-1) the attach lists test.
+var attachDiagonals = [4][2]int{{-1, -1}, {1, -1}, {-1, 1}, {1, 1}}
+
+// The horizontal faces in the code's order: N (z-1), E (x+1), S (z+1), W (x-1).
+var attachHorizontal = [4]dir{dNorth, dEast, dSouth, dWest}
+
 func (f *singleBlockFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
-	if f.attachMin > 0 {
+	if f.rules {
+		// may_not_attach_to: above, below, the diagonals, then N, E, S, W; any match fails. Each cell is
+		// tested against its first non-empty list (ASSUMED as for may_attach_to; vanilla gives only
+		// bottom lists).
+		na := &f.notAttach
+		if m := na.list(1, false); m != nil && m.has(d.at(p.step(dUp))) {
+			return p, false
+		}
+		if m := na.list(0, false); m != nil && m.has(d.at(p.step(dDown))) {
+			return p, false
+		}
+		if m := na.list(0, true); m != nil {
+			for _, o := range attachDiagonals {
+				if m.has(d.at(p.add(o[0], 0, o[1]))) {
+					return p, false
+				}
+			}
+		}
+		for _, a := range attachHorizontal {
+			if m := na.list(int(a), false); m != nil && m.has(d.at(p.step(a))) {
+				return p, false
+			}
+		}
+	}
+	k := weightedPick(r, f.w)
+	if k < 0 || p.y < minY || p.y > maxY {
+		return p, false
+	}
+	if f.rules {
+		// may_attach_to: top, bottom and each diagonal are hard requirements where they have a list; the
+		// minimum counts only the 4 horizontal faces, a face with no list counting as attached.
+		at := &f.attach
+		if m := at.list(1, false); m != nil && !m.has(d.at(p.step(dUp))) {
+			return p, false
+		}
+		if m := at.list(0, false); m != nil && !m.has(d.at(p.step(dDown))) {
+			return p, false
+		}
+		if m := at.list(0, true); m != nil {
+			for _, o := range attachDiagonals {
+				if !m.has(d.at(p.add(o[0], 0, o[1]))) {
+					return p, false
+				}
+			}
+		}
 		n := 0
-		for i, m := range f.attach {
-			if m != nil && m.has(d.at(p.step(dir(i)))) {
+		for _, a := range attachHorizontal {
+			if m := at.list(int(a), false); m == nil || m.has(d.at(p.step(a))) {
 				n++
 			}
 		}
@@ -634,13 +718,10 @@ func (f *singleBlockFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 			return p, false
 		}
 	}
-	for i, m := range f.notAttach {
-		if m != nil && m.has(d.at(p.step(dir(i)))) {
-			return p, false
-		}
+	if f.placement && !bedrockMayPlace(d, f.names[k], p) {
+		return p, false
 	}
-	k := weightedPick(r, f.w)
-	if k < 0 || p.y < minY || p.y > maxY {
+	if f.survive && !bedrockSurvives(d, f.names[k], p) {
 		return p, false
 	}
 	cur := d.at(p)
@@ -649,13 +730,6 @@ func (f *singleBlockFeat) place(d *decoration, r *bmt, p pos) (pos, bool) {
 			return p, false
 		}
 	} else if !cur.isAir() {
-		return p, false
-	}
-	name := f.names[k]
-	if f.survive && !bedrockSurvives(d, name, p) {
-		return p, false
-	}
-	if f.placement && !bedrockMayPlace(d, name, p) {
 		return p, false
 	}
 	b := f.blocks[k]
@@ -747,7 +821,7 @@ func (fc *featCompiler) singleBlock(v map[string]json.RawMessage) (bfeat, error)
 	}
 	json.Unmarshal(v["enforce_survivability_rules"], &f.survive)
 	json.Unmarshal(v["enforce_placement_rules"], &f.placement)
-	faces := func(raw json.RawMessage, into *[6]*bmatch) error {
+	faces := func(raw json.RawMessage, into *attachRules) error {
 		var m map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
@@ -760,21 +834,29 @@ func (fc *featCompiler) singleBlock(v map[string]json.RawMessage) (bfeat, error)
 			if err != nil {
 				return err
 			}
-			if k == "sides" {
-				for i := 2; i < 6; i++ {
-					into[i] = bm
+			switch k {
+			case "sides":
+				into.sides = bm
+			case "diagonal":
+				into.diagonal = bm
+			case "all":
+				into.all = bm
+			default:
+				i, ok := faceKeys[k]
+				if !ok {
+					return unimpl("attach key %s", k)
 				}
-				continue
+				into.face[i] = bm
 			}
-			i, ok := faceKeys[k]
-			if !ok {
-				return unimpl("attach key %s", k)
-			}
-			into[i] = bm
 		}
 		return nil
 	}
+	// min_sides_must_attach's default when the key is missing is not read (the parser 0xd8e1c60 is not):
+	// ASSUMED 4, all horizontal faces. Consistent with BDS: the 16 creaking hearts of pale_garden_33
+	// (creaking_heart_feature gives no minimum) all have pale oak logs on their 4 sides (round 20).
+	f.attachMin = 4
 	if raw, ok := v["may_attach_to"]; ok {
+		f.rules = true
 		if err := faces(raw, &f.attach); err != nil {
 			return nil, err
 		}
@@ -782,12 +864,12 @@ func (fc *featCompiler) singleBlock(v map[string]json.RawMessage) (bfeat, error)
 			Min *int `json:"min_sides_must_attach"`
 		}
 		json.Unmarshal(raw, &m)
-		f.attachMin = 1
 		if m.Min != nil {
-			f.attachMin = max(*m.Min, 1)
+			f.attachMin = *m.Min
 		}
 	}
 	if raw, ok := v["may_not_attach_to"]; ok {
+		f.rules = true
 		if err := faces(raw, &f.notAttach); err != nil {
 			return nil, err
 		}
