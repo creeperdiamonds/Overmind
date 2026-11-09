@@ -34,6 +34,15 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 			return codeFeat(forestRock), true, nil
 		case "ice_feature":
 			return codeFeat(legacyIce), true, nil
+		case "plains_flower_feature":
+			return codeFeat(plainsFlower), true, nil
+		case "swamp_foliage_feature":
+			f, err := fc.swampFoliageFeature()
+			return f, true, err
+		case "springs_feature":
+			return fc.newLegacySprings(), true, nil
+		case "emerald_ore_feature":
+			return codeFeat(legacyEmerald), true, nil
 		}
 		return nil, true, unimpl("legacy feature %s", name)
 	}
@@ -44,10 +53,32 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return nil, false, nil // Tests: a code feature left unwritten, its rule kept for its draws.
 	}
 	switch id {
+	case "minecraft:ice_spike_feature":
+		return codeFeat(bIceSpike), true, nil
+	case "minecraft:ice_patch_feature":
+		return codeFeat(bIcePatch), true, nil
+	case "minecraft:grass_disc_feature":
+		return codeFeat(bGrassDisc), true, nil
+	case "minecraft:podzol_area_feature":
+		return codeFeat(bPodzolArea), true, nil
+	case "minecraft:meadow_flower_feature":
+		return codeFeat(meadowFlower), true, nil
+	case "minecraft:eyeblossom_feature":
+		return codeFeat(eyeblossom), true, nil
+	case "minecraft:firefly_bush_cluster_feature":
+		return fireflyCluster{}, true, nil
+	case "minecraft:firefly_bush_water_cluster_feature":
+		return fireflyCluster{water: true}, true, nil
+	case "minecraft:desert_well_feature":
+		return codeFeat(bDesertWell), true, nil
 	case "minecraft:nether_fossil_feature":
 		return netherFossilFeat{fc.bd}, true, nil
 	case "minecraft:sea_anemone_feature":
 		return codeFeat(seaAnemone), true, nil
+	case "minecraft:coral_feature":
+		return codeFeat(bedrockCoral), true, nil
+	case "minecraft:coral_hang_feature":
+		return codeFeat(bedrockCoralHang), true, nil
 	case "minecraft:pointed_dripstone_feature":
 		return codeFeat(bedrockPointedDripstone), true, nil
 	case "minecraft:delta_feature":

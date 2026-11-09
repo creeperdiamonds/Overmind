@@ -36,7 +36,7 @@ func TestMangroveSwampMatchesBDS(t *testing.T) {
 			if bc.masked(cell) {
 				continue
 			}
-			real, mine := w.names[bc.ids[cell]], ours.names[cell]
+			real, mine := w.names[bc.ids[cell]], ours.name(cell)
 			cells++
 			if real == mine {
 				same++

@@ -21,6 +21,17 @@ type JavaTemplate struct {
 	Size    [3]int
 	Palette []JavaState
 	Blocks  []JavaBlock // In file order.
+	// Entities are the template's entities in file order (abandoned camps' cushions, village
+	// villagers, one item in a swamp camp).
+	Entities []JavaEntity
+}
+
+// JavaEntity is one entity of a template: its position relative to the template's origin, the block
+// it stands in, and its NBT (with its "id").
+type JavaEntity struct {
+	Pos      [3]float64
+	BlockPos [3]int
+	NBT      map[string]any
 }
 
 // JavaState is one palette entry: a Java block name without "minecraft:" and its properties.
@@ -117,7 +128,34 @@ func ReadJavaTemplate(file string) (*JavaTemplate, error) {
 		b.NBT, _ = m["nbt"].(map[string]any)
 		t.Blocks = append(t.Blocks, b)
 	}
+	ents, _ := root["entities"].([]any)
+	for _, e := range ents {
+		m, _ := e.(map[string]any)
+		bp, fp := nbtInts(m["blockPos"]), nbtFloats(m["pos"])
+		nb, _ := m["nbt"].(map[string]any)
+		if len(bp) != 3 || len(fp) != 3 || nb == nil {
+			return nil, fmt.Errorf("%s: bad entity %v", file, m)
+		}
+		for a := range 3 {
+			if bp[a] < 0 || bp[a] >= t.Size[a] {
+				return nil, fmt.Errorf("%s: entity at %v outside the size %v", file, bp, t.Size)
+			}
+		}
+		t.Entities = append(t.Entities, JavaEntity{Pos: [3]float64{fp[0], fp[1], fp[2]}, BlockPos: [3]int{bp[0], bp[1], bp[2]}, NBT: nb})
+	}
 	return t, nil
+}
+
+// nbtFloats reads an NBT list of doubles.
+func nbtFloats(v any) []float64 {
+	l, _ := v.([]any)
+	out := make([]float64, 0, len(l))
+	for _, e := range l {
+		if f, ok := e.(float64); ok {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // nbtInts reads an NBT list or array of ints.

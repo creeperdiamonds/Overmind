@@ -13,6 +13,7 @@ var DefaultRegistry = conf.New([]world.EntityType{
 	AreaEffectCloudType,
 	ArrowType,
 	BottleOfEnchantingType,
+	CushionType, // Overmind fork: overmind_cushion.go.
 	EggType,
 	EndCrystalType,
 	EnderPearlType,

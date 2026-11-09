@@ -362,7 +362,10 @@ func (s *Structures) ecPost(w *writer, p *ecPiece) {
 			if w.in(x, y, z) {
 				w.set(x, y, z, ridNamed("frame", map[string]any{"facing_direction": int32([4]int{3, 4, 2, 5}[p.rot])}), false)
 				w.bes = append(w.bes, chunk.BlockEntity{Pos: [3]int{x, y, z}, Data: map[string]any{
-					"id": "ItemFrame", "Item": map[string]any{"Name": "minecraft:elytra", "Count": byte(1), "Damage": int16(0)}}})
+					// BDS's fields (NOTES-leftovers L33, seed 100's (87,143,1029) frame): the drop chance 1 (with
+					// none, Dragonfly's frame would never drop the elytra), rotation 0, WasPickedUp 0, version 0.
+					"id": "ItemFrame", "Item": map[string]any{"Name": "minecraft:elytra", "Count": byte(1), "Damage": int16(0), "WasPickedUp": byte(0)},
+					"ItemDropChance": float32(1), "ItemRotation": float32(0), "BlockEntityVersion": int32(0)}})
 			}
 		}
 	}

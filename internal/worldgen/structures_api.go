@@ -2,6 +2,8 @@ package worldgen
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
@@ -17,11 +19,29 @@ import (
 // the Bedrock profile instead (structures_base.go). It is a pure function of the seed and the chunk
 // position, safe on any number of workers.
 type StructurePlacer interface {
-	// PlaceChunk writes the parts of every structure piece inside chunk (cx, cz) and returns the
-	// block entities it made (chests with a loot table and seed).
-	PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity
+	// PlaceChunk writes the parts of every structure piece inside chunk (cx, cz) and returns what
+	// else it made there: block entities (chests with a loot table and seed), entities and spawns.
+	PlaceChunk(cx, cz int, c *chunk.Chunk) StructureOutput
 	// NearestStronghold is the stronghold an eye of ender thrown at pos leads to.
 	NearestStronghold(pos cube.Pos) (cube.Pos, bool)
+}
+
+// StructureOutput is what structure placement leaves in a chunk beside its blocks.
+type StructureOutput struct {
+	BlockEntities []chunk.BlockEntity
+	// Entities are the structures' non-mob entities, placed with the chunk and saved with it (an
+	// abandoned camp's cushions), in the provider's form: an "identifier" and the entity's NBT.
+	Entities []chunk.Entity
+	// Spawns are the mobs the structures would spawn (elder guardians, piglins, shulkers, villagers
+	// ...): worked out and kept, not spawned (mobs are a later stage; StructureSpawns).
+	Spawns []StructureSpawn
+}
+
+// StructureSpawn is a mob (or another template entity Overmind does not place) a structure would
+// spawn at a block.
+type StructureSpawn struct {
+	Pos    [3]int
+	Entity string
 }
 
 // SetStructures attaches the structures of this generator's world; nil places none. Set it before the
@@ -116,20 +136,43 @@ func (b BaseCells) RuntimeID(x, y, z int) uint32 {
 
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.
 // In the Bedrock order the blocks are already in the chunk's cells (structures_base.go): only the
-// block entities whose block the decoration left are added.
+// block entities whose block the decoration left, and the structures' entities, are added.
 func (g *Generator) placeStructures(s *chunkScratch, cx, cz int, final *[chunkCells]bs, c *chunk.Chunk, col *chunk.Column) {
 	if g.structs == nil {
 		return
 	}
 	var bes []chunk.BlockEntity
+	var ents []chunk.Entity
 	if g.structuresFirst() {
 		bes = g.structureEntities(s, cx, cz, final)
+		ents = g.cachedStructBase(s, cx, cz).ents
 	} else {
-		bes = g.structs.PlaceChunk(cx, cz, c)
+		out := g.structs.PlaceChunk(cx, cz, c)
+		bes, ents = out.BlockEntities, out.Entities
 	}
 	if col != nil {
 		col.BlockEntities = append(col.BlockEntities, bes...)
+		for _, e := range ents {
+			// A copy of each entity's data: the world keeps what it is handed, and the cache's entry
+			// may serve another column.
+			col.Entities = append(col.Entities, chunk.Entity{ID: e.ID, Data: maps.Clone(e.Data)})
+		}
 	}
+}
+
+// StructureSpawns are the mobs chunk (cx, cz)'s structures would spawn, worked out and not spawned
+// (mobs are a later stage): elder guardians, bastion piglins and hoglins, end city shulkers, mansion
+// illagers and allays, village villagers, and any template entity Overmind does not place. Bedrock
+// order only (nil otherwise); a pure function of the seed and the chunk.
+func (g *Generator) StructureSpawns(cx, cz int) []StructureSpawn {
+	if !g.structuresFirst() {
+		return nil
+	}
+	g.cache.begin()
+	defer g.cache.end()
+	s := scratchPool.Get().(*chunkScratch)
+	defer scratchPool.Put(s)
+	return slices.Clone(g.cachedStructBase(s, cx, cz).spawns)
 }
 
 // Seed is the world seed.

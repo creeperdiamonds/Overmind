@@ -377,7 +377,15 @@ func (sc *bScatter) position(r *bmt, e *molangEnv, base [3]int, idx int) [3]int 
 	for _, a := range sc.order {
 		c := &sc.axes[a]
 		if c.expr != nil {
-			p[a] = molangRound(c.expr(e))
+			// Section 3: pos[axis] += eval(range), a plain expression being a single range. For y that is
+			// the same at a rule (origin y 0); the vanilla y expressions (heightmap queries) give a height and
+			// stay absolute in nested scatters as before. x and z add to the origin: only eyeblossom's rule
+			// (math.random(-8, 8)) has them, which put every eyeblossom near (0, 0) before round 22.
+			if v := molangRound(c.expr(e)); a == 1 {
+				p[a] = v
+			} else {
+				p[a] += v
+			}
 		} else if c.kind == bFixedGrid || c.kind == bJitteredGrid {
 			lo, hi := c.lo, c.hi
 			if c.loE != nil {

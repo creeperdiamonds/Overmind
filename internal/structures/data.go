@@ -170,7 +170,11 @@ const templateWarnBytes = 64 << 20
 // the NBT reader makes them). TestTemplateMemory holds it near the heap the install's templates take.
 func templateBytes(t *Template) int64 {
 	n := allocBytes(int(unsafe.Sizeof(Template{}))) + allocBytes(cap(t.blocks)*int(unsafe.Sizeof(tBlock{}))) +
-		allocBytes(cap(t.palette)*int(unsafe.Sizeof(tState{}))) + allocBytes(cap(t.jigsaws)*int(unsafe.Sizeof(jigsaw{})))
+		allocBytes(cap(t.palette)*int(unsafe.Sizeof(tState{}))) + allocBytes(cap(t.jigsaws)*int(unsafe.Sizeof(jigsaw{}))) +
+		allocBytes(cap(t.ents)*int(unsafe.Sizeof(tEntity{})))
+	for _, e := range t.ents {
+		n += allocBytes(len(e.id)) + allocBytes(len(e.color))
+	}
 	for _, p := range t.palette {
 		n += allocBytes(len(p.name)+len("minecraft:")) + mapBytes(len(p.props)) // The name is a slice of the file's.
 		for k, v := range p.props {

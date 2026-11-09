@@ -1,6 +1,8 @@
 package structures
 
 import (
+	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -38,6 +40,31 @@ func TestEndCityMatchesBDS(t *testing.T) {
 	same, total := structureScore(t, "seed 100 end city", g, w, boxes)
 	if total == 0 || same*100 < total*98 {
 		t.Errorf("end city cells %d/%d below 98%%", same, total)
+	}
+	// The elytra frame's block entity, field for field (NOTES-leftovers L33).
+	frames := 0
+	for pos, want := range w.bes {
+		if want["id"] != "ItemFrame" {
+			continue
+		}
+		frames++
+		var got map[string]any
+		for _, be := range generate(g, pos[0]>>4, pos[2]>>4).BlockEntities {
+			if be.Pos == pos {
+				got = be.Data
+			}
+		}
+		want = maps.Clone(want)
+		delete(want, "x") // The provider's position fields.
+		delete(want, "y")
+		delete(want, "z")
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("frame at %v: ours %v, BDS %v", pos, got, want)
+		}
+		t.Logf("frame at %v: BDS %v", pos, want)
+	}
+	if frames != 1 {
+		t.Errorf("%d BDS item frames, want 1", frames)
 	}
 }
 

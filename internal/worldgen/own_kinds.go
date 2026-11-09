@@ -341,8 +341,9 @@ func (o OwnEntityBlock) DecodeNBT(data map[string]any) any {
 	return o
 }
 
-// BreakInfo breaks as its kind; a container rolls the loot table it still holds and drops it, as a
-// chest does when broken unopened.
+// BreakInfo breaks as its kind; a container drops the items it holds (a mansion's decorative trapped
+// chest, round 21) and rolls the loot table it still holds and drops it, as a chest does when broken
+// unopened.
 func (o OwnEntityBlock) BreakInfo() block.BreakInfo {
 	info := OwnBlock{id: o.id}.BreakInfo()
 	if o.data == nil {
@@ -350,14 +351,26 @@ func (o OwnEntityBlock) BreakInfo() block.BreakInfo {
 	}
 	table, _ := (*o.data)["LootTable"].(string)
 	seed, _ := (*o.data)["LootTableSeed"].(int32)
-	if table == "" || block.LootFiller == nil {
+	held, _ := (*o.data)["Items"].([]any)
+	if (table == "" || block.LootFiller == nil) && len(held) == 0 {
 		return info
 	}
 	drops := info.Drops
 	info.Drops = func(t item.Tool, e []item.Enchantment) []item.Stack {
-		inv := inventory.New(27, nil)
-		block.LootFiller(table, seed, inv)
-		return append(inv.Items(), drops(t, e)...)
+		var out []item.Stack
+		for _, x := range held {
+			if m, ok := x.(map[string]any); ok {
+				if st := item.ReadNBT(m, nil); !st.Empty() {
+					out = append(out, st)
+				}
+			}
+		}
+		if table != "" && block.LootFiller != nil {
+			inv := inventory.New(27, nil)
+			block.LootFiller(table, seed, inv)
+			out = append(out, inv.Items()...)
+		}
+		return append(out, drops(t, e)...)
 	}
 	return info
 }

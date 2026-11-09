@@ -861,7 +861,12 @@ func wmWrite(w *writer, p *wmPiece) {
 		w.set(q[0], q[1], q[2], res.rid, res.waterlog)
 		if res.name == "chest" || res.name == "trapped_chest" {
 			w.rng.U32()
-			w.bes = append(w.bes, chunk.BlockEntity{Pos: q, Data: map[string]any{"id": "Chest"}})
+			// A decorative chest keeps the template's items, converted from their legacy ids (legacyitems.go).
+			items, _ := legacyItems(b.nbt)
+			if items == nil {
+				items = []any{}
+			}
+			w.bes = append(w.bes, chunk.BlockEntity{Pos: q, Data: map[string]any{"id": "Chest", "Items": items}})
 		}
 	}
 	for _, i := range markerOrder(len(markers), func(i int) [3]int { return markers[i].pos }) {

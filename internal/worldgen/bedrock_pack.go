@@ -690,7 +690,11 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 			bd.Skipped[pass+": broken data"]++
 			bd.problem(id, err.Error())
 		}
-		bd.keepJava(id)
+		// A rule BDS never runs keeps no Java placement (NOTES-leftovers L24): its filter passes no biome
+		// (has_biome_tag "deprecated") or it has 0 iterations (the legacy emerald rule, L29).
+		if r := bd.rules[id]; r == nil || !bd.deadRule(r) {
+			bd.keepJava(id)
+		}
 		return nil
 	}
 	defer func() {
@@ -725,6 +729,21 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 	}
 	rule.biomes = bd.ruleBiomes(r)
 	return rule
+}
+
+// deadRule says whether BDS never places anything for a rule: no biome passes its filter, or its
+// iteration count is the number 0.
+func (bd *BedrockData) deadRule(r *packRule) bool {
+	if bd.ruleBiomes(r) == ([2]uint64{}) {
+		return true
+	}
+	if it, ok := r.Distribution["iterations"]; ok {
+		var n float64
+		if json.Unmarshal(it, &n) == nil && n == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // distributionDraws says whether a rule's scatter evaluates math.random.
