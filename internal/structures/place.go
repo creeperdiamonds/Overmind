@@ -37,10 +37,11 @@ type writer struct {
 	// spawned are the spider corridors that placed their spawner in this chunk.
 	spawned map[spiderKey]bool
 	// spawns are the mobs the structures would spawn here (elder guardians, piglins, hoglins, shulkers,
-	// illagers, allays): worked out, then dropped with the writer (PlaceChunk and PlaceLogged return
-	// block entities only), until entities in new chunks exist (stage 4 needs a path out for them;
-	// docs/stage-2-known-gaps.md).
+	// illagers, allays, villagers): worked out and handed to the generator (worldgen.StructureSpawns),
+	// not spawned (mobs are a later stage; docs/stage-2-known-gaps.md).
 	spawns []spawnIntent
+	// ents are the non-mob template entities placed in the chunk (cushions; template_entities.go).
+	ents []chunk.Entity
 	// lo, hi are the dimension's block range: the Overworld's -64..319 or the Nether's 0..127.
 	lo, hi int
 	// trace, when set (tests), sees every block a structure writes.
@@ -144,6 +145,16 @@ func (w *writer) indexEntities() {
 	}
 }
 
+// output is what the writer leaves beside the blocks: the block entities left standing, the entities
+// and the spawns.
+func (w *writer) output() worldgen.StructureOutput {
+	out := worldgen.StructureOutput{BlockEntities: w.entities(), Entities: w.ents}
+	for _, sp := range w.spawns {
+		out.Spawns = append(out.Spawns, worldgen.StructureSpawn{Pos: sp.Pos, Entity: sp.Entity})
+	}
+	return out
+}
+
 // entities are the block entities left standing.
 func (w *writer) entities() []chunk.BlockEntity {
 	w.indexEntities()
@@ -182,22 +193,23 @@ func loadRIDs() {
 func airRID() uint32   { loadRIDs(); return ridAir }
 func waterRID() uint32 { loadRIDs(); return ridWater }
 
-// PlaceChunk writes every structure piece of chunk (cx, cz) and returns the chests' block entities.
-func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) []chunk.BlockEntity {
+// PlaceChunk writes every structure piece of chunk (cx, cz) and returns the chests' block entities,
+// the entities and the spawns.
+func (s *Structures) PlaceChunk(cx, cz int, c *chunk.Chunk) worldgen.StructureOutput {
 	if s.data == nil {
-		return nil
+		return worldgen.StructureOutput{}
 	}
-	return s.place(cx, cz, c, nil).entities()
+	return s.place(cx, cz, c, nil).output()
 }
 
 // PlaceLogged is PlaceChunk reporting every block it writes: the generator places structures into a
 // chunk's terrain before decorating it (NOTES-structures-phase2 P21.1, worldgen/structures_base.go).
 // The chunk is made only when a piece first reads or writes it.
-func (s *Structures) PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write func(x, y, z int, rid uint32, water bool)) []chunk.BlockEntity {
+func (s *Structures) PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write func(x, y, z int, rid uint32, water bool)) worldgen.StructureOutput {
 	if s.data == nil {
-		return nil
+		return worldgen.StructureOutput{}
 	}
-	return s.placeWith(cx, cz, nil, chunkOf, write).entities()
+	return s.placeWith(cx, cz, nil, chunkOf, write).output()
 }
 
 // place writes the chunk's pieces and returns the writer, with the chunk's block entities.
@@ -410,6 +422,9 @@ func (s *Structures) placeTemplateWith(w *writer, p *piece, xr *worldgen.Xoroshi
 			continue
 		}
 		w.set(x, y, z, res.rid, res.waterlog)
+	}
+	if len(t.ents) > 0 {
+		w.templateEntities(s, p, heights)
 	}
 }
 

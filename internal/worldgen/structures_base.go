@@ -25,7 +25,7 @@ import (
 // order needs them as the generator's own states).
 type StructureLogger interface {
 	// chunkOf makes the chunk with the terrain, when a piece first needs it.
-	PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write func(x, y, z int, rid uint32, water bool)) []chunk.BlockEntity
+	PlaceLogged(cx, cz int, chunkOf func() *chunk.Chunk, write func(x, y, z int, rid uint32, water bool)) StructureOutput
 }
 
 const cacheStruct cacheKind = 8
@@ -34,8 +34,10 @@ const cacheStruct cacheKind = 8
 // entities with the state each sits on. base is nil when no structure wrote in the chunk: the carvers
 // stage is then looked up again (cachedBase), so this entry never keeps an uncharged copy alive.
 type structBase struct {
-	base *compactBase
-	bes  []structBE
+	base   *compactBase
+	bes    []structBE
+	ents   []chunk.Entity // Kept whatever decoration writes: an entity is not a block.
+	spawns []StructureSpawn
 }
 
 type structBE struct {
@@ -96,7 +98,7 @@ func (g *Generator) cachedStructBase(s *chunkScratch, cx, cz int) *structBase {
 		}
 		wrote := false
 		var refused map[int32]bool
-		bes := g.structs.(StructureLogger).PlaceLogged(cx, cz, chunkOf, func(x, y, z int, rid uint32, water bool) {
+		out := g.structs.(StructureLogger).PlaceLogged(cx, cz, chunkOf, func(x, y, z int, rid uint32, water bool) {
 			expand()
 			cell := cellIndex(x&15, y, z&15)
 			st, ok := stateOfRuntime(rid, water)
@@ -110,12 +112,12 @@ func (g *Generator) cachedStructBase(s *chunkScratch, cx, cz int) *structBase {
 			buf.b[cell] = st
 			wrote = true
 		})
-		sb := &structBase{}
+		sb := &structBase{ents: out.Entities, spawns: out.Spawns}
 		if wrote {
 			buf.computeTops(0, 15, 0, 15)
 			sb.base = compact(buf)
 		}
-		for _, be := range bes {
+		for _, be := range out.BlockEntities {
 			cell := int32(cellIndex(be.Pos[0]&15, be.Pos[1], be.Pos[2]&15))
 			if refused[cell] {
 				continue
@@ -124,7 +126,7 @@ func (g *Generator) cachedStructBase(s *chunkScratch, cx, cz int) *structBase {
 			sb.bes = append(sb.bes, structBE{be, cell, buf.b[cell]})
 		}
 		e.sb = sb
-		n := int64(len(sb.bes)) * 128
+		n := int64(len(sb.bes))*128 + int64(len(sb.ents))*512 + int64(len(sb.spawns))*64
 		if wrote {
 			n += sb.base.bytes()
 		}
