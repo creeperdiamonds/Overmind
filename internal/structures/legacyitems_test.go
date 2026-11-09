@@ -14,6 +14,7 @@ import (
 // TestLegacyItemsConvert: the legacy forms the mansion templates use become Bedrock items a Dragonfly
 // chest reads, with no install.
 func TestLegacyItemsConvert(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize() // Reading an item looks blocks up; worldgen's stand-ins are in.
 	nbt := map[string]any{"Items": []any{
 		map[string]any{"Count": byte(1), "Damage": int16(2), "Slot": byte(8), "id": "minecraft:red_flower"},
 		map[string]any{"Count": byte(9), "Damage": int16(5), "Slot": byte(4), "id": "minecraft:sapling"},
@@ -105,6 +106,7 @@ func TestMansionChestsKeepTheirItems(t *testing.T) {
 // TestDecorativeTrappedChestDropsItsItems: the mansion's trapped chest is a stand-in (no Go type in
 // Dragonfly), so it cannot be opened; broken, it drops the items it holds.
 func TestDecorativeTrappedChestDropsItsItems(t *testing.T) {
+	world.DefaultBlockRegistry.Finalize()
 	b, ok := world.BlockByName("minecraft:trapped_chest", map[string]any{"minecraft:cardinal_direction": "north"})
 	if !ok {
 		t.Fatal("no trapped chest state")

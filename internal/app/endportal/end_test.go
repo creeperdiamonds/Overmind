@@ -1,7 +1,12 @@
-package app_test
+// Package endportal tests the trip from a generated stronghold to the End. It is its own test package
+// because a test process can hold only about 20 servers (internal/testserver), and internal/app's
+// tests already start 19 when the Bedrock install is set.
+package endportal_test
 
 import (
+	"math"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,6 +15,7 @@ import (
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
 	"github.com/go-gl/mathgl/mgl64"
 	"github.com/stretchr/testify/require"
 
@@ -132,4 +138,55 @@ func waitTask(task *world.Task) error {
 	case <-time.After(10 * time.Second):
 		return os.ErrDeadlineExceeded
 	}
+}
+
+// run executes f in a world transaction and waits for it.
+func run(t *testing.T, w *world.World, f func(tx *world.Tx)) {
+	t.Helper()
+	task := w.Do(f)
+	select {
+	case <-task.Done():
+		require.NoError(t, task.Err())
+	case <-time.After(60 * time.Second):
+		t.Fatal("world transaction did not finish in 60 s")
+	}
+}
+
+func blockAt(t *testing.T, w *world.World, pos cube.Pos) (b world.Block) {
+	t.Helper()
+	run(t, w, func(tx *world.Tx) { b = tx.Block(pos) })
+	return b
+}
+
+// viewer counts the chunks it is shown.
+type viewer struct {
+	world.NopViewer
+	chunks atomic.Int64
+}
+
+func (v *viewer) ViewChunk(world.ChunkPos, world.Dimension, map[cube.Pos]world.Block, *chunk.Chunk) {
+	v.chunks.Add(1)
+}
+
+// watch keeps the chunks within radius of pos loaded and ticking, as a player would, and waits until
+// all of them have arrived (as internal/app's world tests do). The returned func stops it.
+func watch(t *testing.T, w *world.World, pos cube.Pos, radius int) (stop func()) {
+	t.Helper()
+	v := &viewer{}
+	l := world.NewLoader(radius, w, v)
+	var want int64
+	for x := -radius; x <= radius; x++ {
+		for z := -radius; z <= radius; z++ {
+			if int(math.Round(math.Hypot(float64(x), float64(z)))) <= radius {
+				want++
+			}
+		}
+	}
+	run(t, w, func(tx *world.Tx) {
+		l.Move(tx, pos.Vec3Centre())
+		l.ChangeRadius(tx, radius)
+		l.Load(tx, int(want))
+	})
+	require.Eventually(t, func() bool { return v.chunks.Load() >= want }, 60*time.Second, 50*time.Millisecond, "chunks did not arrive")
+	return func() { run(t, w, func(tx *world.Tx) { l.Close(tx) }) }
 }

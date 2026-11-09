@@ -334,7 +334,7 @@ func TestDayCycleAdvances(t *testing.T) {
 
 	// On the same server, as test servers are capped: a player can reach the Nether by building and
 	// lighting a portal, as in survival. (The End is reached through a stronghold's portal:
-	// TestEndPortalLeadsToTheEnd.)
+	// internal/app/endportal TestEndPortalLeadsToTheEnd.)
 	t.Run("a lit Nether portal leads to the Nether", func(t *testing.T) {
 		require.Equal(t, world.Nether, w.PortalDestination(world.Nether).Dimension(), "the Overworld has no Nether to send players to")
 		require.Equal(t, world.End, w.PortalDestination(world.End).Dimension(), "the Overworld has no End")
