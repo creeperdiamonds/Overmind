@@ -304,6 +304,21 @@ func (br *BasicBlockRegistry) RegisterBlock(b Block) {
 	}
 }
 
+// UnimplementedStates returns the registered states of the block named (with "minecraft:") that no Go
+// type has been registered for yet, so a type can be registered for each before finalising (Overmind
+// fork: Overmind gives such states its own breakable types).
+func (br *BasicBlockRegistry) UnimplementedStates(name string) []BlockState {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	var out []BlockState
+	for _, b := range br.blocks {
+		if u, ok := b.(unknownBlock); ok && u.Name == name {
+			out = append(out, u.BlockState)
+		}
+	}
+	return out
+}
+
 // RegisterBlockState registers a BlockState to the registry. The function panics if the properties the
 // BlockState holds are invalid or if the BlockState was already registered.
 func (br *BasicBlockRegistry) RegisterBlockState(s BlockState) {

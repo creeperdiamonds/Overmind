@@ -32,6 +32,9 @@ func (s SnowLayer) Model() world.BlockModel { return snowLayerModel{layers: s.He
 // replaced (minecraft.wiki "Snow", oldid 3859371).
 func (s SnowLayer) ReplaceableBy(world.Block) bool { return s.Height == 0 }
 
+// EncodeItem gives snow layers an item (Overmind round 19): placing it puts down a single layer.
+func (SnowLayer) EncodeItem() (string, int16) { return "minecraft:snow_layer", 0 }
+
 // LightDiffusionLevel lets light through, so snow does not darken the column under it.
 func (SnowLayer) LightDiffusionLevel() uint8 { return 0 }
 
@@ -115,4 +118,5 @@ func init() {
 	for h := range 8 {
 		world.RegisterBlock(SnowLayer{Height: h})
 	}
+	world.RegisterItem(SnowLayer{})
 }

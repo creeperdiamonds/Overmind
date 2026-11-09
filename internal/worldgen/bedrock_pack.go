@@ -42,6 +42,7 @@ type BedrockData struct {
 	// Compiled for the generator.
 	fc                   *featCompiler
 	javaKeep             map[string]bool // Java placements kept for Bedrock rules not written yet.
+	magmaLive            bool            // The underwater magma rule runs Bedrock's features (L20): Java's placement stops.
 	passes               [len(bedrockPasses)][]*bedrockRule
 	underground, surface []*bedrockRule
 	carvers              []caveCarver
@@ -716,6 +717,9 @@ func (bd *BedrockData) compileRule(pass, id string) (rule *bedrockRule) {
 		return skip("scatter ", err)
 	}
 	rule = &bedrockRule{ident: id, hash: uint32(fnv1Hash(id)), sc: sc, feat: feat}
+	if id == "minecraft:overworld_underwater_magma_feature" {
+		bd.magmaLive = true
+	}
 	if o := bd.fc.ores[r.Description.PlacesFeature]; o != nil {
 		bd.ores[id] = o
 	}
@@ -833,6 +837,8 @@ func (bd *BedrockData) compileSurfaceBiomes() error {
 			mid: str(sb.Builder, "mid_material"), floor: str(sb.Builder, "sea_floor_material"),
 			foundation: str(sb.Builder, "foundation_material"), sea: str(sb.Builder, "sea_material"), seaDepth: depth, temperature: cl.T}
 		json.Unmarshal(sb.Builder["bryce_pillars"], &row.bryce)
+		_, row.partiallyFrozen = b.components["minecraft:partially_frozen"]
+		json.Unmarshal(sb.Builder["max_puddle_depth_below_sea_level"], &row.puddleDepth)
 		json.Unmarshal(sb.Builder["has_forest"], &row.forest)
 		var mp struct {
 			Steep map[string]json.RawMessage `json:"steep_material_adjustment"`
