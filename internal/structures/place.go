@@ -381,6 +381,12 @@ func (s *Structures) placeTemplateWith(w *writer, p *piece, xr *worldgen.Xoroshi
 				"LootTable": procLoot[bi].table, "LootTableSeed": int32(procLoot[bi].seed)}})
 			continue
 		}
+		if res.name == "flower_pot" && t.Path == "trial_chambers/decor/empty_pot" {
+			// BDS leaves air where this element's pot (a flower_pot without block entity data) would be:
+			// 3 of 3 slots where both sides chose the element (NOTES-leftovers L19, seed 100's (15,-23)
+			// chamber). Why is not read; ASSUMED only this element (other templates' bare pots untested).
+			continue
+		}
 		if p.elem.legacy && res.name == "air" {
 			continue // A legacy element places no air (Java's LegacySinglePoolElement).
 		}

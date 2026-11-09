@@ -5,8 +5,8 @@ import "math"
 // Bedrock's surface builder for the Bedrock profile (Task 4e), in our own Go from the study of BDS
 // 1.26.60.6, phase 5 (OverworldDefaultSurfaceBuilder::buildSurfaceAt, reached from loadChunk through
 // the per-column pass; the study's scratch harness zz_p5surf). Columns whose biome uses another
-// builder (mesa, swamp, frozen ocean) keep the Java surface rules, which those builders are not read
-// for yet.
+// builder keep the Java surface rules where that builder is not read; the mesa (bedrock_mesa.go), frozen
+// ocean (T16) and swamp (NOTES-leftovers L21: a puddle step, then the default builder) builders are.
 //
 // Per column, x outer and z inner, the builder draws from the chunk's bedrock-floor stream, carried on
 // from the floor (R1): a soil depth from that float, a "minecraft:surface" simplex noise and 3, and,
@@ -173,8 +173,10 @@ type surfaceRow struct {
 	biome, kind                      string
 	top, mid, floor, foundation, sea string
 	seaDepth                         int
+	puddleDepth                      int // The swamp builder's max_puddle_depth_below_sea_level.
 	temperature                      float32
 	bryce, forest                    bool // The mesa builder's bryce_pillars and has_forest.
+	partiallyFrozen                  bool // The biome carries the minecraft:partially_frozen component.
 	steep                            steepAdjust
 	adjust                           []surfaceAdjust
 }
@@ -195,6 +197,9 @@ type surfaceBiome struct {
 	gradient                 bool // A noise_gradient builder: the subsurface pass builds the column.
 	mesa, bryce, forest      bool // The mesa builder (bedrock_mesa.go) and its two flags.
 	frozenOcean              bool // The frozen-ocean builder: the iceberg extension, then the default one.
+	partiallyFrozen          bool // The biome has minecraft:partially_frozen: its temperature takes the frozen-ocean modifier.
+	swamp                    bool // The swamp builder: the puddle step, then the default one (L21).
+	puddleDepth              int32
 	mats                     surfaceMats
 	seaDepth                 int32
 	temp                     float32
@@ -212,6 +217,7 @@ type bedrockSurface struct {
 	sub    [len(biomeTableNames)]*gradientDef // Subsurface builders, with this world's noises.
 	mesa   *bedrockMesa
 	frozen *bedrockFrozen
+	puddle *bSimplexStack // The swamp builder's noise (L21).
 }
 
 // surfaceState is a material's state. Bedrock's snow block is our snow_block, hardened clay terracotta.
@@ -241,6 +247,10 @@ func newBedrockSurface(seed int64, w seedFactory, bd *BedrockData) *bedrockSurfa
 		m.u32()
 	}
 	bsf.adjust = newBSimplexStack(3, m.nextFloat, func(n uint32) int32 { return int32(m.u32() % n) }, true)
+	// The swamp builder's init (0x4b4c990, L21): PerlinSimplexNoise with 2 octaves from an MT of its own,
+	// seeded (ASSUMED) with the level seed's low 32 bits as the other builders' inits.
+	pm := newBMT(bedrockLevelSeed(seed))
+	bsf.puddle = newBSimplexStack(2, pm.nextFloat, func(n uint32) int32 { return int32(pm.u32() % n) }, true)
 	return bsf
 }
 
@@ -250,6 +260,8 @@ func (r *surfaceRow) compile() (sb surfaceBiome) {
 	sb.gradient = r.kind == "noise_gradient"
 	sb.mesa, sb.bryce, sb.forest = r.kind == "mesa", r.bryce, r.forest
 	sb.frozenOcean = r.kind == "frozen_ocean"
+	sb.partiallyFrozen = r.partiallyFrozen
+	sb.swamp, sb.puddleDepth = r.kind == "swamp", int32(r.puddleDepth)
 	sb.mats = surfaceMats{surfaceState(r.top), surfaceState(r.mid), surfaceState(r.floor), surfaceState(r.foundation), surfaceState(r.sea)}
 	sb.seaDepth, sb.temp = int32(r.seaDepth), r.temperature
 	if r.steep.material != "" {
@@ -327,6 +339,37 @@ func isFoundationStone(s bs) bool {
 }
 
 const noSeaLevel = math.MinInt32 + 1000
+
+// swampPuddle is the swamp builder's step before the default builder (SwampSurfaceBuilder build
+// 0x4b4ccd0, NOTES-leftovers L21; the noise MEASURED on mangrove_swamp_20): where the 2-octave noise at
+// (x, z) * 0.25 is above 0 and the column's first free index is at most the sea level's, the first block
+// from the column's top down that is not water, down to the sea level less max_puddle_depth, becomes
+// water. The height is the chunk's heightmap at this stage (our wgTop, water counted).
+func (bsf *bedrockSurface) swampPuddle(b *baseChunk, lx, lz int, sb *surfaceBiome) {
+	x, z := b.cx*16+lx, b.cz*16+lz
+	fx, fz := float32(float32(x)*0.25), float32(float32(z)*0.25)
+	var n float32
+	s := float32(1)
+	for o := range bsf.puddle.oct {
+		n += bsf.puddle.oct[o].at2(s*fx, s*fz) * 70 / s
+		s *= 0.5
+	}
+	if n <= 0 {
+		return
+	}
+	h := int32(b.wgTop[lz<<4|lx]) - minY
+	if h > bSeaIndex {
+		return
+	}
+	k := bSeaIndex - sb.puddleDepth
+	for yi := h - 1; yi >= k; yi-- {
+		y := int(yi) + minY
+		if b.b[cellIndex(lx, y, lz)] != sWater {
+			b.set(lx, y, lz, sWater)
+			return
+		}
+	}
+}
 
 // bedrockColumn builds one column with the default builder. low is the first index (Y - minY) left
 // alone, from the preliminary surface; depthN is the column's depth noise; r is the floor stream.
@@ -521,6 +564,8 @@ func (g *Generator) applyBedrockSurface(b *baseChunk, s *chunkScratch, floor *bm
 				if !g.iceberg(b, lx, lz, sb, low-minY) {
 					continue // The code returns before the default builder: no draw either (T16).
 				}
+			case sb.swamp:
+				g.bsurf.swampPuddle(b, lx, lz, sb)
 			case !sb.overworld:
 				floor.u32() // As a default column would; the other builders are not read yet.
 				if !sb.gradient {
