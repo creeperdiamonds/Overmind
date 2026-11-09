@@ -199,6 +199,10 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 		d.netherDebris(&d.chunkR, cx, cz) // Code, after the rules (steps 14 and 15).
 		return
 	}
+	// The code before the passes (L25): the lava lake and monster rooms on the chunk's Random, which is
+	// then reseeded for the passes.
+	d.overworldPrelude(&d.chunkR, cx, cz)
+	d.chunkR.setSeed(d.g.bseeds.chunk(cx, cz))
 	under, surf := false, false
 	for _, pl := range d.g.profile.placements {
 		if !under && pl.step >= oreStep {
@@ -233,8 +237,10 @@ func (d *decoration) runSourceBedrock(cx, cz int, biomes *[2]uint64) {
 }
 
 // javaReplaced says whether Bedrock's passes take a Java placement's place: the profile's ores and
-// disks, and every plant and tree of Java's vegetation step but glow lichen, unless the Bedrock rules
-// that would place them are not written yet (javaKeep).
+// disks, every plant and tree of Java's vegetation step but glow lichen, and the placements whose place
+// Bedrock's code features take (bedrock_legacy.go, round 22: lakes and rooms in the code before the
+// passes, ice spikes and patches, the desert well, the grass disc, springs, the frozen ocean's ice),
+// unless the Bedrock rules that would place them are not written yet (javaKeep).
 func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	if bd.javaKeep[pl.name] {
 		return false
@@ -248,6 +254,10 @@ func (bd *BedrockData) javaReplaced(p *Profile, pl *placement) bool {
 	case "underwater_magma":
 		return bd.magmaLive
 	case "forest_rock", "ore_infested", "freeze_top_layer", "amethyst_geode", "large_dripstone", "dripstone_cluster", "pointed_dripstone":
+		return true
+	case "lake_lava_underground", "lake_lava_surface", "monster_room", "monster_room_deep", // The prelude (L25).
+		"ice_spike", "ice_patch", "desert_well", "disk_grass", "spring_water", "spring_lava", "spring_lava_frozen", // L26, L27, L29.
+		"iceberg_packed", "iceberg_blue", "blue_ice": // legacy:ice_feature (T26) places both.
 		return true
 	}
 	return pl.step == vegetationStep
@@ -263,7 +273,7 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"swamp_surface_swamp_foliage", "trees_swamp"},
 	{"mangrove_swamp_", "trees_mangrove"},
 	{"pale_garden_pale_oak_tree", "pale_garden_vegetation"},
-	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"}, // eyeblossom_feature is code, not read.
+	{"eyeblossom_feature_rules", "pale_garden_flowers flower_pale_garden"},
 	{"amethyst_geode_feature", "amethyst_geode"},
 	{"dripstone_cluster_feature", "dripstone_cluster"},
 	{"large_dripstone_feature", "large_dripstone"},
@@ -279,6 +289,12 @@ var bedrockJavaFallback = []struct{ rule, java string }{
 	{"firefly_bush", "patch_firefly_bush_swamp patch_firefly_bush_near_water_swamp patch_firefly_bush_near_water"},
 	{"jungle_after_surface_vines", "vines"},
 	{"extreme_hills_after_surface_emerald_ore", "ore_emerald"},
+	{"ice_plains_spikes_first_ice_spike", "ice_spike"},
+	{"ice_plains_spikes_first_ice_patch", "ice_patch"},
+	{"desert_after_surface_desert_well", "desert_well"},
+	{"overworld_surface_mangrove_grass", "disk_grass"},
+	{"overworld_surface_springs", "spring_water spring_lava spring_lava_frozen"},
+	{"frozen_ocean_after_surface_ice", "iceberg_packed iceberg_blue blue_ice"},
 }
 
 // keepJava fills javaKeep from the rules of a pass that were skipped.
