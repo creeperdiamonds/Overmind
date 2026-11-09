@@ -53,7 +53,7 @@ type bdsWorld struct {
 
 var bdsWorlds sync.Map
 
-// loadBDSWorld reads a seed's world once per test binary.
+// loadBDSWorld reads a seed's world once per test.
 func loadBDSWorld(t testing.TB, dir string, seed int64) *bdsWorld {
 	return loadBDSFile(t, filepath.Join(dir, "whole", fmt.Sprintf("seed%d.bin.gz", seed)))
 }
@@ -125,6 +125,9 @@ func loadBDSFile(t testing.TB, path string) *bdsWorld {
 		}
 	}
 	bdsWorlds.Store(path, w)
+	// Kept only for the test (or subtest) that read it: a world is 160 MB a seed, and the seeds and
+	// windows together held 1.8 GB for the rest of the run when kept for the binary (round 21).
+	t.Cleanup(func() { bdsWorlds.Delete(path) })
 	return w
 }
 
@@ -167,11 +170,16 @@ func (w *bdsWorld) skipForStructure(cx, cz int) bool {
 }
 
 // generatedChunk is a generated chunk as block names in cellIndex order, with its carvers stage's
-// host rock class (stoneClass) per cell.
+// host rock class (stoneClass) per cell. The names are a palette and an index a cell (a 16-byte string
+// header a cell made a whole seed's 400 chunks 630 MB; round 21).
 type generatedChunk struct {
-	names []string
-	base  []byte
+	palette []string
+	ids     []uint16
+	base    []byte
 }
+
+// name is the block name of a cell.
+func (c generatedChunk) name(cell int) string { return c.palette[c.ids[cell]] }
 
 // generateNames generates chunks.
 func generateNames(g *Generator, pos [][2]int32) map[[2]int]generatedChunk {
@@ -187,16 +195,24 @@ func generateNames(g *Generator, pos [][2]int32) map[[2]int]generatedChunk {
 			base[i] = stoneClass(strings.SplitN(st.name(), "[", 2)[0])
 		}
 		c := generate(g, p[0], p[1])
-		cells := make([]string, chunkCells)
+		gc := generatedChunk{ids: make([]uint16, chunkCells), base: base}
+		index := map[uint32]uint16{}
 		for y := minY; y <= maxY; y++ {
 			for z := range 16 {
 				for x := range 16 {
-					cells[cellIndex(x, y, z)] = names[c.Block(uint8(x), int16(y), uint8(z), 0)].name
+					rid := c.Block(uint8(x), int16(y), uint8(z), 0)
+					i, ok := index[rid]
+					if !ok {
+						i = uint16(len(gc.palette))
+						index[rid] = i
+						gc.palette = append(gc.palette, names[rid].name)
+					}
+					gc.ids[cellIndex(x, y, z)] = i
 				}
 			}
 		}
 		mu.Lock()
-		out[[2]int{int(p[0]), int(p[1])}] = generatedChunk{cells, base}
+		out[[2]int{int(p[0]), int(p[1])}] = gc
 		mu.Unlock()
 	})
 	return out
@@ -287,7 +303,7 @@ func scoreBDSWorld(t testing.TB, w *bdsWorld, skipStructures bool) *bedrockScore
 			if y == maxY || bc.masked(cell) { // Y 319 holds the study's loading marker.
 				continue
 			}
-			real, mine := w.names[bc.ids[cell]], ours.names[cell]
+			real, mine := w.names[bc.ids[cell]], ours.name(cell)
 			f := bedrockFamily(real)
 			sc.total++
 			sc.famTotal[f]++
