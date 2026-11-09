@@ -59,6 +59,11 @@ func TestDataJigsawContainersMatchBDS(t *testing.T) {
 			if table == "" {
 				continue
 			}
+			// NOTES-leftovers L14 (MEASURED: 117 of 117 trial-chamber pots of seed 100): generation keeps a
+			// pot's table and seed with no item; the table rolls on first use (the Dragonfly fork).
+			if _, has := d["item"]; id == "DecoratedPot" && (has || d["LootTableSeed"] == nil) {
+				t.Errorf("seed %d: pot at %v holds an item or no seed: %v", seed, p, d)
+			}
 			size := map[string]int{"DecoratedPot": 1, "Dispenser": 9, "Dropper": 9, "Hopper": 5}[id]
 			if size == 0 {
 				size = 27

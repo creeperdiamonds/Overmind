@@ -81,6 +81,21 @@ func BenchmarkMangroveArea(b *testing.B) {
 	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
 }
 
+// BenchmarkCoralArea generates the study's warm ocean window (warm_ocean_37: seed 37, chunks -4..4 x
+// -4..4, NOTES-leftovers L12) the same way, so the coral crust's cost shows per chunk.
+func BenchmarkCoralArea(b *testing.B) {
+	for b.Loop() {
+		g := New(37)
+		for cz := int32(-4); cz <= 4; cz++ {
+			for cx := int32(-4); cx <= 4; cx++ {
+				c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
+				g.GenerateChunk(world.ChunkPos{cx, cz}, c)
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Milliseconds())/float64(b.N*81), "ms/chunk")
+}
+
 // Sweeps at other caps, to find where the cache stops rebuilding bases (ruling 31).
 func BenchmarkSweepCap(b *testing.B) {
 	for _, mb := range []int64{26, 28, 30, 32} {

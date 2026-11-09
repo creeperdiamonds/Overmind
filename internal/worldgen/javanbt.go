@@ -15,6 +15,14 @@ type nbtReader struct {
 	b   []byte
 	off int
 	err error
+	le  bool // Bedrock's little-endian NBT (.mcstructure files).
+}
+
+func (r *nbtReader) order() binary.ByteOrder {
+	if r.le {
+		return binary.LittleEndian
+	}
+	return binary.BigEndian
 }
 
 var errNBT = errors.New("nbt: truncated or malformed")
@@ -38,21 +46,21 @@ func (r *nbtReader) u8() byte {
 
 func (r *nbtReader) u16() uint16 {
 	if p := r.take(2); p != nil {
-		return binary.BigEndian.Uint16(p)
+		return r.order().Uint16(p)
 	}
 	return 0
 }
 
 func (r *nbtReader) u32() uint32 {
 	if p := r.take(4); p != nil {
-		return binary.BigEndian.Uint32(p)
+		return r.order().Uint32(p)
 	}
 	return 0
 }
 
 func (r *nbtReader) u64() uint64 {
 	if p := r.take(8); p != nil {
-		return binary.BigEndian.Uint64(p)
+		return r.order().Uint64(p)
 	}
 	return 0
 }
@@ -142,8 +150,12 @@ func (r *nbtReader) payload(tag byte, depth int) any {
 }
 
 // ReadJavaNBT reads a Java big-endian NBT root compound.
-func ReadJavaNBT(b []byte) (map[string]any, error) {
-	r := &nbtReader{b: b}
+func ReadJavaNBT(b []byte) (map[string]any, error) { return readNBTRoot(&nbtReader{b: b}) }
+
+// ReadBedrockNBT reads a Bedrock little-endian NBT root compound (a .mcstructure file).
+func ReadBedrockNBT(b []byte) (map[string]any, error) { return readNBTRoot(&nbtReader{b: b, le: true}) }
+
+func readNBTRoot(r *nbtReader) (map[string]any, error) {
 	if r.u8() != 10 {
 		return nil, errNBT
 	}
