@@ -221,6 +221,10 @@ func (t *PortalTravelComputer) travelQueued(e Traveller, tx *world.Tx, destinati
 // transfer adds the removed entity to the destination world at the arrival position. If no destination portal was
 // found and the entity may not create one, the entity is returned to its origin in the source world instead.
 func (t *PortalTravelComputer) transfer(handle *world.EntityHandle, source, destination *world.World, origin mgl64.Vec3, pos cube.Pos, sourceDim, destinationDim world.Dimension) {
+	if destinationDim == world.End {
+		// Overmind fork: the arrival platform's chunks are made by the chunk workers, not on the End's tick.
+		defer portal.LoadEndSpawnPlatform(destination)()
+	}
 	travelled, err := world.Call(context.Background(), destination, func(tx *world.Tx) (bool, error) {
 		spawn, ok := t.destinationSpawn(tx, sourceDim, pos)
 		if !ok {

@@ -148,6 +148,7 @@ func TestBedrockSulfurBuilderOnBDSBiomes(t *testing.T) {
 				}
 			}
 		}
+		bdsWorlds.Delete(f) // One world at a time: the seeds and windows together are 1.8 GB.
 	}
 	t.Logf("cinnabar %d/%d, sulfur %d/%d, rock BDS left %d/%d left", cinOK, cinN, sulOK, sulN, keptOK, keptN)
 	if cinN == 0 || float64(cinOK) < 0.999*float64(cinN) {
@@ -197,7 +198,7 @@ func TestSulfurCavesMatchBDS(t *testing.T) {
 				if bc.masked(cell) {
 					continue
 				}
-				real, mine := w.names[bc.ids[cell]], ours.names[cell]
+				real, mine := w.names[bc.ids[cell]], ours.name(cell)
 				wc++
 				if real == mine {
 					ws++
@@ -300,6 +301,7 @@ func TestBedrockQuartBiomesMatchBDS(t *testing.T) {
 				}
 			}
 		}
+		bdsWorlds.Delete(f) // One world at a time: the seeds and windows together are 1.8 GB.
 		name := strings.TrimSuffix(filepath.Base(f), ".bin.gz")
 		t.Logf("%-28s quarts %7d same %.3f%%; sulfur caves %d of %d", name, n, 100*float64(ok)/float64(max(n, 1)), sok, sn)
 		if sn > 500 && sok == 0 {
@@ -352,6 +354,7 @@ func TestBedrockBlockBiomesMatchBDS(t *testing.T) {
 				}
 			}
 		}
+		bdsWorlds.Delete(f) // One world at a time: the seeds and windows together are 1.8 GB.
 		name := strings.TrimSuffix(filepath.Base(f), ".bin.gz")
 		var worst [2]uint16
 		for k, v := range conf {

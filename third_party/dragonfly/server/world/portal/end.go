@@ -1,6 +1,9 @@
 package portal
 
 import (
+	"context"
+	"time"
+
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
@@ -32,6 +35,42 @@ func GenerateEndSpawnPlatform(tx *world.Tx) {
 			for dy := 0; dy < 3; dy++ {
 				tx.SetBlock(cube.Pos{endSpawnX + dx, endSpawnY + dy, endSpawnZ + dz}, nil, nil)
 			}
+		}
+	}
+}
+
+// LoadEndSpawnPlatform loads the chunks under the arrival platform through a loader, so the chunk workers make
+// them, and waits up to 30 s for them, so GenerateEndSpawnPlatform does not generate them on the End's tick. It must
+// not run in one of w's transactions. The returned func lets the chunks go; call it once the entity has arrived.
+// Overmind fork.
+func LoadEndSpawnPlatform(w *world.World) (release func()) {
+	l := world.NewLoader(1, w, world.NopViewer{})
+	release = func() { w.Do(func(tx *world.Tx) { l.Close(tx) }) }
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// The platform spans x 98 to 102 and z -2 to 2: chunk 6 at z -1 and 0, both within radius 1 of (100, 0).
+	need := []world.ChunkPos{{endSpawnX >> 4, (endSpawnZ - 2) >> 4}, {endSpawnX >> 4, (endSpawnZ + 2) >> 4}}
+	for {
+		if err := w.Do(func(tx *world.Tx) {
+			l.Move(tx, mgl64.Vec3{endSpawnX + 0.5, endSpawnY, endSpawnZ + 0.5})
+			l.ChangeRadius(tx, 1) // Fills the load queue even when the loader is already there.
+			l.Load(tx, 16)
+		}).Wait(ctx); err != nil {
+			return release
+		}
+		loaded := true
+		for _, pos := range need {
+			if _, ok := l.Chunk(pos); !ok {
+				loaded = false
+			}
+		}
+		if loaded {
+			return release
+		}
+		select {
+		case <-ctx.Done():
+			return release
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 }

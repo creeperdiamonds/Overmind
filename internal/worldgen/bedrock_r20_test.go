@@ -51,7 +51,7 @@ func TestRound20BlocksMatchBDS(t *testing.T) {
 					if bc.masked(cell) {
 						continue
 					}
-					real, mine := w.names[bc.ids[cell]], ours.names[cell]
+					real, mine := w.names[bc.ids[cell]], ours.name(cell)
 					for i, n := range win.blocks {
 						a, b := real == n, mine == n
 						if a {
@@ -84,7 +84,7 @@ func TestRound20BlocksMatchBDS(t *testing.T) {
 					}
 					cols++
 					a := open(func(c int) string { return w.names[bc.ids[c]] })
-					b := open(func(c int) string { return ours.names[c] })
+					b := open(func(c int) string { return ours.name(c) })
 					if a {
 						openBDS++
 					}
