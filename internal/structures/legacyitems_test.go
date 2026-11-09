@@ -90,7 +90,7 @@ func TestMansionChestsKeepTheirItems(t *testing.T) {
 	for cx := all[0] >> 4; cx <= all[3]>>4; cx++ {
 		for cz := all[2] >> 4; cz <= all[5]>>4; cz++ {
 			c := chunk.New(world.DefaultBlockRegistry, world.Overworld.Range())
-			for _, be := range s.PlaceChunk(cx, cz, c) {
+			for _, be := range s.PlaceChunk(cx, cz, c).BlockEntities {
 				if items, _ := be.Data["Items"].([]any); len(items) > 0 {
 					held += len(items)
 				}
