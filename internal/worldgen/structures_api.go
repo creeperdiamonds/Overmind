@@ -60,8 +60,8 @@ func (g *Generator) GenerateBase(cx, cz int, c *chunk.Chunk) {
 type BaseCells struct{ b *compactBase }
 
 // BaseCells gives chunk (cx, cz)'s terrain before structures, from the shared cache, built there if no
-// worker has it yet. Reading single cells costs no copy of the chunk. Overworld generators only, like
-// GenerateBase.
+// worker has it yet. Reading single cells costs no copy of the chunk. Overworld and Nether generators
+// (RuntimeID).
 func (g *Generator) BaseCells(cx, cz int) BaseCells {
 	g.cache.begin()
 	defer g.cache.end()
@@ -86,6 +86,32 @@ func (b BaseCells) Air(x, y, z int) bool {
 		return sec.palette[sec.index[j]].isAir()
 	}
 	return sec.uniform.isAir()
+}
+
+// RuntimeID is the Dragonfly runtime ID of the block at (x, y, z), a cell of the chunk (its first
+// layer: the water of a waterlogged block is not reported). Cells above or below the world are air. A
+// Nether generator's cells read the same way: its base keeps the Nether's Y 0..127 in this layout
+// (buildNetherBase) with air around them, and the Nether's ruined portals read their terrain here.
+func (b BaseCells) RuntimeID(x, y, z int) uint32 {
+	if y < minY || y > maxY {
+		return runtimeOf(sAir)
+	}
+	i := cellIndex(x&15, y, z&15)
+	sec := &b.b.secs[i/sectionCells]
+	j := i % sectionCells
+	var s bs
+	switch {
+	case sec.raw != nil:
+		s = sec.raw[j]
+	case sec.index != nil:
+		s = sec.palette[sec.index[j]]
+	default:
+		s = sec.uniform
+	}
+	if s == 0 || s.isAir() {
+		s = sAir
+	}
+	return runtimeOf(s)
 }
 
 // placeStructures is the hook GenerateChunk runs after the chunk's own blocks are written.

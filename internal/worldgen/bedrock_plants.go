@@ -40,6 +40,9 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 	if _, ok := fc.bd.features[id]; ok {
 		return nil, false, nil
 	}
+	if testUnwritten[id] {
+		return nil, false, nil // Tests: a code feature left unwritten, its rule kept for its draws.
+	}
 	switch id {
 	case "minecraft:nether_fossil_feature":
 		return netherFossilFeat{fc.bd}, true, nil
@@ -69,6 +72,12 @@ func (fc *featCompiler) codeFeature(id string) (bfeat, bool, error) {
 		return codeFeat(sulfurCfg.cluster), true, nil
 	case "minecraft:sulfur_pool":
 		return codeFeat(sulfurPoolCfg.place), true, nil
+	case "minecraft:coral_crust_feature":
+		f, err := fc.coralCrustFeature()
+		return f, true, err
+	case "minecraft:sulfur_spring_trail_to_surface_feature":
+		f, err := fc.sulfurTrailFeature()
+		return f, true, err
 	case "minecraft:large_dripstone_feature":
 		return codeFeat(bedrockLargeDripstone), true, nil
 	case "minecraft:dirt_feature":

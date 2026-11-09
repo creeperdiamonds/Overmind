@@ -225,8 +225,9 @@ func lushOwnBlocks() {
 			}
 		}
 	}
-	// The sulfur pool's potent sulfur (round 16): Bedrock's states, Dragonfly has no Go type.
-	for _, w := range [2]string{"dry", "wet"} {
+	// The sulfur pool's potent sulfur (round 16) and the spring templates' (round 18): Bedrock's five
+	// states, Dragonfly has no Go type.
+	for _, w := range potentSulfurStates {
 		addOwn("potent_sulfur[potent_sulfur_state="+w+"]", "potent_sulfur", map[string]any{"potent_sulfur_state": w}, true)
 	}
 	coralDir := map[string]int32{"west": 0, "east": 1, "north": 2, "south": 3}
@@ -615,6 +616,9 @@ func dragonflyBlock(name string) world.Block {
 		return block.Coral{Type: coralTypes[strings.TrimSuffix(base, "_coral")]}
 	case "tube_coral_block", "brain_coral_block", "bubble_coral_block", "fire_coral_block", "horn_coral_block":
 		return block.CoralBlock{Type: coralTypes[strings.TrimSuffix(base, "_coral_block")]}
+	case "dead_tube_coral_block", "dead_brain_coral_block", "dead_bubble_coral_block", "dead_fire_coral_block", "dead_horn_coral_block":
+		// The coral crust's templates (round 18).
+		return block.CoralBlock{Type: coralTypes[strings.TrimSuffix(strings.TrimPrefix(base, "dead_"), "_coral_block")], Dead: true}
 	case "muddy_mangrove_roots":
 		a := cube.Y
 		switch propOf(name, "axis") {

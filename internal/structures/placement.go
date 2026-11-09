@@ -31,13 +31,14 @@ const (
 	Stronghold
 	Fortress // The Nether's: fortress and bastion share one placement (nether.go).
 	Bastion
-	EndCity // The End's (endcity.go).
+	EndCity            // The End's (endcity.go).
+	NetherRuinedPortal // The Nether's ruined portals (ruinedportal.go).
 	numKinds
 )
 
 var kindNames = [numKinds]string{"village", "scattered", "monument", "mansion", "pillager_outpost", "buried_treasure", "shipwreck",
 	"ocean_ruin", "ruined_portal", "ancient_city", "trail_ruins", "trial_chambers", "abandoned_camp", "mineshaft", "stronghold",
-	"fortress", "bastion_remnant", "end_city"}
+	"fortress", "bastion_remnant", "end_city", "ruined_portal_nether"}
 
 func (k Kind) String() string { return kindNames[k] }
 
@@ -68,6 +69,9 @@ var spreads = [numKinds]spread{
 	Fortress:       {30, 4, 30084232, false, false}, // N1 2.2 (NetherStructureFeatureHelper).
 	Bastion:        {30, 4, 30084232, false, false},
 	EndCity:        {20, 11, 10387313, true, false}, // NOTES-bedrock-end phase 8.
+	// NOTES-leftovers L13: the Nether's set is 25/10 linear with the Overworld's salt; all 9 grid
+	// candidates of seed 100's measured Nether worlds held a portal.
+	NetherRuinedPortal: {25, 10, 40552231, false, false},
 }
 
 // Region seed multipliers: Java's -0x66c60af8 and -0xea9a42b truncated to 32 bits (N1 2.1).
@@ -277,8 +281,8 @@ func (s *Structures) passes(st *Start) bool {
 		return s.containsOnly(bx, y, bz, r, idSet(centre)) && !s.monumentNear(cx, cz)
 	case OceanRuin:
 		return s.containsOnly(bx, s.surface(cx, cz), bz, 0, oceanRuinBiomes) && !s.monumentNear(cx, cz)
-	case RuinedPortal:
-		return true // No biome test in isFeatureChunk (N1 2.2).
+	case RuinedPortal, NetherRuinedPortal:
+		return true // No biome test in isFeatureChunk (N1 2.2; the Nether's: 9 of 9 candidates had one, L13).
 	case AncientCity:
 		return s.containsOnly(cx*16, -27, cz*16, 0, deepDark)
 	case TrailRuins:

@@ -211,6 +211,11 @@ func (s *Structures) placeWith(cx, cz int, c *chunk.Chunk, mk func() *chunk.Chun
 	if s.nether {
 		w.lo, w.hi = netherMinY, netherMaxY
 		s.placeNether(w)
+		// ASSUMED: the Nether's ruined portals post-process after its fortresses and bastions, as the
+		// Overworld's come late in the registry (P18.4); the Nether's order was not read. It decides only
+		// which blocks win where two overlap.
+		w.reseed()
+		s.placeRuinedPortals(w)
 		return w
 	}
 	if s.end {
