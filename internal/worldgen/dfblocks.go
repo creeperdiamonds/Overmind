@@ -3,6 +3,7 @@ package worldgen
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,27 +21,53 @@ import (
 // keeps properties Dragonfly has no field for, such as a leaf's distance, and those are dropped here.
 // Blocks Dragonfly has no type for get OwnBlock, so they can be broken.
 
-// OwnBlock is one state of a block Dragonfly lists but has no Go type for.
+// OwnBlock is one state of a block Dragonfly lists but has no Go type for. It breaks, drops and is
+// replaced as its kind says (own_kinds.go).
 type OwnBlock struct{ id uint16 }
+
+// OwnFixedBlock is one of our own blocks that cannot be broken (the End gateway).
+type OwnFixedBlock struct{ id uint16 }
+
+// Own block models.
+const (
+	ownEmpty = iota
+	ownSolid
+	ownCube // A full box that is not model.Solid: the stand-ins for Dragonfly's unknown blocks.
+)
 
 type ownState struct {
 	name  string
 	props map[string]any
-	solid bool
+	model int
+	kind  ownKind
+	fixed bool
 }
 
 var (
 	ownStates []ownState
 	ownByJava = map[string]uint16{}
 	ownHash   = block.NextHash()
+	fixedHash = block.NextHash()
 )
 
 func addOwn(java, name string, props map[string]any, solid bool) {
+	m := ownEmpty
+	if solid {
+		m = ownSolid
+	}
+	addOwnModel(java, name, props, m)
+}
+
+func addOwnModel(java, name string, props map[string]any, m int) {
 	if _, ok := ownByJava[java]; ok {
 		return
 	}
+	k, ok := ownKindOf(name)
+	if !ok && testing.Testing() {
+		panic("worldgen: own block " + name + " has no kind (own_kinds.go)")
+	}
 	ownByJava[java] = uint16(len(ownStates))
-	ownStates = append(ownStates, ownState{name, props, solid})
+	ownStates = append(ownStates, ownState{name, props, m, k, name == "end_gateway"})
 }
 
 // EncodeBlock ...
@@ -54,15 +81,59 @@ func (o OwnBlock) Hash() (uint64, uint64) { return ownHash, uint64(o.id) }
 
 // Model ...
 func (o OwnBlock) Model() world.BlockModel {
-	if ownStates[o.id].solid {
+	switch ownStates[o.id].model {
+	case ownSolid:
 		return model.Solid{}
+	case ownCube:
+		return ownCubeModel{}
 	}
 	return model.Empty{}
 }
 
-// BreakInfo gives every own block a short hand break, with no drop.
+// LightDiffusionLevel lets light through an own block that is not a full box.
+func (o OwnBlock) LightDiffusionLevel() uint8 {
+	if ownStates[o.id].model == ownEmpty {
+		return 0
+	}
+	return 15
+}
+
+// BreakInfo is the game's for the block's kind.
 func (o OwnBlock) BreakInfo() block.BreakInfo {
-	return block.BreakInfo{Hardness: 0.5, Effective: func(item.Tool) bool { return true }, Harvestable: func(item.Tool) bool { return true }, Drops: func(item.Tool, []item.Enchantment) []item.Stack { return nil }}
+	s := &ownStates[o.id]
+	return s.kind.breakInfo(s.name, s.props)
+}
+
+// ReplaceableBy says whether a placed block replaces this one (plants such as roots and glow lichen).
+func (o OwnBlock) ReplaceableBy(world.Block) bool { return ownStates[o.id].kind.replace }
+
+// EncodeItem is the block's own item, registered for kinds whose item places them.
+func (o OwnBlock) EncodeItem() (string, int16) { return "minecraft:" + ownStates[o.id].name, 0 }
+
+// EncodeBlock ...
+func (o OwnFixedBlock) EncodeBlock() (string, map[string]any) {
+	return OwnBlock{id: o.id}.EncodeBlock()
+}
+
+// Hash ...
+func (o OwnFixedBlock) Hash() (uint64, uint64) { return fixedHash, uint64(o.id) }
+
+// Model ...
+func (o OwnFixedBlock) Model() world.BlockModel { return OwnBlock{id: o.id}.Model() }
+
+// LightDiffusionLevel ...
+func (o OwnFixedBlock) LightDiffusionLevel() uint8 { return OwnBlock{id: o.id}.LightDiffusionLevel() }
+
+// ownValue is the block value of own state i.
+func ownValue(i uint16) world.Block {
+	s := &ownStates[i]
+	switch {
+	case s.fixed:
+		return OwnFixedBlock{i}
+	case s.kind.entity:
+		return OwnEntityBlock{id: i}
+	}
+	return OwnBlock{i}
 }
 
 func boolWord(v int) string { return strconv.FormatBool(v != 0) }
@@ -99,15 +170,10 @@ func ownBlocksList() {
 	addOwn("chorus_flower[age=5]", "chorus_flower", map[string]any{"age": int32(5)}, false)
 	plain("end_gateway", "end_gateway", false)
 	plain("budding_amethyst", "budding_amethyst", true)
-	plain("bush", "bush", false)
-	plain("firefly_bush", "firefly_bush", false)
-	plain("short_dry_grass", "short_dry_grass", false)
-	plain("tall_dry_grass", "tall_dry_grass", false)
 	plain("azalea", "azalea", false)
 	plain("flowering_azalea", "flowering_azalea", false)
 	plain("brown_mushroom", "brown_mushroom", false)
 	plain("red_mushroom", "red_mushroom", false)
-	plain("cactus_flower", "cactus_flower", false)
 	addOwn("sweet_berry_bush[age=3]", "sweet_berry_bush", map[string]any{"growth": int32(3)}, false)
 	addOwn("bee_nest[facing=south,honey_level=0]", "bee_nest", map[string]any{"direction": int32(0), "honey_level": int32(0)}, true)
 	for mask := range 64 {
@@ -116,17 +182,6 @@ func ownBlocksList() {
 			j := fmt.Sprintf("glow_lichen[down=%s,east=%s,north=%s,south=%s,up=%s,waterlogged=%s,west=%s]", boolWord(down), boolWord(east), boolWord(north), boolWord(south), boolWord(up), water, boolWord(west))
 			bits := int32(down) | int32(up)<<1 | int32(south)<<2 | int32(west)<<3 | int32(north)<<4 | int32(east)<<5
 			addOwn(j, "glow_lichen", map[string]any{"multi_face_direction_bits": bits}, false)
-		}
-	}
-	for _, name := range [2]string{"leaf_litter", "wildflowers"} {
-		key := "segment_amount"
-		if name == "wildflowers" {
-			key = "flower_amount"
-		}
-		for _, f := range [4]string{"north", "east", "south", "west"} {
-			for n := 1; n <= 4; n++ {
-				addOwn(fmt.Sprintf("%s[facing=%s,%s=%d]", name, f, key, n), name, map[string]any{"growth": int32(n - 1), "minecraft:cardinal_direction": f}, false)
-			}
 		}
 	}
 	for _, name := range [4]string{"small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud", "amethyst_cluster"} {
@@ -294,6 +349,7 @@ func lushOwnBlocks() {
 
 var registerOwnBlocks = sync.OnceFunc(func() {
 	registerStructureBlocks() // structure_blocks.go: suspicious sand and gravel, flower pots.
+	registerPlantBlocks()     // plant_blocks.go: before the stand-ins, which take what is left.
 	ownBlocksList()
 	seen := map[string]bool{}
 	for i := range ownStates {
@@ -304,9 +360,56 @@ var registerOwnBlocks = sync.OnceFunc(func() {
 			continue
 		}
 		seen[k] = true
-		world.RegisterBlock(OwnBlock{uint16(i)})
+		world.RegisterBlock(ownValue(uint16(i)))
 	}
+	registerStandIns()
+	registerOwnItems()
 })
+
+// registerStandIns makes every state of a name with a kind that Dragonfly still has no Go type for one
+// of our own blocks (own_kinds.go): structure blocks such as bells, pressure plates and rails, and the
+// states of our own blocks the generator does not write but the structures may.
+func registerStandIns() {
+	names := make([]string, 0, len(ownKinds))
+	for n := range ownKinds {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		if n == "end_gateway" {
+			continue
+		}
+		for _, st := range world.DefaultBlockRegistry.UnimplementedStates("minecraft:" + n) {
+			java := "~standin " + n + fmt.Sprint(st.Properties)
+			i := uint16(len(ownStates))
+			addOwnModel(java, n, st.Properties, ownCube)
+			world.RegisterBlock(ownValue(i))
+		}
+	}
+}
+
+// registerOwnItems gives each placeable kind the server has no item for an item: its first own state.
+func registerOwnItems() {
+	done := map[string]bool{}
+	for i := range ownStates {
+		s := &ownStates[i]
+		if !s.kind.placeable || done[s.name] {
+			continue
+		}
+		done[s.name] = true
+		if _, ok := world.ItemByName("minecraft:"+s.name, 0); ok {
+			continue
+		}
+		it, ok := ownBlockOf(uint16(i)).(world.Item)
+		if !ok {
+			continue
+		}
+		if _, _, known := world.ItemRuntimeID(it); !known {
+			continue
+		}
+		world.RegisterItem(it)
+	}
+}
 
 func init() { registerOwnBlocks() }
 
@@ -336,7 +439,7 @@ func cubeDir(s string) cube.Direction {
 
 // Wood and leaf kinds by the state's name.
 var woods = map[string]block.WoodType{"oak": block.OakWood(), "spruce": block.SpruceWood(), "birch": block.BirchWood(), "jungle": block.JungleWood(),
-	"acacia": block.AcaciaWood(), "dark_oak": block.DarkOakWood(), "mangrove": block.MangroveWood(), "cherry": block.CherryWood(), "pale_oak": block.PaleOakWood()}
+	"acacia": block.AcaciaWood(), "dark_oak": block.DarkOakWood(), "mangrove": block.MangroveWood(), "cherry": block.CherryWood(), "pale_oak": block.PaleOakWood(), "poplar": block.PoplarWood()}
 
 var leafTypes = map[string]block.LeavesType{"oak": block.OakLeaves(), "spruce": block.SpruceLeaves(), "birch": block.BirchLeaves(), "jungle": block.JungleLeaves(),
 	"acacia": block.AcaciaLeaves(), "dark_oak": block.DarkOakLeaves(), "mangrove": block.MangroveLeaves(), "cherry": block.CherryLeaves(), "pale_oak": block.PaleOakLeaves(),
@@ -635,6 +738,27 @@ func dragonflyBlock(name string) world.Block {
 		return block.PinkPetals{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}
 	case "spore_blossom":
 		return block.SporeBlossom{}
+	// The plants of 1.21.5 and later have Go types in the Dragonfly fork (round 19).
+	case "bush":
+		return block.Bush{}
+	case "firefly_bush":
+		return block.FireflyBush{}
+	case "short_dry_grass":
+		return block.ShortDryGrass{}
+	case "tall_dry_grass":
+		return block.TallDryGrass{}
+	case "cactus_flower":
+		return block.CactusFlower{}
+	case "leaf_litter":
+		n, _ := strconv.Atoi(propOf(name, "segment_amount"))
+		return block.LeafLitter{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}
+	case "wildflowers":
+		n, _ := strconv.Atoi(propOf(name, "flower_amount"))
+		return block.Wildflowers{AdditionalCount: max(n-1, 0), Facing: cubeDir(propOf(name, "facing"))}
+	// The dappled forest's red shrub (Bedrock 1.26): Dragonfly has it; it was written as air before
+	// round 19, as were poplar logs (woods).
+	case "red_shrub":
+		return block.RedShrub{}
 	case "air", "cave_air", "void_air":
 		return block.Air{}
 	}
@@ -661,10 +785,10 @@ func ownBlockOf(id uint16) world.Block {
 	for i := range ownStates {
 		o := &ownStates[i]
 		if o.name == s.name && fmt.Sprint(o.props) == fmt.Sprint(s.props) {
-			return OwnBlock{uint16(i)}
+			return ownValue(uint16(i))
 		}
 	}
-	return OwnBlock{id}
+	return ownValue(id)
 }
 
 // dfMap holds the Dragonfly runtime ID of each state, filled on first use.

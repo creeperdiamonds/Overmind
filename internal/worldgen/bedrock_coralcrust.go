@@ -20,8 +20,14 @@ import (
 // Labelled:
 //   - ASSUMED: mayPlace (BlockType vt+0x58) is "the target is water" (L12.3 did not read it; the
 //     study's simulation used that, as T40 did).
-//   - ASSUMED: "water" in the y walk and the helper is a water block or a waterlogged one (seagrass and
-//     kelp, which run before the crust): the study's simulation class (L12.5, 62 of 66 y exact).
+//   - The y walk's "water" (place's walk and its test at the found y) is the block itself being water,
+//     as L12.2 writes it ("block(center.x, y, center.z) is water"): seagrass and kelp, whose water
+//     Bedrock keeps in the second layer, are not (round 19). Round 18 took the study's simulation class
+//     (water or waterlogged, L12.5), which put a crust group of three pieces at source chunk (-3,-3) of
+//     warm_ocean_37 on a tall seagrass where BDS has seagrass and no crust; at source (3,3) BDS too has
+//     seagrass at the centre and no crust (ours has water there: our seagrass differs, so that group
+//     stays). Not read in the code: the test's own function (BDS evidence: 2 of 2 seagrass centres).
+//   - ASSUMED: "water" in the helper is a water block or a waterlogged one (the study's class, L12.5).
 //   - ASSUMED: a setBlock BDS refuses is one our decoration may not write (bput's false); L12.3 did not
 //     read when setBlock gives false.
 //   - The templates' dead coral is one colour per template for a whole BDS run and changes between runs
@@ -178,8 +184,12 @@ func (fc *featCompiler) coralCrustFeature() (bfeat, error) {
 	return codeFeat((&coralCrust{fc.bd}).place), nil
 }
 
-// crustWater is the "water" of the y walk and the helper (ASSUMED, see the file's comment).
+// crustWater is the "water" of the helper (ASSUMED, see the file's comment).
 func crustWater(s bs) bool { return bWaterMat(s) || s.has(fWater) }
+
+// crustWalkWater is the "water" of place's y walk and its test at the found y: the block itself is water,
+// so seagrass and kelp (whose water is in the second layer) are not (round 19; see the file's comment).
+func crustWalkWater(s bs) bool { return bWaterMat(s) }
 
 type crustPiece struct {
 	t      *crustTemplate
@@ -198,11 +208,11 @@ func (f *coralCrust) place(d *decoration, r *bmt, o pos) bool {
 	cx, cz := o.x+crustOX[a0][r0], o.z+crustOZ[a0][r0]
 	y := o.y
 	for ; y < 54; y++ { // The dimension's sea level 63 - 9.
-		if crustWater(d.block(cx, y, cz)) {
+		if crustWalkWater(d.block(cx, y, cz)) {
 			break
 		}
 	}
-	if y >= 54 || !bSolid(d.block(cx, y-1, cz)) || !crustWater(d.block(cx, y, cz)) || cs.live.has(bname(d.block(cx, y-1, cz))) {
+	if y >= 54 || !bSolid(d.block(cx, y-1, cz)) || !crustWalkWater(d.block(cx, y, cz)) || cs.live.has(bname(d.block(cx, y-1, cz))) {
 		return false
 	}
 	outcrop := func() {

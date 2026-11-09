@@ -8,13 +8,16 @@ import (
 	"github.com/df-mc/dragonfly/server/block/model"
 	"github.com/df-mc/dragonfly/server/item"
 	"github.com/df-mc/dragonfly/server/world"
+	"github.com/go-gl/mathgl/mgl64"
 )
 
 // Dragonfly lists the states of snow layers and seagrass but has no Go type for them, so it would
 // treat them as solid, unbreakable and irreplaceable blocks. These types give the server the
 // behaviour for the one state of each that the generator places. Hardness and drops are our own
-// choices, in line with what Dragonfly gives its snow block and grass. There are no items for
-// them, so a player cannot carry one, and a snow layer does not melt.
+// choices, in line with what Dragonfly gives its snow block and grass. Since round 19 both have
+// items: a snow layer item places the thinnest layer (layers do not stack), a seagrass item places
+// seagrass into a water source on a solid floor, and shears or silk touch drop seagrass. A snow layer
+// does not melt.
 
 var (
 	snowLayerHash = block.NextHash()
@@ -53,6 +56,9 @@ func (SnowLayer) BreakInfo() block.BreakInfo {
 		},
 	}
 }
+
+// EncodeItem ...
+func (SnowLayer) EncodeItem() (string, int16) { return "minecraft:snow_layer", 0 }
 
 // NeighbourUpdateTick removes the layer when what it lay on has gone.
 func (SnowLayer) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
@@ -102,13 +108,53 @@ func (Seagrass) CanDisplace(l world.Liquid) bool {
 // SideClosed ...
 func (Seagrass) SideClosed(cube.Pos, cube.Pos, *world.Tx) bool { return false }
 
-// BreakInfo breaks at once and drops nothing.
-func (Seagrass) BreakInfo() block.BreakInfo {
+// BreakInfo breaks at once and drops itself only to shears or silk touch, as in the game.
+func (s Seagrass) BreakInfo() block.BreakInfo {
 	return block.BreakInfo{
 		Harvestable: func(item.Tool) bool { return true },
-		Effective:   func(item.Tool) bool { return false },
-		Drops:       func(item.Tool, []item.Enchantment) []item.Stack { return nil },
+		Effective:   func(t item.Tool) bool { return t.ToolType() == item.TypeShears },
+		Drops: func(t item.Tool, e []item.Enchantment) []item.Stack {
+			if t.ToolType() == item.TypeShears || hasSilk(e) {
+				return []item.Stack{item.NewStack(s, 1)}
+			}
+			return nil
+		},
 	}
+}
+
+// EncodeItem ...
+func (Seagrass) EncodeItem() (string, int16) { return "minecraft:seagrass", 0 }
+
+// UseOnBlock places seagrass into a still water source with a solid floor: the clicked block's own
+// cell when it is that water, else the cell on the clicked face.
+func (s Seagrass) UseOnBlock(pos cube.Pos, face cube.Face, _ mgl64.Vec3, tx *world.Tx, user item.User, ctx *item.UseContext) bool {
+	at := pos
+	if !seagrassFits(at, tx) {
+		at = pos.Side(face)
+	}
+	if !seagrassFits(at, tx) {
+		return false
+	}
+	if p, ok := user.(block.Placer); ok {
+		p.PlaceBlock(at, s, ctx)
+	} else {
+		tx.SetBlock(at, s, nil)
+		ctx.SubtractFromCount(1)
+	}
+	return ctx.CountSub > 0
+}
+
+// seagrassFits says whether pos is a water source with a block under it whose top is solid.
+func seagrassFits(pos cube.Pos, tx *world.Tx) bool {
+	if pos.OutOfBounds(tx.Range()) {
+		return false
+	}
+	w, ok := tx.Block(pos).(block.Water)
+	if !ok || w.Depth != 8 || w.Falling {
+		return false
+	}
+	down := pos.Side(cube.FaceDown)
+	return tx.Block(down).Model().FaceSolid(down, cube.FaceUp, tx)
 }
 
 // NeighbourUpdateTick removes the plant when its floor has gone.
@@ -124,6 +170,8 @@ func (Seagrass) NeighbourUpdateTick(pos, _ cube.Pos, tx *world.Tx) {
 var registerPlantBlocks = sync.OnceFunc(func() {
 	world.RegisterBlock(SnowLayer{})
 	world.RegisterBlock(Seagrass{})
+	world.RegisterItem(SnowLayer{})
+	world.RegisterItem(Seagrass{})
 })
 
 func init() { registerPlantBlocks() }
