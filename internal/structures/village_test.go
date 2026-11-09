@@ -85,3 +85,46 @@ func TestVillageWindowMatchesBDS(t *testing.T) {
 		100*float64(same)/float64(max(total, 1)), 100*float64(sameBare)/float64(max(total, 1)))
 	t.Logf("  top confusions (BDS<-ours): %s", topConfusions(conf, 14))
 }
+
+// TestVillageDecorAtBDS (measurement, NOTES-leftovers L32): seed 22's village feature elements (decor
+// trees and piles), each with BDS's blocks around its position (5 x 5 columns, y -1 .. +7) other than
+// terrain, air and water, and ours there.
+func TestVillageDecorAtBDS(t *testing.T) {
+	w := loadWorld(t, filepath.Join(goldenDir(t), "whole", "structures", "village_22.bin.gz"))
+	g, s := worldFor(t, 22)
+	st, ok := s.StartIn(Village, -11, 6)
+	if !ok {
+		t.Fatal("no village start at (-11, 6)")
+	}
+	skip := map[string]bool{"air": true, "water": true, "stone": true, "dirt": true, "grass_block": true, "sand": true,
+		"sandstone": true, "gravel": true, "grass_path": true, "short_grass": true, "deepslate": true}
+	cols := map[[2]int]*chunk.Column{}
+	for _, p := range s.village(st) {
+		if p.elem.template != nil || p.elem.missing {
+			continue
+		}
+		bds, ours := map[string]int{}, map[string]int{}
+		for dx := -2; dx <= 2; dx++ {
+			for dz := -2; dz <= 2; dz++ {
+				for dy := -1; dy <= 7; dy++ {
+					x, y, z := p.pos[0]+dx, p.pos[1]+dy, p.pos[2]+dz
+					c := w.chunks[[2]int{x >> 4, z >> 4}]
+					if c == nil {
+						continue
+					}
+					if n := w.names[c.ids[cellOf(x&15, y, z&15)]]; !skip[n] {
+						bds[n]++
+					}
+					k := [2]int{x >> 4, z >> 4}
+					if cols[k] == nil {
+						cols[k] = generate(g, k[0], k[1])
+					}
+					if n := nameAt(cols[k].Chunk, x, y, z); !skip[n] {
+						ours[n]++
+					}
+				}
+			}
+		}
+		t.Logf("%-18s at %v rot %d: BDS %v; ours %v", p.elem.name, p.pos, p.rot, bds, ours)
+	}
+}

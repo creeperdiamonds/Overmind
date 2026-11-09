@@ -28,8 +28,18 @@ type Template struct {
 	Path    string
 	Size    [3]int
 	palette []tState
-	blocks  []tBlock // In file order: jigsaws and chests are taken in this order (N2 1.2 "template order").
-	jigsaws []jigsaw // Unrotated, in template order.
+	blocks  []tBlock  // In file order: jigsaws and chests are taken in this order (N2 1.2 "template order").
+	jigsaws []jigsaw  // Unrotated, in template order.
+	ents    []tEntity // In template order.
+}
+
+// tEntity is an entity of a template, with what placement reads of its NBT (template_entities.go).
+type tEntity struct {
+	pos      [3]float64 // Relative to the template's origin.
+	blockPos [3]int
+	id       string  // "minecraft:cushion".
+	color    string  // A cushion's dye colour.
+	yaw      float32 // Rotation[0].
 }
 
 // jigsaw is a jigsaw block of a template (N2 1.2 record).
@@ -55,6 +65,15 @@ func readTemplate(path, file string) (*Template, error) {
 	t := &Template{Path: path, Size: jt.Size, palette: make([]tState, len(jt.Palette)), blocks: make([]tBlock, len(jt.Blocks))}
 	for i, st := range jt.Palette {
 		t.palette[i] = tState{name: st.Name, props: st.Props}
+	}
+	for _, e := range jt.Entities {
+		te := tEntity{pos: e.Pos, blockPos: e.BlockPos}
+		te.id, _ = e.NBT["id"].(string)
+		te.color, _ = e.NBT["color"].(string)
+		if r, ok := e.NBT["Rotation"].([]any); ok && len(r) > 0 {
+			te.yaw, _ = r[0].(float32)
+		}
+		t.ents = append(t.ents, te)
 	}
 	for i, b := range jt.Blocks {
 		t.blocks[i] = tBlock{pos: b.Pos, state: b.State, nbt: b.NBT}
