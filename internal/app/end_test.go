@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/creeperdiamonds/overmind/bots/bedrock"
+	"github.com/creeperdiamonds/overmind/internal/app"
 	"github.com/creeperdiamonds/overmind/internal/config"
 	"github.com/creeperdiamonds/overmind/internal/testserver"
 )
@@ -21,7 +22,8 @@ import (
 // TestEndPortalLeadsToTheEnd fills a generated stronghold's portal frame and sends a player through it
 // (Task 11): the eyes the frame lacks are inserted as a player's eye of ender does, the 3 x 3 portal
 // appears, and a player stepping in arrives in the End on the obsidian platform at (100, 49, 0), as on
-// Bedrock. Strongholds need the install's structure data, so the test needs OVERMIND_BEDROCK_DATA.
+// Bedrock, with no chunk generated on a world's tick. Strongholds need the install's structure data,
+// so the test needs OVERMIND_BEDROCK_DATA.
 //
 // The stronghold is seed 100's ring stronghold at chunk (53, 100), whose layout structures'
 // TestStrongholdLayoutMatchesSpec holds piece for piece; its portal room's box is x 832 to 842, y 32 to
@@ -34,6 +36,7 @@ func TestEndPortalLeadsToTheEnd(t *testing.T) {
 	if data == "" {
 		t.Skip("OVERMIND_BEDROCK_DATA is not set: strongholds need the Bedrock install's structure data")
 	}
+	onTick := app.GenerationsOnTick()
 	srv := testserver.StartIn(t, t.TempDir(), func(c *config.Config) {
 		seed := int64(100)
 		c.Seed, c.BedrockDataDir = &seed, data
@@ -117,6 +120,8 @@ func TestEndPortalLeadsToTheEnd(t *testing.T) {
 			}
 		}
 	}
+	// Arriving builds the platform: its chunks are made by the chunk workers, never on the End's tick.
+	require.Equal(t, onTick, app.GenerationsOnTick(), "chunks were generated on a world's tick")
 }
 
 // waitTask waits up to 10 s for a scheduled entity task.
